@@ -1,0 +1,3 @@
+- 13:05 | unit 3A | start UI scaffolding | result: ok | blocker: none | next: check branch
+- 13:06 | unit 3A | dependencies installed in web/ | result: ok | blocker: none | next: run dev server
+- 13:07 | unit 3A | verified dev server and placeholder data loading | result: ok | blocker: none | next: commit and stop
