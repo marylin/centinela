@@ -1,0 +1,32 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Timestamp of the rainfall measurement"
+  },
+  {
+    "name": "station_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique identifier of the rain gauge station"
+  },
+  {
+    "name": "precipitation_mm",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Precipitation amount in millimeters"
+  },
+  {
+    "name": "basin",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Basin name (e.g., Rio Cauca)"
+  },
+  {
+    "name": "municipality",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Associated municipality name"
+  }
+]

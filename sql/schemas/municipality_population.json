@@ -1,0 +1,20 @@
+[
+  {
+    "name": "municipality",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique name of the municipality"
+  },
+  {
+    "name": "population",
+    "type": "INTEGER",
+    "mode": "REQUIRED",
+    "description": "Number of residents"
+  },
+  {
+    "name": "basin",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Basin name (e.g., Rio Cauca)"
+  }
+]

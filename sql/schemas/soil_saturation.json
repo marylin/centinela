@@ -1,0 +1,32 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Timestamp of the soil saturation measurement"
+  },
+  {
+    "name": "station_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique identifier of the soil moisture sensor"
+  },
+  {
+    "name": "saturation_index",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Soil saturation index (0.0 to 1.0)"
+  },
+  {
+    "name": "basin",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Basin name (e.g., Rio Cauca)"
+  },
+  {
+    "name": "municipality",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Associated municipality name"
+  }
+]
