@@ -1,3 +1,6 @@
 - 13:05 | unit 3A | start UI scaffolding | result: ok | blocker: none | next: check branch
 - 13:06 | unit 3A | dependencies installed in web/ | result: ok | blocker: none | next: run dev server
 - 13:07 | unit 3A | verified dev server and placeholder data loading | result: ok | blocker: none | next: commit and stop
+- 13:14 | unit 3B | start backend integration | result: ok | blocker: none | next: check API port
+- 13:23 | unit 3B | successfully integrated backend endpoints and handled offline gracefully | result: ok | blocker: none | next: commit and stop
+- 13:25 | unit 3B | added GET /alert endpoint support for agency and resident warning views | result: ok | blocker: none | next: commit and stop
