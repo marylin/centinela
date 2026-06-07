@@ -106,9 +106,13 @@ async def check_and_heal_connector(connector_id: str, threshold_minutes: float) 
             
         data = json.loads(raw_text).get("data", {})
         succeeded_at_str = data.get("succeeded_at")
+        paused = data.get("paused", False)
         
         is_stale = False
-        if not succeeded_at_str:
+        if paused:
+            is_stale = True
+            diff_minutes = float('inf')
+        elif not succeeded_at_str:
             is_stale = True
             diff_minutes = float('inf')
         else:
@@ -127,7 +131,7 @@ async def check_and_heal_connector(connector_id: str, threshold_minutes: float) 
             modify_args = {
                 "schema_file": "open-api-definitions/connections/modify_connection.json",
                 "connection_id": connector_id,
-                "request_body": json.dumps({"sync_frequency": 5})
+                "request_body": json.dumps({"sync_frequency": 5, "paused": False})
             }
             await call_with_retry(toolset, "modify_connection", modify_args, pipeline_state)
             

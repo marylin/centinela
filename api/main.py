@@ -1,0 +1,215 @@
+import os
+import json
+import subprocess
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+# Load environment variables
+load_dotenv()
+
+# Import the existing agent logic
+from rapid_agent.agent import check_and_heal_connector, get_mcp_toolset, call_with_retry
+
+app = FastAPI(title="Centinela Backend API")
+
+# Enable CORS for frontend integration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+CONNECTOR_ID = "plausibly_illustrate"
+
+@app.get("/risk")
+def get_risk():
+    """Runs the tracked risk-score SQL, returns graded risk per municipality."""
+    try:
+        # Read the query from the tracked SQL file
+        with open("sql/risk_score.sql", "r", encoding="utf-8") as f:
+            query = f.read()
+            
+        cmd = 'bq query --project_id=centinela-498622 --use_legacy_sql=false --quiet --format=json'
+        res = subprocess.run(cmd, shell=True, input=query.encode('utf-8'), capture_output=True)
+        if res.returncode != 0:
+            raise HTTPException(status_code=500, detail=res.stderr.decode('utf-8', errors='replace'))
+            
+        # Clean output to ensure valid JSON (remove possible gcloud warnings or headers)
+        data = None
+        for enc in ['cp1252', 'utf-8', 'latin-1']:
+            try:
+                output = res.stdout.decode(enc).strip()
+                json_start = output.find("[")
+                if json_start != -1:
+                    data = json.loads(output[json_start:])
+                    break
+            except Exception:
+                continue
+        if data is None:
+            output = res.stdout.decode('utf-8', errors='replace').strip()
+            json_start = output.find("[")
+            if json_start != -1:
+                output = output[json_start:]
+            data = json.loads(output)
+        
+        # Map fields to the frontend UI contract
+        results = []
+        for row in data:
+            muni = row.get("municipality", "")
+            if muni.startswith("Jamund"):
+                muni = "Jamundí"
+            results.append({
+                "municipality": muni,
+                "risk_score": float(row.get("compound_score", 0.0)),
+                "rainfall_mm": float(row.get("precipitation_mm", 0.0)),
+                "river_level_m": float(row.get("river_level_m", 0.0)),
+                "soil_saturation": float(row.get("saturation_index", 0.0)),
+                "threshold": float(row.get("alert_threshold_m", 0.0))
+            })
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/alert")
+def get_alert():
+    """Turns the current risk scores into graded alerts, incident report, and resident warning."""
+    try:
+        # Re-use the risk computation logic
+        risk_data = get_risk()
+        
+        graded_alert = []
+        affected_municipalities = []
+        warnings = []
+        
+        for muni_risk in risk_data:
+            muni = muni_risk["municipality"]
+            score = muni_risk["risk_score"]
+            
+            # Map score to severity
+            if score >= 0.8:
+                severity = "EXTREME"
+            elif score >= 0.6:
+                severity = "HIGH"
+            elif score >= 0.4:
+                severity = "MODERATE"
+            else:
+                severity = "LOW"
+                
+            graded_alert.append({
+                "municipality": muni,
+                "risk_score": score,
+                "severity": severity
+            })
+            
+            if severity in ["HIGH", "EXTREME"]:
+                affected_municipalities.append(muni)
+                
+            # Grounded warning description
+            warnings.append(
+                f"{muni}: Compound risk is {severity} (score: {score:.2f}) "
+                f"due to river level of {muni_risk['river_level_m']:.1f} m (threshold: {muni_risk['threshold']:.1f} m), "
+                f"soil saturation of {int(muni_risk['soil_saturation'] * 100)}%, and active rainfall of {muni_risk['rainfall_mm']:.1f} mm."
+            )
+            
+        title = "Rio Cauca Basin Compound Flood Risk Alert"
+        summary = (
+            f"Active compound flood risk detected for Rio Cauca basin. "
+            f"Currently affecting: {', '.join(affected_municipalities) or 'none'}. "
+            f"Key drivers include river levels exceeding alert thresholds, high soil saturation, and active precipitation."
+        )
+        
+        resident_broadcast = (
+            "CIVIL PROTECTION WARNING - ACTIVE FLOOD RISK IN RIO CAUCA BASIN\n\n"
+            + "\n".join(warnings) +
+            "\n\nResidents near riverbanks and low-lying areas should stay alert, monitor local water levels, and follow evacuation instructions if issued."
+        )
+        
+        return {
+            "graded_alert": graded_alert,
+            "agency_incident": {
+                "title": title,
+                "summary": summary,
+                "affected_municipalities": affected_municipalities
+            },
+            "resident_broadcast": resident_broadcast
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/connector-status")
+async def get_connector_status():
+    """Reads status of Fivetran connector, returns { status, last_sync_time, freshness }."""
+    toolset = get_mcp_toolset()
+    try:
+        async def call_details(session):
+            return await session.call_tool(
+                name="get_connection_details",
+                arguments={
+                    "schema_file": "open-api-definitions/connections/connection_details.json",
+                    "connection_id": CONNECTOR_ID
+                }
+            )
+        result = await toolset._execute_with_session(call_details, "Failed to get connection details")
+        raw_text = result.content[0].text
+        if "Error" in raw_text or "Fivetran API error" in raw_text:
+            raise HTTPException(status_code=500, detail=raw_text)
+            
+        data = json.loads(raw_text).get("data", {})
+        paused = data.get("paused", False)
+        succeeded_at_str = data.get("succeeded_at")
+        
+        status_val = "paused" if paused else "active"
+        
+        # Calculate freshness
+        freshness = "UNKNOWN"
+        if succeeded_at_str:
+            if succeeded_at_str.endswith("Z"):
+                succeeded_at_str = succeeded_at_str[:-1]
+            succeeded_at = datetime.fromisoformat(succeeded_at_str).replace(tzinfo=timezone.utc)
+            current_time = datetime.now(timezone.utc)
+            diff_minutes = (current_time - succeeded_at).total_seconds() / 60.0
+            freshness = "FRESH" if diff_minutes < 60.0 else "STALE"
+            
+        return {
+            "status": status_val,
+            "last_sync_time": data.get("succeeded_at") or "never",
+            "freshness": freshness
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await toolset.close()
+
+@app.post("/heal")
+async def heal():
+    """Runs the existing detect-to-heal flow, returns the result."""
+    try:
+        # Run heal with 5 minute threshold
+        res = await check_and_heal_connector(CONNECTOR_ID, 5.0)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/break")
+async def break_conn():
+    """Pauses the connector to simulate an outage for the demo."""
+    toolset = get_mcp_toolset()
+    pipeline_state = {"degraded": False, "error": None}
+    try:
+        modify_args = {
+            "schema_file": "open-api-definitions/connections/modify_connection.json",
+            "connection_id": CONNECTOR_ID,
+            "request_body": json.dumps({"paused": True})
+        }
+        res_text = await call_with_retry(toolset, "modify_connection", modify_args, pipeline_state)
+        if pipeline_state["degraded"]:
+            raise HTTPException(status_code=500, detail=pipeline_state["error"])
+        return {"status": "Success", "message": "Connector paused successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await toolset.close()
