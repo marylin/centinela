@@ -74,6 +74,72 @@ def get_risk():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/alert")
+def get_alert():
+    """Turns the current risk scores into graded alerts, incident report, and resident warning."""
+    try:
+        # Re-use the risk computation logic
+        risk_data = get_risk()
+        
+        graded_alert = []
+        affected_municipalities = []
+        warnings = []
+        
+        for muni_risk in risk_data:
+            muni = muni_risk["municipality"]
+            score = muni_risk["risk_score"]
+            
+            # Map score to severity
+            if score >= 0.8:
+                severity = "EXTREME"
+            elif score >= 0.6:
+                severity = "HIGH"
+            elif score >= 0.4:
+                severity = "MODERATE"
+            else:
+                severity = "LOW"
+                
+            graded_alert.append({
+                "municipality": muni,
+                "risk_score": score,
+                "severity": severity
+            })
+            
+            if severity in ["HIGH", "EXTREME"]:
+                affected_municipalities.append(muni)
+                
+            # Grounded warning description
+            warnings.append(
+                f"{muni}: Compound risk is {severity} (score: {score:.2f}) "
+                f"due to river level of {muni_risk['river_level_m']:.1f} m (threshold: {muni_risk['threshold']:.1f} m), "
+                f"soil saturation of {int(muni_risk['soil_saturation'] * 100)}%, and active rainfall of {muni_risk['rainfall_mm']:.1f} mm."
+            )
+            
+        title = "Rio Cauca Basin Compound Flood Risk Alert"
+        summary = (
+            f"Active compound flood risk detected for Rio Cauca basin. "
+            f"Currently affecting: {', '.join(affected_municipalities) or 'none'}. "
+            f"Key drivers include river levels exceeding alert thresholds, high soil saturation, and active precipitation."
+        )
+        
+        resident_broadcast = (
+            "CIVIL PROTECTION WARNING - ACTIVE FLOOD RISK IN RIO CAUCA BASIN\n\n"
+            + "\n".join(warnings) +
+            "\n\nResidents near riverbanks and low-lying areas should stay alert, monitor local water levels, and follow evacuation instructions if issued."
+        )
+        
+        return {
+            "graded_alert": graded_alert,
+            "agency_incident": {
+                "title": title,
+                "summary": summary,
+                "affected_municipalities": affected_municipalities
+            },
+            "resident_broadcast": resident_broadcast
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/connector-status")
 async def get_connector_status():
     """Reads status of Fivetran connector, returns { status, last_sync_time, freshness }."""
