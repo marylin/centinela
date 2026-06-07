@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from google import genai
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -22,6 +24,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+class AlertNarratives(BaseModel):
+    summary: str
+    broadcast: str
 
 CONNECTOR_ID = "plausibly_illustrate"
 
@@ -83,7 +89,6 @@ def get_alert():
         
         graded_alert = []
         affected_municipalities = []
-        warnings = []
         
         for muni_risk in risk_data:
             muni = muni_risk["municipality"]
@@ -108,34 +113,41 @@ def get_alert():
             if severity in ["HIGH", "EXTREME"]:
                 affected_municipalities.append(muni)
                 
-            # Grounded warning description
-            warnings.append(
-                f"{muni}: Compound risk is {severity} (score: {score:.2f}) "
-                f"due to river level of {muni_risk['river_level_m']:.1f} m (threshold: {muni_risk['threshold']:.1f} m), "
-                f"soil saturation of {int(muni_risk['soil_saturation'] * 100)}%, and active rainfall of {muni_risk['rainfall_mm']:.1f} mm."
-            )
-            
-        title = "Rio Cauca Basin Compound Flood Risk Alert"
-        summary = (
-            f"Active compound flood risk detected for Rio Cauca basin. "
-            f"Currently affecting: {', '.join(affected_municipalities) or 'none'}. "
-            f"Key drivers include river levels exceeding alert thresholds, high soil saturation, and active precipitation."
+        # Call Gemini to generate the prose summary and resident broadcast warning
+        client = genai.Client()
+        prompt = (
+            "You are a disaster response AI assistant. Based strictly on the following structured risk data "
+            "for the Rio Cauca basin (do not invent or change any numbers or facts):\n\n"
+            f"{json.dumps(risk_data, indent=2)}\n\n"
+            "Please generate:\n"
+            "1. 'summary': A concise, technical summary of the compound flood risk for the agency incident report. "
+            "Describe the overall basin situation and affected municipalities.\n"
+            "2. 'broadcast': A plain-language, urgent warning message to be broadcast to local residents. Mention "
+            "the specific municipalities, their risk severities, and the driving parameters (precipitation/rainfall, "
+            "river levels, soil saturation index) using the exact numbers from the data. Keep it highly grounded."
         )
         
-        resident_broadcast = (
-            "CIVIL PROTECTION WARNING - ACTIVE FLOOD RISK IN RIO CAUCA BASIN\n\n"
-            + "\n".join(warnings) +
-            "\n\nResidents near riverbanks and low-lying areas should stay alert, monitor local water levels, and follow evacuation instructions if issued."
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=genai.types.GenerateContentConfig(
+                response_mime_type='application/json',
+                response_schema=AlertNarratives
+            )
         )
+        
+        narratives = json.loads(response.text)
+        
+        title = "Rio Cauca Basin Compound Flood Risk Alert"
         
         return {
             "graded_alert": graded_alert,
             "agency_incident": {
                 "title": title,
-                "summary": summary,
+                "summary": narratives.get("summary", ""),
                 "affected_municipalities": affected_municipalities
             },
-            "resident_broadcast": resident_broadcast
+            "resident_broadcast": narratives.get("broadcast", "")
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
