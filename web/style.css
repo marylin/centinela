@@ -1,0 +1,775 @@
+/* ==========================================================================
+   Design System & Root Variable Declarations
+   ========================================================================== */
+:root {
+  --bg-app: #080b11;
+  --bg-card: #0f141f;
+  --bg-card-hover: #141b2a;
+  --bg-input: #171f30;
+  
+  --border-color: rgba(255, 255, 255, 0.05);
+  --border-color-glow: rgba(56, 189, 248, 0.2);
+  
+  /* Color Palette - HSL Custom Coordinates */
+  --primary: hsl(217, 91%, 60%);
+  --primary-glow: hsla(217, 91%, 60%, 0.15);
+  
+  --success: hsl(142, 76%, 45%);
+  --success-glow: hsla(142, 76%, 45%, 0.15);
+  
+  --warning: hsl(38, 92%, 50%);
+  --warning-glow: hsla(38, 92%, 50%, 0.15);
+  
+  --danger: hsl(354, 76%, 52%);
+  --danger-glow: hsla(354, 76%, 52%, 0.15);
+  
+  --text-main: hsl(210, 40%, 98%);
+  --text-muted: hsl(215, 20%, 65%);
+  --text-dark: hsl(215, 15%, 45%);
+  
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ==========================================================================
+   Base & Reset
+   ========================================================================== */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-app);
+  color: var(--text-main);
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* ==========================================================================
+   App Layout
+   ========================================================================== */
+.dashboard-wrapper {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  padding: 1.5rem;
+  max-width: 1600px;
+  margin: 0 auto;
+  gap: 1.5rem;
+}
+
+/* Header */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logo-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  filter: drop-shadow(0 0 8px hsla(217, 91%, 60%, 0.4));
+}
+
+.brand-text h1 {
+  font-size: 1.35rem;
+  color: var(--text-main);
+  line-height: 1.1;
+}
+
+.sub-brand {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.header-meta {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.system-time {
+  text-align: right;
+}
+
+.meta-label {
+  display: block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--text-dark);
+  letter-spacing: 0.05em;
+}
+
+.meta-value {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.sync-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.led-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  transition: all var(--transition-normal);
+}
+
+.led-dot.warning-mode {
+  background-color: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
+}
+
+.led-dot.danger-mode {
+  background-color: var(--danger);
+  box-shadow: 0 0 10px var(--danger);
+}
+
+/* Main Grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.main-column, .sidebar-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ==========================================================================
+   Component Cards
+   ========================================================================== */
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+}
+
+.card:hover {
+  border-color: var(--border-color-glow);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.card-header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-header h2 {
+  font-size: 1rem;
+  color: var(--text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+}
+
+.card-body {
+  padding: 1.25rem;
+}
+
+/* Legend items in map header */
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 0.75rem;
+}
+
+.legend-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+.legend-dot.low { background-color: var(--success); }
+.legend-dot.med { background-color: var(--warning); }
+.legend-dot.high { background-color: var(--danger); }
+.legend-dot.extreme { background-color: hsl(290, 80%, 50%); }
+
+/* ==========================================================================
+   Basin Risk Map Area
+   ========================================================================== */
+.map-container {
+  position: relative;
+  min-height: 380px;
+  background-color: rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.map-svg {
+  width: 100%;
+  height: 100%;
+  max-height: 400px;
+}
+
+/* Map SVG styling */
+.river-path {
+  stroke: hsl(205, 80%, 40%);
+  stroke-linecap: round;
+  fill: none;
+  stroke-dasharray: 8 4;
+  animation: flowAnimation 30s linear infinite;
+  transition: stroke var(--transition-normal), stroke-width var(--transition-normal);
+}
+
+.river-path.flow-high {
+  stroke: hsl(205, 90%, 55%);
+  stroke-dasharray: 6 3;
+  animation: flowAnimation 15s linear infinite;
+}
+
+.river-path.flow-halted {
+  stroke: hsl(210, 15%, 25%);
+  animation: none;
+}
+
+.tributary-path {
+  stroke: hsl(205, 60%, 30%);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.tributary-path.flow-halted {
+  stroke: hsl(210, 15%, 20%);
+}
+
+.muni-node {
+  cursor: pointer;
+  transition: transform var(--transition-normal), filter var(--transition-normal);
+}
+
+.muni-node:hover {
+  transform: scale(1.15);
+  filter: brightness(1.2) drop-shadow(0 0 8px currentColor);
+}
+
+.muni-node-ring {
+  stroke: #ffffff;
+  stroke-width: 1.5;
+  fill: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.muni-node:hover .muni-node-ring,
+.muni-node.selected .muni-node-ring {
+  opacity: 1;
+}
+
+.muni-text {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--text-muted);
+  text-anchor: middle;
+  pointer-events: none;
+  transition: fill var(--transition-fast);
+}
+
+.muni-node:hover .muni-text,
+.muni-node.selected .muni-text {
+  fill: var(--text-main);
+  font-weight: 700;
+}
+
+/* Detail Drawer (Telemetry display below map) */
+.detail-drawer {
+  background-color: rgba(255, 255, 255, 0.01);
+  border-top: 1px solid var(--border-color);
+  padding: 1.25rem;
+}
+
+.drawer-instruction {
+  font-size: 0.8rem;
+  color: var(--text-dark);
+  text-align: center;
+  font-style: italic;
+}
+
+.drawer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 1rem;
+}
+
+.drawer-muni-name {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.drawer-metric {
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+.drawer-label {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.drawer-val {
+  font-family: var(--font-mono);
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   Alert Area
+   ========================================================================== */
+.alerts-panel {
+  flex-grow: 1;
+}
+
+.alert-list {
+  max-height: 250px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badge-error {
+  background-color: var(--danger-glow);
+  color: var(--danger);
+  border: 1px solid hsla(354, 76%, 52%, 0.3);
+}
+
+.empty-alerts {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2rem 0;
+  font-style: italic;
+}
+
+.alert-card {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.01);
+  border-left: 4px solid var(--primary);
+  border-top: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  transition: transform var(--transition-fast);
+}
+
+.alert-card:hover {
+  transform: translateX(4px);
+}
+
+.alert-card.alert-extreme {
+  border-left-color: hsl(290, 80%, 50%);
+  background-color: rgba(290, 80%, 50%, 0.03);
+}
+
+.alert-card.alert-high {
+  border-left-color: var(--danger);
+  background-color: rgba(244, 63, 94, 0.03);
+}
+
+.alert-card.alert-warning {
+  border-left-color: var(--warning);
+  background-color: rgba(234, 179, 8, 0.02);
+}
+
+.alert-icon-wrapper {
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.alert-info {
+  flex-grow: 1;
+}
+
+.alert-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.25rem;
+}
+
+.alert-muni {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.alert-type {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+}
+
+.alert-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.alert-meta {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 1rem;
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--text-dark);
+}
+
+/* ==========================================================================
+   Pipeline Status & Telemetry
+   ========================================================================== */
+.connector-badge {
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background-color: var(--success-glow);
+  color: var(--success);
+  border: 1px solid hsla(142, 76%, 45%, 0.2);
+  transition: all var(--transition-normal);
+}
+
+.connector-badge.broken {
+  background-color: var(--danger-glow);
+  color: var(--danger);
+  border-color: hsla(354, 76%, 52%, 0.2);
+}
+
+.status-metric-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+.metric-card {
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.01);
+  border: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.metric-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+}
+
+.metric-val {
+  font-size: 1.15rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  transition: color var(--transition-normal);
+}
+
+.text-success { color: var(--success); }
+.text-warning { color: var(--warning); }
+.text-danger { color: var(--danger); }
+.text-info { color: var(--primary); }
+
+.sync-progress-bar {
+  height: 3px;
+  background-color: rgba(255, 255, 255, 0.02);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  box-shadow: 0 0 8px var(--primary);
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+.progress-bar-fill.halted {
+  background: var(--text-dark);
+  box-shadow: none;
+  width: 0% !important;
+}
+
+/* ==========================================================================
+   Break Feed Control Panel
+   ========================================================================== */
+.control-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.control-description {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background-color: transparent;
+  transition: all var(--transition-normal);
+}
+
+.btn-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.btn-danger {
+  color: var(--text-main);
+  background-color: var(--danger-glow);
+  border-color: hsla(354, 76%, 52%, 0.3);
+}
+
+.btn-danger:hover {
+  background-color: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 0 15px hsla(354, 76%, 52%, 0.4);
+}
+
+.btn-success {
+  color: var(--text-main);
+  background-color: var(--success-glow);
+  border-color: hsla(142, 76%, 45%, 0.3);
+}
+
+.btn-success:hover {
+  background-color: var(--success);
+  border-color: var(--success);
+  box-shadow: 0 0 15px hsla(142, 76%, 45%, 0.4);
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Console Log Panel
+   ========================================================================== */
+.log-console {
+  background-color: #05070a;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  height: 120px;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.log-line {
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.log-line.system { color: var(--text-muted); }
+.log-line.telemetry { color: var(--success); }
+.log-line.error { color: var(--danger); }
+.log-line.warn { color: var(--warning); }
+.log-line.action { color: var(--primary); }
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+.app-footer {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-dark);
+  padding: 1.5rem 0 0.5rem 0;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ==========================================================================
+   Animations
+   ========================================================================== */
+@keyframes flowAnimation {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.pulse-slow {
+  animation: pulseGrad 4s ease infinite;
+}
+
+@keyframes pulseGrad {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.75;
+  }
+}
+
+.api-offline-banner {
+  background-color: var(--danger);
+  color: var(--text-main);
+  text-align: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  z-index: 9999;
+}
+
+.broadcast-box {
+  margin-top: 1rem;
+  background-color: #06080e;
+  border: 1px solid rgba(244, 63, 94, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.broadcast-box.empty {
+  border-color: var(--border-color);
+  background-color: rgba(255, 255, 255, 0.01);
+  padding: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.broadcast-header {
+  background-color: rgba(244, 63, 94, 0.1);
+  border-bottom: 1px solid rgba(244, 63, 94, 0.2);
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.broadcast-tag {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--danger);
+  letter-spacing: 0.05em;
+}
+
+.broadcast-status {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--danger);
+  text-shadow: 0 0 4px var(--danger);
+}
+
+.broadcast-text {
+  padding: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  line-height: 1.4;
+  margin: 0;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+
