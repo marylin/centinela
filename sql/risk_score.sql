@@ -60,7 +60,10 @@ latest_seismic AS (
     magnitude,
     place,
     ROW_NUMBER() OVER(PARTITION BY municipality ORDER BY time DESC) as rn
-  FROM unified_feeds.seismic
+  FROM seismic_feed.seismic
+  WHERE time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+    AND latitude BETWEEN 2.0 AND 5.0
+    AND longitude BETWEEN -78.0 AND -75.0
 ),
 joined_metrics AS (
   SELECT
