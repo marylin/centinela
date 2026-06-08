@@ -3,3 +3,4 @@ mcp
 git+https://github.com/fivetran/fivetran-mcp
 google-cloud-bigquery
 firebase-admin
+google-cloud-firestore

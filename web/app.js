@@ -37,7 +37,9 @@ let appState = {
   syncProgress: 0,
   syncTimer: null,
   freshnessCounter: 0,
-  lastSyncTime: null
+  lastSyncTime: null,
+  selectedBasin: "rio_cauca",
+  reopenedIncidentId: null
 };
 
 // 3. UI Node Map Coordinates (Supports 3A mock and 3B live Cali/Yumbo/Jamundí)
@@ -110,21 +112,24 @@ function parseISOTime(isoString) {
 // ==========================================================================
 async function fetchTelemetry() {
   try {
-    const [riskRes, statusRes, alertRes, autoHealsRes] = await Promise.all([
-      fetch(`${API_BASE}/risk`),
-      fetch(`${API_BASE}/connector-status`),
-      fetch(`${API_BASE}/alert`),
-      fetch(`${API_BASE}/autonomous-heals`)
+    const basinParam = `?basin=${appState.selectedBasin}`;
+    const [riskRes, statusRes, alertRes, autoHealsRes, incidentsRes] = await Promise.all([
+      fetch(`${API_BASE}/risk${basinParam}`),
+      fetch(`${API_BASE}/connector-status${basinParam}`),
+      fetch(`${API_BASE}/alert${basinParam}`),
+      fetch(`${API_BASE}/autonomous-heals`),
+      fetch(`${API_BASE}/incidents`)
     ]);
 
-    if (!riskRes.ok || !statusRes.ok || !alertRes.ok || !autoHealsRes.ok) {
-      throw new Error(`API error: risk=${riskRes.status}, status=${statusRes.status}, alert=${alertRes.status}, autoHeals=${autoHealsRes.status}`);
+    if (!riskRes.ok || !statusRes.ok || !alertRes.ok || !autoHealsRes.ok || !incidentsRes.ok) {
+      throw new Error(`API error: risk=${riskRes.status}, status=${statusRes.status}, alert=${alertRes.status}, autoHeals=${autoHealsRes.status}, incidents=${incidentsRes.status}`);
     }
 
     const riskData = await riskRes.json();
     const statusData = await statusRes.json();
     const alertData = await alertRes.json();
     const autoHealsData = await autoHealsRes.json();
+    const incidentsData = await incidentsRes.json();
 
     // Clear offline state if previously offline
     if (appState.isOffline) {
@@ -136,6 +141,19 @@ async function fetchTelemetry() {
     database.risk = riskData;
     database.connector = statusData;
     database.alert = alertData;
+
+    // Detect reopened incident state
+    const clearReopenBtn = document.getElementById("clear-reopen-btn");
+    if (alertData.agency_incident && alertData.agency_incident.title.startsWith("REOPENED HISTORICAL INCIDENT")) {
+      const match = alertData.agency_incident.title.match(/inc_\d+/);
+      if (match) {
+        appState.reopenedIncidentId = match[0];
+      }
+      if (clearReopenBtn) clearReopenBtn.classList.remove("hidden");
+    } else {
+      appState.reopenedIncidentId = null;
+      if (clearReopenBtn) clearReopenBtn.classList.add("hidden");
+    }
 
     // Set last local sync timestamp
     if (statusData.last_sync_time && statusData.last_sync_time !== "never") {
@@ -149,6 +167,7 @@ async function fetchTelemetry() {
     renderAlerts();
     updateConnectorUI();
     renderAutonomousHeals(autoHealsData);
+    renderIncidents(incidentsData);
 
   } catch (err) {
     console.error("Fetch telemetry failed:", err);
@@ -589,7 +608,7 @@ window.breakConnector = async (id) => {
   if (appState.isOffline) return;
   initConsoleLog(`Sending interrupt trigger for connector ${id} to backend API...`, "action");
   try {
-    const response = await fetch(`${API_BASE}/break?connector_id=${id}`, { method: "POST" });
+    const response = await fetch(`${API_BASE}/break?connector_id=${id}&basin=${appState.selectedBasin}`, { method: "POST" });
     if (!response.ok) throw new Error(`Status ${response.status}`);
     initConsoleLog(`Outage simulation registered for ${id}.`, "error");
     await fetchTelemetry();
@@ -602,7 +621,7 @@ window.healConnector = async (id) => {
   if (appState.isOffline) return;
   initConsoleLog(`Sending heal request for connector ${id} to backend API...`, "action");
   try {
-    const response = await fetch(`${API_BASE}/heal?connector_id=${id}`, { method: "POST" });
+    const response = await fetch(`${API_BASE}/heal?connector_id=${id}&basin=${appState.selectedBasin}`, { method: "POST" });
     if (!response.ok) throw new Error(`Status ${response.status}`);
     const data = await response.json();
     if (data.status === "Success") {
@@ -617,7 +636,34 @@ window.healConnector = async (id) => {
 };
 
 function setupEventHandlers() {
-  // Global DOM handlers are bound dynamically in updateConnectorUI
+  // Basin selector handler
+  const basinSelect = document.getElementById("basin-select");
+  if (basinSelect) {
+    basinSelect.addEventListener("change", (e) => {
+      appState.selectedBasin = e.target.value;
+      initConsoleLog(`Switched catchment basin scope to: ${appState.selectedBasin}`, "action");
+      fetchTelemetry();
+    });
+  }
+
+  // Clear reopened incident handler
+  const clearReopenBtn = document.getElementById("clear-reopen-btn");
+  if (clearReopenBtn) {
+    clearReopenBtn.addEventListener("click", async () => {
+      initConsoleLog("Returning to live telemetry stream...", "action");
+      try {
+        const res = await fetch(`${API_BASE}/incidents/clear-reopen`, { method: "POST" });
+        if (res.ok) {
+          appState.reopenedIncidentId = null;
+          clearReopenBtn.classList.add("hidden");
+          initConsoleLog("Returned to live telemetry mode.", "system");
+          await fetchTelemetry();
+        }
+      } catch (err) {
+        initConsoleLog(`Error clearing reopened incident: ${err.message}`, "error");
+      }
+    });
+  }
 }
 
 // ==========================================================================
@@ -740,3 +786,50 @@ function renderAutonomousHeals(heals) {
     </div>`;
   }).join("");
 }
+
+function renderIncidents(incidents) {
+  const container = document.getElementById("incidents-history-container");
+  if (!container) return;
+
+  if (!incidents || incidents.length === 0) {
+    container.innerHTML = `<div class="log-line system" style="color: var(--text-muted);">No historical incidents recorded.</div>`;
+    return;
+  }
+
+  const sorted = [...incidents].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  container.innerHTML = sorted.map(inc => {
+    const timeStr = parseISOTime(inc.timestamp);
+    const isReopened = appState.reopenedIncidentId === inc.id;
+    const typeLabel = inc.type.toUpperCase();
+    const borderLeftColor = inc.type === "alert" ? "#ef4444" : inc.type === "heal" ? "#22c55e" : "#eab308";
+    
+    return `<div class="log-line" style="border-left: 2px solid ${borderLeftColor}; padding: 0.35rem 0.5rem; margin-bottom: 0.25rem; display: flex; flex-direction: column; gap: 0.25rem; background: ${isReopened ? 'rgba(255,255,255,0.02)' : 'transparent'};">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 0.75rem; color: var(--text-muted);">[${timeStr}] <strong>${typeLabel}</strong> (${inc.basin})</span>
+        ${isReopened 
+          ? `<span style="font-size: 0.65rem; color: #ef4444; font-weight: bold;">REOPENED</span>` 
+          : `<button onclick="window.reopenIncident('${inc.id}')" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-dark); font-size: 0.6rem; padding: 0.15rem 0.35rem; border-radius: 3px; cursor: pointer;">Reopen</button>`
+        }
+      </div>
+      <div style="font-size: 0.75rem; color: var(--text-dark); line-height: 1.2;">${inc.details}</div>
+    </div>`;
+  }).join("");
+}
+
+window.reopenIncident = async (id) => {
+  if (appState.isOffline) return;
+  initConsoleLog(`Reopening historical incident ${id}...`, "action");
+  try {
+    const res = await fetch(`${API_BASE}/incidents/${id}/reopen`, { method: "POST" });
+    if (res.ok) {
+      appState.reopenedIncidentId = id;
+      initConsoleLog(`Incident ${id} reopened. Telemetry view locked to historical snapshot.`, "warn");
+      await fetchTelemetry();
+    } else {
+      initConsoleLog(`Failed to reopen incident: ${res.statusText}`, "warn");
+    }
+  } catch (err) {
+    initConsoleLog(`Error reopening incident: ${err.message}`, "error");
+  }
+};

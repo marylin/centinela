@@ -172,6 +172,9 @@ global.fetch = async (url, options) => {
   if (url.includes('/autonomous-heals')) {
     return { ok: true, json: async () => [] };
   }
+  if (url.includes('/incidents')) {
+    return { ok: true, json: async () => [] };
+  }
   return {
     ok: true,
     json: async () => ({ status: 'Success' })
@@ -373,6 +376,63 @@ setTimeout(async () => {
         sys.exit(1)
     print("Success: Autonomous self-heal verified.")
 
+    # 11. Verify Persistent Memory & Multi-Basin
+    print("\nStep 10: Verifying Persistent Memory, Incident Log & Multi-Basin...")
+    # Clear incidents
+    requests.post(f"{server_url}/test/clear-incidents")
+    
+    # Break a connector to trigger an incident log
+    requests.post(f"{server_url}/break", params={"connector_id": "plausibly_illustrate", "basin": "rio_cauca"})
+    
+    # Check incidents log has been updated
+    incidents = requests.get(f"{server_url}/incidents").json()
+    if len(incidents) < 1:
+        print(f"ERROR: Expected at least 1 incident log in history, got {len(incidents)}")
+        sys.exit(1)
+        
+    incident_id = incidents[0]["id"]
+    print(f"Success: Incident logged with ID: {incident_id}")
+    
+    # Reopen incident
+    reopen_res = requests.post(f"{server_url}/incidents/{incident_id}/reopen")
+    if reopen_res.status_code != 200:
+        print(f"ERROR: Failed to reopen incident {incident_id}: {reopen_res.text}")
+        sys.exit(1)
+        
+    # Verify risk override is active
+    risk_override = requests.get(f"{server_url}/risk").json()
+    if not any(r["municipality"] == "Cali" for r in risk_override):
+        print(f"ERROR: Override risk data does not contain expected municipalities: {risk_override}")
+        sys.exit(1)
+        
+    # Verify alert override is active
+    alert_override = requests.get(f"{server_url}/alert").json()
+    if "REOPENED HISTORICAL INCIDENT" not in alert_override["agency_incident"]["title"]:
+        print(f"ERROR: Reopened alert title did not match override: {alert_override['agency_incident']['title']}")
+        sys.exit(1)
+    print("Success: Incident reopen overrides verified.")
+    
+    # Clear reopen override
+    clear_res = requests.post(f"{server_url}/incidents/clear-reopen")
+    if clear_res.status_code != 200:
+        print(f"ERROR: Failed to clear reopen override: {clear_res.text}")
+        sys.exit(1)
+        
+    # Verify risk returned to live
+    risk_live = requests.get(f"{server_url}/risk").json()
+    alert_live = requests.get(f"{server_url}/alert").json()
+    if "REOPENED" in alert_live["agency_incident"]["title"]:
+        print("ERROR: Override alert title still active after clear-reopen!")
+        sys.exit(1)
+    print("Success: Returned to live view successfully.")
+    
+    # Check second basin (Rio Magdalena) mock data
+    magdalena_risk = requests.get(f"{server_url}/risk", params={"basin": "rio_magdalena"}).json()
+    if not any(r["municipality"] == "Neiva" for r in magdalena_risk):
+        print(f"ERROR: Rio Magdalena risk data did not return expected municipalities: {magdalena_risk}")
+        sys.exit(1)
+    print("Success: Multi-basin (Rio Magdalena) risk score checked.")
+
 def run_regression():
     print("=====================================================================")
     print("                    STARTING REGRESSION SUITE                        ")
@@ -416,10 +476,10 @@ def run_regression():
     t = threading.Thread(target=thread_target)
     t.daemon = True
     t.start()
-    t.join(timeout=14.0)
+    t.join(timeout=25.0)
 
     if t.is_alive():
-        print("ERROR: Test suite timed out after 14 seconds (hard overall timeout).")
+        print("ERROR: Test suite timed out after 25 seconds (hard overall timeout).")
         success = False
 
     if server_process:

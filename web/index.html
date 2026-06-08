@@ -31,6 +31,13 @@
         </div>
       </div>
       
+      <div class="basin-selector-wrapper" style="margin-left: auto; margin-right: 2rem;">
+        <select id="basin-select" style="background: #0d131f; border: 1px solid var(--border-color); color: var(--text-dark); padding: 0.4rem 1rem; border-radius: 6px; font-family: inherit; font-size: 0.85rem; font-weight: 500; cursor: pointer; outline: none;">
+          <option value="rio_cauca">Rio Cauca (Colombia)</option>
+          <option value="rio_magdalena">Rio Magdalena (Colombia)</option>
+        </select>
+      </div>
+
       <div class="header-meta">
         <div class="system-time">
           <span class="meta-label">System Time</span>
@@ -132,6 +139,17 @@
           </div>
           <div class="card-body log-console" id="auto-heals-container" style="max-height: 150px; overflow-y: auto;">
             <div class="log-line system" style="color: var(--text-muted);">No autonomous self-heals logged.</div>
+          </div>
+        </section>
+        
+        <!-- Incident History Panel -->
+        <section class="card incidents-panel" aria-labelledby="incidents-history-title">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h2 id="incidents-history-title">Incident History</h2>
+            <button id="clear-reopen-btn" class="btn btn-sm hidden" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); font-size: 0.65rem; padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer;">Return to Live</button>
+          </div>
+          <div class="card-body log-console" id="incidents-history-container" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem;">
+            <div class="log-line system" style="color: var(--text-muted);">No historical incidents recorded.</div>
           </div>
         </section>
         
