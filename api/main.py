@@ -31,6 +31,19 @@ class AlertNarratives(BaseModel):
     summary: str
     broadcast: str
 
+CONNECTORS = [
+    {
+        "id": "plausibly_illustrate",
+        "name": "River Gauge (Google Sheets)",
+        "type": "sheets"
+    },
+    {
+        "id": "garment_dealer",
+        "name": "Soil Saturation (GCS)",
+        "type": "gcs"
+    }
+]
+
 CONNECTOR_ID = "plausibly_illustrate"
 
 @app.get("/risk")
@@ -138,42 +151,62 @@ def get_alert():
 
 @app.get("/connector-status")
 async def get_connector_status():
-    """Reads status of Fivetran connector, returns { status, last_sync_time, freshness }."""
+    """Reads status of all configured Fivetran connectors, returning the primary at root and full list in 'connectors'."""
     toolset = get_mcp_toolset()
     try:
-        async def call_details(session):
-            return await session.call_tool(
-                name="get_connection_details",
-                arguments={
-                    "schema_file": "open-api-definitions/connections/connection_details.json",
-                    "connection_id": CONNECTOR_ID
-                }
-            )
-        result = await toolset._execute_with_session(call_details, "Failed to get connection details")
-        raw_text = result.content[0].text
-        if "Error" in raw_text or "Fivetran API error" in raw_text:
-            raise HTTPException(status_code=500, detail=raw_text)
+        connector_results = []
+        for conn in CONNECTORS:
+            conn_id = conn["id"]
+            async def call_details(session):
+                return await session.call_tool(
+                    name="get_connection_details",
+                    arguments={
+                        "schema_file": "open-api-definitions/connections/connection_details.json",
+                        "connection_id": conn_id
+                    }
+                )
+            result = await toolset._execute_with_session(call_details, f"Failed to get connection details for {conn_id}")
+            raw_text = result.content[0].text
+            if "Error" in raw_text or "Fivetran API error" in raw_text:
+                connector_results.append({
+                    "connector_id": conn_id,
+                    "name": conn["name"],
+                    "status": "error",
+                    "last_sync_time": "never",
+                    "freshness": "UNKNOWN"
+                })
+                continue
+                
+            data = json.loads(raw_text).get("data", {})
+            paused = data.get("paused", False)
+            succeeded_at_str = data.get("succeeded_at")
             
-        data = json.loads(raw_text).get("data", {})
-        paused = data.get("paused", False)
-        succeeded_at_str = data.get("succeeded_at")
-        
-        status_val = "paused" if paused else "active"
-        
-        # Calculate freshness
-        freshness = "UNKNOWN"
-        if succeeded_at_str:
-            if succeeded_at_str.endswith("Z"):
-                succeeded_at_str = succeeded_at_str[:-1]
-            succeeded_at = datetime.fromisoformat(succeeded_at_str).replace(tzinfo=timezone.utc)
-            current_time = datetime.now(timezone.utc)
-            diff_minutes = (current_time - succeeded_at).total_seconds() / 60.0
-            freshness = "FRESH" if diff_minutes < 60.0 else "STALE"
+            status_val = "paused" if paused else "active"
             
+            # Calculate freshness
+            freshness = "UNKNOWN"
+            if succeeded_at_str:
+                if succeeded_at_str.endswith("Z"):
+                    succeeded_at_str = succeeded_at_str[:-1]
+                succeeded_at = datetime.fromisoformat(succeeded_at_str).replace(tzinfo=timezone.utc)
+                current_time = datetime.now(timezone.utc)
+                diff_minutes = (current_time - succeeded_at).total_seconds() / 60.0
+                freshness = "FRESH" if diff_minutes < 60.0 else "STALE"
+                
+            connector_results.append({
+                "connector_id": conn_id,
+                "name": conn["name"],
+                "status": status_val,
+                "last_sync_time": data.get("succeeded_at") or "never",
+                "freshness": freshness
+            })
+            
+        primary = connector_results[0]
         return {
-            "status": status_val,
-            "last_sync_time": data.get("succeeded_at") or "never",
-            "freshness": freshness
+            "status": primary["status"],
+            "last_sync_time": primary["last_sync_time"],
+            "freshness": primary["freshness"],
+            "connectors": connector_results
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -181,30 +214,30 @@ async def get_connector_status():
         await toolset.close()
 
 @app.post("/heal")
-async def heal():
-    """Runs the existing detect-to-heal flow, returns the result."""
+async def heal(connector_id: str = "plausibly_illustrate"):
+    """Runs the existing detect-to-heal flow for a specific connector."""
     try:
         # Run heal with 5 minute threshold
-        res = await check_and_heal_connector(CONNECTOR_ID, 5.0)
+        res = await check_and_heal_connector(connector_id, 5.0)
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/break")
-async def break_conn():
-    """Pauses the connector to simulate an outage for the demo."""
+async def break_conn(connector_id: str = "plausibly_illustrate"):
+    """Pauses a specific connector to simulate an outage."""
     toolset = get_mcp_toolset()
     pipeline_state = {"degraded": False, "error": None}
     try:
         modify_args = {
             "schema_file": "open-api-definitions/connections/modify_connection.json",
-            "connection_id": CONNECTOR_ID,
+            "connection_id": connector_id,
             "request_body": json.dumps({"paused": True})
         }
         res_text = await call_with_retry(toolset, "modify_connection", modify_args, pipeline_state)
         if pipeline_state["degraded"]:
             raise HTTPException(status_code=500, detail=pipeline_state["error"])
-        return {"status": "Success", "message": "Connector paused successfully"}
+        return {"status": "Success", "message": f"Connector {connector_id} paused successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:

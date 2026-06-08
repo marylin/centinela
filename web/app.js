@@ -144,32 +144,23 @@ function setBackendOfflineState(isOffline) {
   const banner = document.getElementById("api-offline-banner");
   const systemLed = document.getElementById("system-status-led");
   const systemText = document.getElementById("system-status-text");
-  const breakBtn = document.getElementById("break-feed-btn");
-  const restoreBtn = document.getElementById("restore-feed-btn");
   
   if (isOffline) {
     banner.classList.remove("hidden");
     systemLed.className = "led-dot warning-mode";
     systemText.textContent = "API OFFLINE";
     
-    // Disable buttons
-    breakBtn.disabled = true;
-    restoreBtn.disabled = true;
-    
-    // Reset status fields
-    document.getElementById("connector-status-badge").textContent = "OFFLINE";
-    document.getElementById("connector-status-badge").className = "connector-badge broken";
-    document.getElementById("metric-conn-status").textContent = "API Unreachable";
-    document.getElementById("metric-conn-status").className = "metric-val text-danger";
-    document.getElementById("metric-freshness").textContent = "STALE";
+    // Clear connectors container and show offline
+    const container = document.getElementById("pipeline-connectors-container");
+    if (container) {
+      container.innerHTML = `<div class="empty-alerts">API Unreachable</div>`;
+    }
     
     // Set river flow representation to halted
     const mainRiver = document.getElementById("main-river");
     if (mainRiver) mainRiver.className.baseVal = "river-path flow-halted";
   } else {
     banner.classList.add("hidden");
-    breakBtn.disabled = false;
-    restoreBtn.disabled = false;
   }
 }
 
@@ -300,7 +291,9 @@ function updateMapFlowVisuals() {
   
   if (!mainRiver) return;
   
-  if (appState.isOffline || database.connector.status === "paused") {
+  const anyPaused = database.connector.connectors?.some(c => c.status === "paused") || database.connector.status === "paused";
+  
+  if (appState.isOffline || anyPaused) {
     mainRiver.className.baseVal = "river-path flow-halted";
     if (trib1) trib1.className.baseVal = "tributary-path flow-halted";
     if (trib2) trib2.className.baseVal = "tributary-path flow-halted";
@@ -448,53 +441,71 @@ function renderAlerts() {
 // Pipeline & Connection Management UI Updates
 // ==========================================================================
 function updateConnectorUI() {
-  const statusBadge = document.getElementById("connector-status-badge");
-  const connStatusText = document.getElementById("metric-conn-status");
-  const lastSyncText = document.getElementById("metric-last-sync");
+  const container = document.getElementById("pipeline-connectors-container");
   const systemLed = document.getElementById("system-status-led");
   const systemStatusText = document.getElementById("system-status-text");
-  const breakBtn = document.getElementById("break-feed-btn");
-  const restoreBtn = document.getElementById("restore-feed-btn");
   const progressBar = document.getElementById("sync-progress");
   
-  if (appState.isOffline) return;
+  if (appState.isOffline || !container) return;
 
-  const isPaused = database.connector.status === "paused";
-  
-  lastSyncText.textContent = parseISOTime(database.connector.last_sync_time);
-  
-  if (isPaused) {
-    statusBadge.textContent = "PAUSED / OUTAGE";
-    statusBadge.className = "connector-badge broken";
-    
-    connStatusText.textContent = "Degraded State";
-    connStatusText.className = "metric-val text-danger";
-    
+  const connectors = database.connector.connectors || [];
+  if (connectors.length === 0) {
+    container.innerHTML = `<div class="empty-alerts">No active connectors.</div>`;
+    return;
+  }
+
+  const anyPaused = connectors.some(c => c.status === "paused");
+  if (anyPaused) {
     systemLed.className = "led-dot danger-mode";
     systemStatusText.textContent = "TELEMETRY DEGRADED";
-    
-    document.getElementById("metric-freshness").textContent = "STALE";
     progressBar.classList.add("halted");
-    
-    // Toggle action buttons
-    breakBtn.classList.add("hidden");
-    restoreBtn.classList.remove("hidden");
   } else {
-    statusBadge.textContent = "ACTIVE";
-    statusBadge.className = "connector-badge";
-    
-    connStatusText.textContent = "Healthy / Synced";
-    connStatusText.className = "metric-val text-success";
-    
     systemLed.className = "led-dot";
     systemStatusText.textContent = "SYSTEM ONLINE";
-    
     progressBar.classList.remove("halted");
-    
-    // Toggle action buttons
-    restoreBtn.classList.add("hidden");
-    breakBtn.classList.remove("hidden");
   }
+
+  container.innerHTML = "";
+  connectors.forEach(conn => {
+    const card = document.createElement("div");
+    card.className = "connector-card";
+    card.style.border = "1px solid var(--border-color)";
+    card.style.borderRadius = "8px";
+    card.style.padding = "0.75rem";
+    card.style.background = "rgba(255, 255, 255, 0.01)";
+    card.style.transition = "border-color var(--transition-normal)";
+    
+    const isPaused = conn.status === "paused";
+    const badgeClass = isPaused ? "connector-badge broken" : "connector-badge";
+    const badgeText = isPaused ? "PAUSED" : "ACTIVE";
+    const freshnessColor = conn.freshness === "FRESH" ? "var(--success)" : "var(--danger)";
+    
+    card.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-main);">${conn.name}</span>
+        <span class="${badgeClass}">${badgeText}</span>
+      </div>
+      <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 0.5rem; font-size: 0.7rem; margin-bottom: 0.75rem;">
+        <div>
+          <span style="color: var(--text-dark); display: block; font-size: 0.6rem; text-transform: uppercase;">Last Sync</span>
+          <span style="font-weight: 500; font-family: var(--font-mono);">${parseISOTime(conn.last_sync_time)}</span>
+        </div>
+        <div>
+          <span style="color: var(--text-dark); display: block; font-size: 0.6rem; text-transform: uppercase;">Freshness</span>
+          <span style="font-weight: 600; color: ${freshnessColor};">${conn.freshness}</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-danger ${isPaused ? 'hidden' : ''}" style="flex: 1; padding: 0.35rem 0.5rem; font-size: 0.7rem; border-radius: 4px;" onclick="window.breakConnector('${conn.connector_id}')">
+          Interrupt
+        </button>
+        <button class="btn btn-success ${!isPaused ? 'hidden' : ''}" style="flex: 1; padding: 0.35rem 0.5rem; font-size: 0.7rem; border-radius: 4px;" onclick="window.healConnector('${conn.connector_id}')">
+          Reconnect
+        </button>
+      </div>
+    `;
+    container.appendChild(card);
+  });
 }
 
 function startSyncCycle() {
@@ -507,7 +518,7 @@ function startSyncCycle() {
   if (appState.syncTimer) clearInterval(appState.syncTimer);
   
   appState.syncTimer = setInterval(() => {
-    if (appState.isOffline || database.connector.status === "paused") {
+    if (appState.isOffline) {
       progressBar.style.width = "0%";
       return;
     }
@@ -526,44 +537,39 @@ function startSyncCycle() {
 // ==========================================================================
 // Control Actions & Handlers
 // ==========================================================================
+window.breakConnector = async (id) => {
+  if (appState.isOffline) return;
+  initConsoleLog(`Sending interrupt trigger for connector ${id} to backend API...`, "action");
+  try {
+    const response = await fetch(`${API_BASE}/break?connector_id=${id}`, { method: "POST" });
+    if (!response.ok) throw new Error(`Status ${response.status}`);
+    initConsoleLog(`Outage simulation registered for ${id}.`, "error");
+    await fetchTelemetry();
+  } catch (err) {
+    initConsoleLog(`Outage trigger failed: ${err.message}`, "error");
+  }
+};
+
+window.healConnector = async (id) => {
+  if (appState.isOffline) return;
+  initConsoleLog(`Sending heal request for connector ${id} to backend API...`, "action");
+  try {
+    const response = await fetch(`${API_BASE}/heal?connector_id=${id}`, { method: "POST" });
+    if (!response.ok) throw new Error(`Status ${response.status}`);
+    const data = await response.json();
+    if (data.status === "Success") {
+      initConsoleLog(`Heal signal received for ${id}. Synchronization in progress...`, "action");
+    } else {
+      initConsoleLog(`Heal error: ${data.error || 'unspecified error'}`, "warn");
+    }
+    await fetchTelemetry();
+  } catch (err) {
+    initConsoleLog(`Heal call failed: ${err.message}`, "error");
+  }
+};
+
 function setupEventHandlers() {
-  const breakBtn = document.getElementById("break-feed-btn");
-  const restoreBtn = document.getElementById("restore-feed-btn");
-  
-  breakBtn.addEventListener("click", async () => {
-    if (appState.isOffline) return;
-    initConsoleLog("Sending interrupt trigger to backend API...", "action");
-    
-    try {
-      const response = await fetch(`${API_BASE}/break`, { method: "POST" });
-      if (!response.ok) throw new Error(`Status ${response.status}`);
-      
-      initConsoleLog("Outage simulation registered on backend.", "error");
-      await fetchTelemetry();
-    } catch (err) {
-      initConsoleLog(`Outage trigger failed: ${err.message}`, "error");
-    }
-  });
-  
-  restoreBtn.addEventListener("click", async () => {
-    if (appState.isOffline) return;
-    initConsoleLog("Sending heal request to backend API...", "action");
-    
-    try {
-      const response = await fetch(`${API_BASE}/heal`, { method: "POST" });
-      if (!response.ok) throw new Error(`Status ${response.status}`);
-      
-      const data = await response.json();
-      if (data.status === "Success") {
-        initConsoleLog("Heal signal received. Synchronization in progress...", "action");
-      } else {
-        initConsoleLog(`Heal error: ${data.error || 'unspecified error'}`, "warn");
-      }
-      await fetchTelemetry();
-    } catch (err) {
-      initConsoleLog(`Heal call failed: ${err.message}`, "error");
-    }
-  });
+  // Global DOM handlers are bound dynamically in updateConnectorUI
 }
 
 // ==========================================================================
