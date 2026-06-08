@@ -1,0 +1,7 @@
+[
+  {"name": "timestamp", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "municipality", "type": "STRING", "mode": "REQUIRED"},
+  {"name": "slope_angle_deg", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "susceptibility_index", "type": "FLOAT", "mode": "NULLABLE"},
+  {"name": "risk_level", "type": "STRING", "mode": "NULLABLE"}
+]

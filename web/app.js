@@ -365,6 +365,11 @@ function displayMuniDetails(muni) {
           ${muni.risk_score.toFixed(2)}
         </span>
       </div>
+
+      <div class="drawer-metric">
+        <span class="drawer-label">Dominant Hazard</span>
+        <span class="drawer-val" style="color: var(--warning); text-transform: uppercase;">${muni.dominant_hazard || 'FLOOD'}</span>
+      </div>
       
       <div class="drawer-metric">
         <span class="drawer-label">Rainfall (24h)</span>
@@ -382,8 +387,28 @@ function displayMuniDetails(muni) {
       </div>
 
       <div class="drawer-metric">
-        <span class="drawer-label">Alert Threshold</span>
-        <span class="drawer-val" style="color: var(--text-dark)">${muni.threshold.toFixed(2)} m</span>
+        <span class="drawer-label">Slope / Susc.</span>
+        <span class="drawer-val">${muni.slope_angle_deg !== undefined ? muni.slope_angle_deg.toFixed(0) + '°' : '--'} / ${muni.susceptibility_index !== undefined ? (muni.susceptibility_index * 100).toFixed(0) + '%' : '--'}</span>
+      </div>
+
+      <div class="drawer-metric">
+        <span class="drawer-label">Earthquake</span>
+        <span class="drawer-val">${muni.earthquake_magnitude ? muni.earthquake_magnitude.toFixed(1) + ' Mw' : 'None'}</span>
+      </div>
+
+      <div class="drawer-metric">
+        <span class="drawer-label">Flood Score</span>
+        <span class="drawer-val" style="color: var(--text-dark)">${muni.flood_score !== undefined ? muni.flood_score.toFixed(2) : '--'}</span>
+      </div>
+
+      <div class="drawer-metric">
+        <span class="drawer-label">Landslide Score</span>
+        <span class="drawer-val" style="color: var(--text-dark)">${muni.landslide_score !== undefined ? muni.landslide_score.toFixed(2) : '--'}</span>
+      </div>
+
+      <div class="drawer-metric">
+        <span class="drawer-label">Seismic Score</span>
+        <span class="drawer-val" style="color: var(--text-dark)">${muni.seismic_score !== undefined ? muni.seismic_score.toFixed(2) : '--'}</span>
       </div>
     </div>
   `;
@@ -412,8 +437,9 @@ function renderAlerts() {
     return;
   }
   
-  const affectedList = alertData.agency_incident.affected_municipalities;
-  badge.textContent = `${affectedList.length} Alert${affectedList.length === 1 ? '' : 's'}`;
+  const affectedList = alertData.graded_alert ? alertData.graded_alert.filter(a => a.severity === 'HIGH' || a.severity === 'EXTREME').map(a => `${a.municipality} (${a.dominant_hazard})`) : alertData.agency_incident.affected_municipalities;
+  const rawAffectedCount = alertData.agency_incident.affected_municipalities.length;
+  badge.textContent = `${rawAffectedCount} Alert${rawAffectedCount === 1 ? '' : 's'}`;
   badge.className = "badge badge-error";
   container.innerHTML = "";
   

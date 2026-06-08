@@ -73,6 +73,11 @@ CONNECTORS = [
         "id": "garment_dealer",
         "name": "Soil Saturation (GCS)",
         "type": "gcs"
+    },
+    {
+        "id": "whole_glorify",
+        "name": "USGS Seismic Feed (Connector SDK)",
+        "type": "connector_sdk"
     }
 ]
 
@@ -86,27 +91,48 @@ def get_risk():
             return [
                 {
                     "municipality": "Cali",
-                    "risk_score": 0.85,
-                    "rainfall_mm": 25.0,
-                    "river_level_m": 4.2,
-                    "soil_saturation": 0.95,
-                    "threshold": 3.5
+                    "risk_score": 0.42,
+                    "rainfall_mm": 4.5,
+                    "river_level_m": 4.34,
+                    "soil_saturation": 0.92,
+                    "threshold": 3.5,
+                    "slope_angle_deg": 12.0,
+                    "susceptibility_index": 0.25,
+                    "earthquake_magnitude": None,
+                    "flood_score": 0.72,
+                    "landslide_score": 0.45,
+                    "seismic_score": 0.0,
+                    "dominant_hazard": "FLOOD"
                 },
                 {
                     "municipality": "Yumbo",
-                    "risk_score": 0.55,
-                    "rainfall_mm": 20.0,
-                    "river_level_m": 3.1,
-                    "soil_saturation": 0.88,
-                    "threshold": 3.5
+                    "risk_score": 0.58,
+                    "rainfall_mm": 3.0,
+                    "river_level_m": 4.34,
+                    "soil_saturation": 0.85,
+                    "threshold": 3.5,
+                    "slope_angle_deg": 28.0,
+                    "susceptibility_index": 0.65,
+                    "earthquake_magnitude": 2.1,
+                    "flood_score": 0.68,
+                    "landslide_score": 0.71,
+                    "seismic_score": 0.3,
+                    "dominant_hazard": "LANDSLIDE"
                 },
                 {
                     "municipality": "Jamundí",
-                    "risk_score": 0.92,
-                    "rainfall_mm": 30.0,
-                    "river_level_m": 4.8,
-                    "soil_saturation": 0.98,
-                    "threshold": 4.0
+                    "risk_score": 0.76,
+                    "rainfall_mm": 5.0,
+                    "river_level_m": 4.34,
+                    "soil_saturation": 0.95,
+                    "threshold": 4.0,
+                    "slope_angle_deg": 38.0,
+                    "susceptibility_index": 0.88,
+                    "earthquake_magnitude": 4.5,
+                    "flood_score": 0.73,
+                    "landslide_score": 0.9,
+                    "seismic_score": 0.64,
+                    "dominant_hazard": "LANDSLIDE"
                 }
             ]
         else:
@@ -117,7 +143,14 @@ def get_risk():
                     "rainfall_mm": 0.0,
                     "river_level_m": 1.0,
                     "soil_saturation": 0.1,
-                    "threshold": 3.5
+                    "threshold": 3.5,
+                    "slope_angle_deg": 12.0,
+                    "susceptibility_index": 0.25,
+                    "earthquake_magnitude": None,
+                    "flood_score": 0.05,
+                    "landslide_score": 0.05,
+                    "seismic_score": 0.0,
+                    "dominant_hazard": "FLOOD"
                 },
                 {
                     "municipality": "Yumbo",
@@ -125,7 +158,14 @@ def get_risk():
                     "rainfall_mm": 0.0,
                     "river_level_m": 0.8,
                     "soil_saturation": 0.1,
-                    "threshold": 3.5
+                    "threshold": 3.5,
+                    "slope_angle_deg": 28.0,
+                    "susceptibility_index": 0.65,
+                    "earthquake_magnitude": None,
+                    "flood_score": 0.02,
+                    "landslide_score": 0.02,
+                    "seismic_score": 0.0,
+                    "dominant_hazard": "FLOOD"
                 },
                 {
                     "municipality": "Jamundí",
@@ -133,7 +173,14 @@ def get_risk():
                     "rainfall_mm": 0.0,
                     "river_level_m": 1.2,
                     "soil_saturation": 0.12,
-                    "threshold": 4.0
+                    "threshold": 4.0,
+                    "slope_angle_deg": 38.0,
+                    "susceptibility_index": 0.88,
+                    "earthquake_magnitude": None,
+                    "flood_score": 0.08,
+                    "landslide_score": 0.08,
+                    "seismic_score": 0.0,
+                    "dominant_hazard": "FLOOD"
                 }
             ]
     try:
@@ -158,7 +205,14 @@ def get_risk():
                 "rainfall_mm": float(row_dict.get("precipitation_mm", 0.0) or 0.0),
                 "river_level_m": float(row_dict.get("river_level_m", 0.0) or 0.0),
                 "soil_saturation": float(row_dict.get("saturation_index", 0.0) or 0.0),
-                "threshold": float(row_dict.get("alert_threshold_m", 0.0) or 0.0)
+                "threshold": float(row_dict.get("alert_threshold_m", 0.0) or 0.0),
+                "slope_angle_deg": float(row_dict.get("slope_angle_deg", 0.0) or 0.0),
+                "susceptibility_index": float(row_dict.get("susceptibility_index", 0.0) or 0.0),
+                "earthquake_magnitude": float(row_dict.get("earthquake_magnitude", 0.0)) if row_dict.get("earthquake_magnitude") is not None else None,
+                "flood_score": float(row_dict.get("flood_score", 0.0) or 0.0),
+                "landslide_score": float(row_dict.get("landslide_score", 0.0) or 0.0),
+                "seismic_score": float(row_dict.get("seismic_score", 0.0) or 0.0),
+                "dominant_hazard": row_dict.get("dominant_hazard", "FLOOD")
             })
         return results
     except Exception as e:
@@ -258,11 +312,11 @@ def check_and_trigger_push_sync(risk_data):
                     "for the Rio Cauca basin (do not invent or change any numbers or facts):\n\n"
                     f"{json.dumps(risk_data, indent=2)}\n\n"
                     "Please generate:\n"
-                    "1. 'summary': A concise, technical summary of the compound flood risk for the agency incident report. "
+                    "1. 'summary': A concise, technical summary of the compound multi-hazard risk (flooding, landslides, and seismic activity) for the agency incident report. "
                     "Describe the overall basin situation and affected municipalities.\n"
                     "2. 'broadcast': A plain-language, urgent warning message to be broadcast to local residents. Mention "
-                    "the specific municipalities, their risk severities, and the driving parameters (precipitation/rainfall, "
-                    "river levels, soil saturation index) using the exact numbers from the data. Keep it highly grounded."
+                    "the specific municipalities, their risk severities, dominant hazards, and the driving parameters (precipitation/rainfall, "
+                    "river levels, soil saturation index, slope angles, susceptibility, earthquake magnitude) using the exact numbers from the data. Keep it highly grounded."
                 )
                 
                 response = client.models.generate_content(
@@ -390,7 +444,8 @@ def get_alert():
             graded_alert.append({
                 "municipality": muni,
                 "risk_score": score,
-                "severity": severity
+                "severity": severity,
+                "dominant_hazard": muni_risk.get("dominant_hazard", "FLOOD")
             })
             
             if severity in ["HIGH", "EXTREME"]:
@@ -399,7 +454,7 @@ def get_alert():
         # Call Gemini to generate the prose summary and resident broadcast warning
         if TESTING:
             narratives = {
-                "summary": "Mock technical summary describing Rio Cauca basin compound flood risk.",
+                "summary": "Mock technical summary describing Rio Cauca basin compound multi-hazard risk.",
                 "broadcast": "Mock resident warning broadcast message mentioning Cali (85%), Jamundí (92%)."
             }
         else:
@@ -409,11 +464,11 @@ def get_alert():
                 "for the Rio Cauca basin (do not invent or change any numbers or facts):\n\n"
                 f"{json.dumps(risk_data, indent=2)}\n\n"
                 "Please generate:\n"
-                "1. 'summary': A concise, technical summary of the compound flood risk for the agency incident report. "
+                "1. 'summary': A concise, technical summary of the compound multi-hazard risk (flooding, landslides, and seismic activity) for the agency incident report. "
                 "Describe the overall basin situation and affected municipalities.\n"
                 "2. 'broadcast': A plain-language, urgent warning message to be broadcast to local residents. Mention "
-                "the specific municipalities, their risk severities, and the driving parameters (precipitation/rainfall, "
-                "river levels, soil saturation index) using the exact numbers from the data. Keep it highly grounded."
+                "the specific municipalities, their risk severities, dominant hazards, and the driving parameters (precipitation/rainfall, "
+                "river levels, soil saturation index, slope angles, susceptibility, earthquake magnitude) using the exact numbers from the data. Keep it highly grounded."
             )
             
             response = client.models.generate_content(
@@ -427,7 +482,7 @@ def get_alert():
             
             narratives = json.loads(response.text)
         
-        title = "Rio Cauca Basin Compound Flood Risk Alert"
+        title = "Rio Cauca Basin Compound Multi-Hazard Alert"
         resident_broadcast_text = narratives.get("broadcast", "")
         
         alert_response = {

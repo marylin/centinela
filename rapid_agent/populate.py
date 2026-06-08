@@ -21,6 +21,8 @@ def populate_all():
     run_bq_query("DELETE FROM unified_feeds.rainfall WHERE true")
     run_bq_query("DELETE FROM unified_feeds.soil_saturation WHERE true")
     run_bq_query("DELETE FROM unified_feeds.municipality_population WHERE true")
+    run_bq_query("DELETE FROM unified_feeds.landslide WHERE true")
+    run_bq_query("DELETE FROM unified_feeds.seismic WHERE true")
 
     # 2. Populate static municipality population data
     print("Populating municipality population...")
@@ -108,6 +110,29 @@ def populate_all():
             run_bq_query(live_query)
         else:
             print("Warning: No 'time' key in Open-Meteo current data")
+            
+        # 5. Populate Landslide mock data
+        print("Populating mock landslide data...")
+        ts = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+        landslide_query = f"""
+        INSERT INTO unified_feeds.landslide (timestamp, municipality, slope_angle_deg, susceptibility_index, risk_level)
+        VALUES 
+          ('{ts}', 'Cali', 12.0, 0.25, 'LOW'),
+          ('{ts}', 'Yumbo', 28.0, 0.65, 'MEDIUM'),
+          ('{ts}', 'Jamundí', 38.0, 0.88, 'HIGH')
+        """
+        run_bq_query(landslide_query)
+
+        # 6. Populate Seismic mock data
+        print("Populating mock seismic data...")
+        seismic_query = f"""
+        INSERT INTO unified_feeds.seismic (id, municipality, magnitude, place, time, latitude, longitude, depth_km)
+        VALUES 
+          ('mock-seismic-1', 'Jamundí', 4.5, '15km S of Jamundí, Colombia', '{ts}', 3.13, -76.54, 12.5),
+          ('mock-seismic-2', 'Yumbo', 2.1, '5km N of Yumbo, Colombia', '{ts}', 3.62, -76.48, 8.0)
+        """
+        run_bq_query(seismic_query)
+        
     except Exception as e:
         print(f"Error fetching live Open-Meteo data: {e}")
         raise e
