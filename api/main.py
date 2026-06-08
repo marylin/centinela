@@ -114,7 +114,7 @@ def get_alert():
                 affected_municipalities.append(muni)
                 
         # Call Gemini to generate the prose summary and resident broadcast warning
-        client = genai.Client()
+        client = genai.Client(vertexai=True, project='centinela-498622', location='us')
         prompt = (
             "You are a disaster response AI assistant. Based strictly on the following structured risk data "
             "for the Rio Cauca basin (do not invent or change any numbers or facts):\n\n"
@@ -128,7 +128,7 @@ def get_alert():
         )
         
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.5-flash',
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 response_mime_type='application/json',
