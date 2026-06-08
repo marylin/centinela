@@ -169,6 +169,9 @@ global.fetch = async (url, options) => {
   if (url.includes('/alert')) {
     return { ok: true, json: async () => ({ graded_alert: [], agency_incident: { affected_municipalities: [] }, resident_broadcast: '' }) };
   }
+  if (url.includes('/autonomous-heals')) {
+    return { ok: true, json: async () => [] };
+  }
   return {
     ok: true,
     json: async () => ({ status: 'Success' })
@@ -332,6 +335,43 @@ setTimeout(async () => {
         print(f"ERROR: Cooldown check failed! Cooldown should have blocked the third push, got: {len(history)}")
         sys.exit(1)
     print("Success: Cooldown prevents duplicate notifications within window.")
+
+    # 10. Verify Autonomous Self-Heal
+    print("\nStep 9: Verifying Autonomous Self-Heal...")
+    # Clear autonomous heals log
+    requests.post(f"{server_url}/test/clear-autonomous-heals")
+    
+    # Break the first connector
+    requests.post(f"{server_url}/break")
+    
+    # Verify status is paused
+    status_data = requests.get(f"{server_url}/connector-status").json()
+    if status_data['status'] != 'paused':
+        print("ERROR: Connector status did not change to paused during auto-heal test!")
+        sys.exit(1)
+        
+    # Trigger /check-alerts (which now runs autonomous heal)
+    requests.post(f"{server_url}/check-alerts")
+    time.sleep(0.5)  # Wait for background task
+    
+    # Verify status is active again
+    status_data = requests.get(f"{server_url}/connector-status").json()
+    if status_data['status'] != 'active':
+        print(f"ERROR: Connector status is {status_data['status']}, expected active after auto-heal!")
+        sys.exit(1)
+        
+    # Verify autonomous heals history log is recorded
+    heals = requests.get(f"{server_url}/autonomous-heals").json()
+    if len(heals) != 1:
+        print(f"ERROR: Expected exactly 1 autonomous heal log, got {len(heals)}")
+        sys.exit(1)
+    if heals[0]["connector_id"] != "plausibly_illustrate":
+        print(f"ERROR: Unexpected autonomous heal entry: {heals[0]}")
+        sys.exit(1)
+    if "autonomous, no human action" not in heals[0]["message"]:
+        print(f"ERROR: Missing autonomous label in heal entry: {heals[0]}")
+        sys.exit(1)
+    print("Success: Autonomous self-heal verified.")
 
 def run_regression():
     print("=====================================================================")

@@ -34,6 +34,9 @@ TOKEN_LAST_SENT_STATES = {}  # token -> state_repr
 TOKEN_COOLDOWNS = {}  # token -> {state_repr: datetime}
 SENT_PUSH_HISTORY = []  # list of dicts for testing
 
+# Autonomous self-heal history
+AUTONOMOUS_HEALS = []  # list of dicts: {"timestamp": str, "connector_id": str, "name": str, "message": str}
+
 # Cache for alert data response to avoid redundant Gemini calls during polling
 CACHED_ALERT_RESPONSE = None
 CACHED_RISK_DATA_JSON = None
@@ -748,12 +751,58 @@ def read_sw():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+async def run_autonomous_check_and_heal():
+    print("DEBUG: Starting autonomous check-and-heal run", flush=True)
+    try:
+        status_data = await get_connector_status()
+        for conn in status_data.get("connectors", []):
+            conn_id = conn["connector_id"]
+            name = conn["name"]
+            is_paused = conn["status"] == "paused"
+            is_stale = conn["freshness"] == "STALE"
+            
+            if is_paused or is_stale:
+                print(f"DEBUG: Connector {conn_id} ({name}) is paused={is_paused} or stale={is_stale}. Triggering autonomous heal.", flush=True)
+                # Perform heal
+                LOCAL_PAUSED_STATES[conn_id] = False
+                if not TESTING:
+                    try:
+                        res = await check_and_heal_connector(conn_id, 5.0)
+                        print(f"DEBUG: Heal connector {conn_id} returned {res}", flush=True)
+                    except Exception as ex:
+                        print(f"ERROR: Failed to heal connector {conn_id} autonomously: {ex}", flush=True)
+                
+                # Record the autonomous heal
+                AUTONOMOUS_HEALS.append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "connector_id": conn_id,
+                    "name": name,
+                    "message": "autonomous, no human action"
+                })
+    except Exception as e:
+        print(f"ERROR in run_autonomous_check_and_heal: {e}", flush=True)
+    
+    # Finally, trigger the alert & push notification check
+    risk_data = get_risk()
+    check_and_trigger_push_sync(risk_data)
+
 @app.post("/check-alerts")
 def check_alerts(background_tasks: BackgroundTasks):
-    """Manually triggers the alert state check and push notification flow."""
-    risk_data = get_risk()
-    background_tasks.add_task(check_and_trigger_push_sync, risk_data)
-    return {"status": "Success", "message": "Alert state check triggered"}
+    """Manually/scheduled triggers the alert state check and push notification flow with autonomous self-heal."""
+    background_tasks.add_task(run_autonomous_check_and_heal)
+    return {"status": "Success", "message": "Alert state check and autonomous self-heal triggered"}
+
+@app.get("/autonomous-heals")
+def get_autonomous_heals():
+    """Returns the history of autonomous self-heal events."""
+    return AUTONOMOUS_HEALS
+
+@app.post("/test/clear-autonomous-heals")
+def clear_autonomous_heals():
+    """Clears the history of autonomous self-heal events for testing."""
+    global AUTONOMOUS_HEALS
+    AUTONOMOUS_HEALS = []
+    return {"status": "Success"}
 
 @app.get("/test/sent-pushes")
 def get_sent_pushes():

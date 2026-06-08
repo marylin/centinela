@@ -110,19 +110,21 @@ function parseISOTime(isoString) {
 // ==========================================================================
 async function fetchTelemetry() {
   try {
-    const [riskRes, statusRes, alertRes] = await Promise.all([
+    const [riskRes, statusRes, alertRes, autoHealsRes] = await Promise.all([
       fetch(`${API_BASE}/risk`),
       fetch(`${API_BASE}/connector-status`),
-      fetch(`${API_BASE}/alert`)
+      fetch(`${API_BASE}/alert`),
+      fetch(`${API_BASE}/autonomous-heals`)
     ]);
 
-    if (!riskRes.ok || !statusRes.ok || !alertRes.ok) {
-      throw new Error(`API error: risk=${riskRes.status}, status=${statusRes.status}, alert=${alertRes.status}`);
+    if (!riskRes.ok || !statusRes.ok || !alertRes.ok || !autoHealsRes.ok) {
+      throw new Error(`API error: risk=${riskRes.status}, status=${statusRes.status}, alert=${alertRes.status}, autoHeals=${autoHealsRes.status}`);
     }
 
     const riskData = await riskRes.json();
     const statusData = await statusRes.json();
     const alertData = await alertRes.json();
+    const autoHealsData = await autoHealsRes.json();
 
     // Clear offline state if previously offline
     if (appState.isOffline) {
@@ -146,6 +148,7 @@ async function fetchTelemetry() {
     renderRiskMap();
     renderAlerts();
     updateConnectorUI();
+    renderAutonomousHeals(autoHealsData);
 
   } catch (err) {
     console.error("Fetch telemetry failed:", err);
@@ -714,4 +717,26 @@ async function registerTokenWithBackend(token) {
   } catch (err) {
     initConsoleLog(`FCM token registration failed: ${err.message}`, "error");
   }
+}
+
+function renderAutonomousHeals(heals) {
+  const container = document.getElementById("auto-heals-container");
+  if (!container) return;
+  
+  if (!heals || heals.length === 0) {
+    container.innerHTML = `<div class="log-line system" style="color: var(--text-muted);">No autonomous self-heals logged.</div>`;
+    return;
+  }
+  
+  const sorted = [...heals].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  
+  container.innerHTML = sorted.map(h => {
+    const timeStr = parseISOTime(h.timestamp);
+    return `<div class="log-line alert" style="border-left: 2px solid #22c55e; padding-left: 0.5rem; margin-bottom: 0.25rem;">
+      <span style="color: var(--text-muted); font-size: 0.75rem;">[${timeStr}]</span>
+      <strong style="color: #22c55e;">HEALED:</strong> 
+      <span style="color: var(--text-dark);">${h.name} (${h.connector_id})</span>
+      <span class="badge" style="background-color: rgba(34, 197, 94, 0.1); color: #22c55e; font-size: 0.55rem; padding: 0.05rem 0.25rem; margin-left: 0.25rem; border-radius: 3px;">autonomous, no human action</span>
+    </div>`;
+  }).join("");
 }
