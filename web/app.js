@@ -79,7 +79,10 @@ function initClock() {
     // Update freshness calculation from database if available
     if (appState.lastSyncTime && !appState.isOffline && database.connector.status === "active") {
       appState.freshnessCounter = Math.max(0, Math.floor((new Date() - appState.lastSyncTime) / 1000));
-      document.getElementById("metric-freshness").textContent = formatFreshness(appState.freshnessCounter);
+      const freshnessEl = document.getElementById("metric-freshness");
+      if (freshnessEl) {
+        freshnessEl.textContent = formatFreshness(appState.freshnessCounter);
+      }
     }
   }, 1000);
 }

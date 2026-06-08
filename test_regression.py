@@ -132,6 +132,159 @@ def run_regression():
             sys.exit(1)
         print(f"Success: Connector is active and fresh (last sync: {status_data['last_sync_time']}).")
 
+        # 7. Enable Alerts UI check: Fetch index.html and verify elements exist
+        print("\nStep 6: Verifying Firebase Enable Alerts UI elements exist...")
+        res_ui = requests.get(server_url)
+        if res_ui.status_code != 200:
+            print(f"ERROR: GET / (UI) failed with status code {res_ui.status_code}")
+            sys.exit(1)
+            
+        ui_html = res_ui.text
+        required_elements = [
+            'id="enable-notifications-btn"',
+            'id="token-display-box"',
+            'id="notification-token"',
+            'id="copy-token-btn"'
+        ]
+        for elem in required_elements:
+            if elem not in ui_html:
+                print(f"ERROR: Required UI element '{elem}' not found in index.html!")
+                sys.exit(1)
+        print("Success: Firebase Enable Alerts UI elements verified in index.html.")
+
+        # 8. Run JS DOM and handler execution check
+        print("\nStep 7: Verifying click handler in app.js via Node.js mock execution...")
+        js_verifier = """
+const mockElements = {};
+const clickListeners = {};
+
+global.window = {
+  location: { origin: 'http://127.0.0.1:8000' }
+};
+
+global.navigator = {
+  clipboard: {
+    writeText: async (txt) => {
+      console.log('Clipboard wrote:', txt);
+    }
+  }
+};
+
+global.Notification = {
+  requestPermission: async () => 'granted'
+};
+
+global.firebase = {
+  initializeApp: () => ({}),
+  messaging: () => ({
+    getToken: async () => 'mock-fcm-token',
+    onMessage: () => {}
+  })
+};
+
+global.fetch = async (url, options) => {
+  if (url.includes('/risk')) {
+    return { ok: true, json: async () => [] };
+  }
+  if (url.includes('/connector-status')) {
+    return { ok: true, json: async () => ({ status: 'active', connectors: [] }) };
+  }
+  if (url.includes('/alert')) {
+    return { ok: true, json: async () => ({ graded_alert: [], agency_incident: { affected_municipalities: [] }, resident_broadcast: '' }) };
+  }
+  return {
+    ok: true,
+    json: async () => ({ status: 'Success' })
+  };
+};
+
+global.document = {
+  addEventListener: (event, cb) => {
+    if (event === 'DOMContentLoaded') {
+      setTimeout(cb, 0);
+    }
+  },
+  getElementById: (id) => {
+    if (!mockElements[id]) {
+      mockElements[id] = {
+        id: id,
+        classList: {
+          remove: (cls) => {},
+          add: (cls) => {}
+        },
+        className: { baseVal: '' },
+        addEventListener: (event, cb) => {
+          if (event === 'click') {
+            clickListeners[id] = cb;
+          }
+        },
+        style: { width: '0%' },
+        textContent: '',
+        innerHTML: '',
+        appendChild: () => {}
+      };
+    }
+    return mockElements[id];
+  },
+  createElement: (tag) => ({
+    setAttribute: () => {},
+    appendChild: () => {},
+    classList: { add: () => {}, remove: () => {} },
+    style: {},
+    addEventListener: () => {},
+    scrollTop: 0,
+    scrollHeight: 100
+  }),
+  createElementNS: (ns, tag) => ({
+    setAttribute: () => {},
+    appendChild: () => {},
+    classList: { add: () => {}, remove: () => {} },
+    style: { animation: '' },
+    addEventListener: () => {},
+    scrollTop: 0,
+    scrollHeight: 100
+  })
+};
+
+global.setInterval = (cb, ms) => {
+  return 1;
+};
+
+const fs = require('fs');
+const code = fs.readFileSync('web/app.js', 'utf8');
+eval(code);
+
+setTimeout(async () => {
+  const clickHandler = clickListeners['enable-notifications-btn'];
+  if (!clickHandler) {
+    console.error('ERROR: Click listener on enable-notifications-btn not registered');
+    process.exit(1);
+  }
+  
+  try {
+    await clickHandler();
+    process.exit(0);
+  } catch (err) {
+    console.error('ERROR: Click handler threw error:', err);
+    process.exit(1);
+  }
+}, 50);
+"""
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+            f.write(js_verifier)
+            temp_name = f.name
+            
+        try:
+            res_js = subprocess.run(["node", temp_name], capture_output=True, text=True)
+            if res_js.returncode != 0:
+                print(f"ERROR: JS click handler execution check failed!\\nSTDERR: {res_js.stderr}\\nSTDOUT: {res_js.stdout}")
+                sys.exit(1)
+            print("Success: JS click handler runs with no console error.")
+        finally:
+            if os.path.exists(temp_name):
+                os.remove(temp_name)
+
         print("\n=====================================================================")
         print("               REGRESSION SUITE COMPLETED: SUCCESS                   ")
         print("=====================================================================")
