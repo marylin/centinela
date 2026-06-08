@@ -1,8 +1,23 @@
-// ==========================================================================
-// Centinela Client-Side Application Engine (Unit 3B Backend Integrated)
-// ==========================================================================
-
 const API_BASE = window.location.origin;
+
+// Initialize Firebase App & Messaging
+const firebaseConfig = {
+  apiKey: "AIzaSyCD5dZslaW5oKA2chzr5BNyJzHODf4LW04",
+  authDomain: "centinela-498622.firebaseapp.com",
+  projectId: "centinela-498622",
+  storageBucket: "centinela-498622.firebasestorage.app",
+  messagingSenderId: "765013283380",
+  appId: "1:765013283380:web:9fd5a47da7c575de43f061",
+  measurementId: "G-4JWEX55YPH"
+};
+
+let messaging;
+try {
+  firebase.initializeApp(firebaseConfig);
+  messaging = firebase.messaging();
+} catch (e) {
+  console.error("Firebase initialization failed: ", e);
+}
 
 // 1. Data Store
 const database = {
@@ -44,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initConsoleLog("Dashboard UI initialized. Attempting connection to local backend API...");
   initClock();
   setupEventHandlers();
+  setupNotifications();
   
   // Initial fetch
   fetchTelemetry().then(() => {
@@ -587,4 +603,86 @@ function initConsoleLog(message, type = "system") {
   
   consoleContainer.appendChild(line);
   consoleContainer.scrollTop = consoleContainer.scrollHeight;
+}
+
+// ==========================================================================
+// Firebase Notification subscription setup
+// ==========================================================================
+let fcmToken = null;
+
+async function setupNotifications() {
+  const enableBtn = document.getElementById("enable-notifications-btn");
+  const tokenBox = document.getElementById("token-display-box");
+  const tokenCode = document.getElementById("notification-token");
+  const copyBtn = document.getElementById("copy-token-btn");
+  
+  if (!enableBtn || !messaging) return;
+  
+  enableBtn.addEventListener("click", async () => {
+    initConsoleLog("Requesting push notification permission...", "action");
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        initConsoleLog("Permission granted. Retrieving FCM registration token...", "telemetry");
+        
+        // Retrieve token
+        const token = await messaging.getToken({
+          vapidKey: "BAcAdo08wSoDyqq2f8U_dJ9XENWt6trHywG_BKkoLCXqf4jSGJuKSi8DC3ikCfoLdHVxVU0Cy64-csmkjOyhMEU"
+        });
+        
+        if (token) {
+          fcmToken = token;
+          tokenCode.textContent = token;
+          tokenBox.classList.remove("hidden");
+          initConsoleLog("FCM token retrieved successfully.", "telemetry");
+          
+          // Send token to backend
+          await registerTokenWithBackend(token);
+        } else {
+          initConsoleLog("No FCM registration token available. Request permission again.", "warn");
+        }
+      } else {
+        initConsoleLog("Notification permission denied.", "warn");
+      }
+    } catch (err) {
+      initConsoleLog(`Firebase init error: ${err.message}`, "error");
+      console.error(err);
+    }
+  });
+  
+  if (copyBtn) {
+    copyBtn.addEventListener("click", () => {
+      if (fcmToken) {
+        navigator.clipboard.writeText(fcmToken);
+        initConsoleLog("FCM registration token copied to clipboard.", "action");
+      }
+    });
+  }
+  
+  // Foreground message handler
+  messaging.onMessage((payload) => {
+    console.log("Message received in foreground: ", payload);
+    initConsoleLog(`[ALERT BROADCAST]: ${payload.notification.body}`, "warn");
+    // Show browser notification if active
+    new Notification(payload.notification.title, {
+      body: payload.notification.body
+    });
+  });
+}
+
+async function registerTokenWithBackend(token) {
+  try {
+    const res = await fetch(`${API_BASE}/register-token`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: token })
+    });
+    if (res.ok) {
+      initConsoleLog("FCM token registered with backend alert service.", "telemetry");
+    } else {
+      throw new Error(`Status ${res.status}`);
+    }
+  } catch (err) {
+    initConsoleLog(`FCM token registration failed: ${err.message}`, "error");
+  }
 }

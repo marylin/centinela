@@ -9,9 +9,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.cloud import bigquery
 from pydantic import BaseModel
+import firebase_admin
+from firebase_admin import credentials, messaging
 
 # Load environment variables
 load_dotenv()
+
+# Initialize Firebase Admin SDK using Application Default Credentials (ADC)
+try:
+    firebase_admin.initialize_app()
+    print("Firebase Admin SDK initialized successfully using ADC.")
+except ValueError:
+    pass
+except Exception as e:
+    print(f"Warning: Firebase Admin SDK failed to initialize: {e}")
+
+# In-memory store of FCM tokens
+FCM_TOKENS = set()
 
 # Import the existing agent logic
 from rapid_agent.agent import check_and_heal_connector, get_mcp_toolset, call_with_retry
@@ -30,6 +44,9 @@ app.add_middleware(
 class AlertNarratives(BaseModel):
     summary: str
     broadcast: str
+
+class TokenRegistration(BaseModel):
+    token: str
 
 CONNECTORS = [
     {
@@ -136,7 +153,28 @@ def get_alert():
         narratives = json.loads(response.text)
         
         title = "Rio Cauca Basin Compound Flood Risk Alert"
+        resident_broadcast_text = narratives.get("broadcast", "")
         
+        # Trigger Firebase push notifications if alert is fired and there are registered devices
+        if affected_municipalities and FCM_TOKENS and resident_broadcast_text:
+            failed_tokens = []
+            for token in list(FCM_TOKENS):
+                try:
+                    message = messaging.Message(
+                        notification=messaging.Notification(
+                            title=title,
+                            body=resident_broadcast_text[:1000]
+                        ),
+                        token=token
+                    )
+                    messaging.send(message)
+                except Exception as ex:
+                    print(f"Error sending push notification to token {token}: {ex}")
+                    if "not-registered" in str(ex).lower() or "invalid" in str(ex).lower():
+                        failed_tokens.append(token)
+            for ft in failed_tokens:
+                FCM_TOKENS.discard(ft)
+
         return {
             "graded_alert": graded_alert,
             "agency_incident": {
@@ -144,10 +182,19 @@ def get_alert():
                 "summary": narratives.get("summary", ""),
                 "affected_municipalities": affected_municipalities
             },
-            "resident_broadcast": narratives.get("broadcast", "")
+            "resident_broadcast": resident_broadcast_text
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/register-token")
+def register_token(data: TokenRegistration):
+    """Registers an FCM token for push notifications."""
+    token = data.token.strip()
+    if token:
+        FCM_TOKENS.add(token)
+        return {"status": "Success", "message": f"Token registered. Total tokens: {len(FCM_TOKENS)}"}
+    return {"status": "Error", "message": "Invalid token"}
 
 @app.get("/connector-status")
 async def get_connector_status():
@@ -267,5 +314,14 @@ def read_css():
     try:
         with open("web/style.css", "r", encoding="utf-8") as f:
             return Response(content=f.read(), media_type="text/css")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/firebase-messaging-sw.js")
+def read_sw():
+    """Serves the Firebase Messaging Service Worker."""
+    try:
+        with open("web/firebase-messaging-sw.js", "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="application/javascript")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
