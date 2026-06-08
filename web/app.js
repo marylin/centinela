@@ -1,8 +1,8 @@
 // ==========================================================================
-// HydroGuard Client-Side Application Engine (Unit 3B Backend Integrated)
+// Centinela Client-Side Application Engine (Unit 3B Backend Integrated)
 // ==========================================================================
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = window.location.origin;
 
 // 1. Data Store
 const database = {
@@ -62,7 +62,7 @@ function initClock() {
     
     // Update freshness calculation from database if available
     if (appState.lastSyncTime && !appState.isOffline && database.connector.status === "active") {
-      appState.freshnessCounter = Math.floor((new Date() - appState.lastSyncTime) / 1000);
+      appState.freshnessCounter = Math.max(0, Math.floor((new Date() - appState.lastSyncTime) / 1000));
       document.getElementById("metric-freshness").textContent = formatFreshness(appState.freshnessCounter);
     }
   }, 1000);

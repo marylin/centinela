@@ -3,9 +3,11 @@ import json
 import subprocess
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
+from google.cloud import bigquery
 from pydantic import BaseModel
 
 # Load environment variables
@@ -39,42 +41,24 @@ def get_risk():
         with open("sql/risk_score.sql", "r", encoding="utf-8") as f:
             query = f.read()
             
-        cmd = 'bq query --project_id=centinela-498622 --use_legacy_sql=false --quiet --format=json'
-        res = subprocess.run(cmd, shell=True, input=query.encode('utf-8'), capture_output=True)
-        if res.returncode != 0:
-            raise HTTPException(status_code=500, detail=res.stderr.decode('utf-8', errors='replace'))
-            
-        # Clean output to ensure valid JSON (remove possible gcloud warnings or headers)
-        data = None
-        for enc in ['cp1252', 'utf-8', 'latin-1']:
-            try:
-                output = res.stdout.decode(enc).strip()
-                json_start = output.find("[")
-                if json_start != -1:
-                    data = json.loads(output[json_start:])
-                    break
-            except Exception:
-                continue
-        if data is None:
-            output = res.stdout.decode('utf-8', errors='replace').strip()
-            json_start = output.find("[")
-            if json_start != -1:
-                output = output[json_start:]
-            data = json.loads(output)
+        client = bigquery.Client(project='centinela-498622')
+        query_job = client.query(query)
+        rows = query_job.result()
         
         # Map fields to the frontend UI contract
         results = []
-        for row in data:
-            muni = row.get("municipality", "")
+        for row in rows:
+            row_dict = dict(row)
+            muni = row_dict.get("municipality", "")
             if muni.startswith("Jamund"):
                 muni = "Jamundí"
             results.append({
                 "municipality": muni,
-                "risk_score": float(row.get("compound_score", 0.0)),
-                "rainfall_mm": float(row.get("precipitation_mm", 0.0)),
-                "river_level_m": float(row.get("river_level_m", 0.0)),
-                "soil_saturation": float(row.get("saturation_index", 0.0)),
-                "threshold": float(row.get("alert_threshold_m", 0.0))
+                "risk_score": float(row_dict.get("compound_score", 0.0) or 0.0),
+                "rainfall_mm": float(row_dict.get("precipitation_mm", 0.0) or 0.0),
+                "river_level_m": float(row_dict.get("river_level_m", 0.0) or 0.0),
+                "soil_saturation": float(row_dict.get("saturation_index", 0.0) or 0.0),
+                "threshold": float(row_dict.get("alert_threshold_m", 0.0) or 0.0)
             })
         return results
     except Exception as e:
@@ -225,3 +209,30 @@ async def break_conn():
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await toolset.close()
+
+@app.get("/", response_class=HTMLResponse)
+def read_index():
+    """Serves the dashboard home page."""
+    try:
+        with open("web/index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/app.js")
+def read_js():
+    """Serves the client-side JavaScript engine."""
+    try:
+        with open("web/app.js", "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="application/javascript")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/style.css")
+def read_css():
+    """Serves the dashboard stylesheet."""
+    try:
+        with open("web/style.css", "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="text/css")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

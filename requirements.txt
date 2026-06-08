@@ -1,3 +1,4 @@
 google-adk>=1.14.0
 mcp
 git+https://github.com/fivetran/fivetran-mcp
+google-cloud-bigquery
