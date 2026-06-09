@@ -1253,6 +1253,12 @@ h1, h2, h3, h4 {
   grid-column: 1 / -1;
 }
 
+/* Residents pick their municipality, not a watershed: the basin scope is an
+   operator concept and stays in Operations mode only. */
+.dashboard-wrapper.mode-public .basin-select-dropdown {
+  display: none !important;
+}
+
 .dashboard-wrapper.mode-public .ops-panels-container,
 .dashboard-wrapper.mode-public .system-time,
 .dashboard-wrapper.mode-public .sync-indicator,

@@ -412,6 +412,10 @@ BASINS = [
         "name": "Rio Magdalena",
         "country": "Colombia",
         "kind": "compound",
+        # Seeded/demo basin: river and soil values are modeled, not measured.
+        # Surfaced in the UI as a SIMULATED tag so modeled data is never
+        # presented as live (the Cauca pipeline is the real one).
+        "simulated": True,
         "municipalities": ["Neiva", "Girardot", "Honda"],
         "connectors": [
             {
@@ -1812,6 +1816,7 @@ def get_basins():
             "name": b["name"],
             "country": b["country"],
             "kind": b.get("kind", "compound"),
+            "simulated": b.get("simulated", False),
             "municipalities": b["municipalities"]
         }
         for b in BASINS

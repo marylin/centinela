@@ -287,7 +287,7 @@ async function loadBasins() {
     const options = selectable.length ? selectable : data;
     if (basinSelect) {
       basinSelect.innerHTML = options
-        .map(b => `<option value="${b.id}">${b.name} (${b.country})</option>`)
+        .map(b => `<option value="${b.id}">${b.name} (${b.country})${b.simulated ? " · SIMULATED" : ""}</option>`)
         .join("");
     }
     // Default to the first selectable basin returned (keeps rio_cauca as today).
@@ -1831,6 +1831,10 @@ function displayMuniDetails(muni) {
   
   const severityConfig = getSeverityConfig(muni.risk_score);
   const riskBadge = `<span class="badge ${severityConfig.badgeClass}">${severityConfig.label}</span>`;
+  const scopedBasin = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
+  const simulatedBadge = scopedBasin && scopedBasin.simulated
+    ? `<span class="badge badge-simulated" title="River and soil values for this basin are modeled, not measured.">SIMULATED</span>`
+    : "";
 
   // Calculations for River vs Threshold bullet gauge
   const pct = muni.threshold > 0 ? (muni.river_level_m / muni.threshold) * 100 : 0;
@@ -1855,7 +1859,7 @@ function displayMuniDetails(muni) {
           </svg>
           ${muni.municipality}
         </h3>
-        ${riskBadge}
+        ${simulatedBadge}${riskBadge}
       </div>
 
       <!-- Composite Risk Readout -->
@@ -2493,7 +2497,22 @@ function populateMuniDropdown() {
 
 function switchMode(newMode) {
   appState.mode = newMode;
-  
+
+  // Public mode has no basin selector and never shows a simulated basin:
+  // residents always see the real (non-simulated) pipeline.
+  if (newMode === "public") {
+    const scoped = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
+    if (scoped && scoped.simulated) {
+      const real = (appState.basins || []).find(b => b && b.kind !== "seismic" && !b.simulated);
+      const basinSelect = document.getElementById("basin-select");
+      if (real && basinSelect) {
+        initConsoleLog(`Public mode scopes to the live basin: ${real.name}.`, "telemetry");
+        basinSelect.value = real.id;
+        basinSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
+  }
+
   const wrapper = document.getElementById("dashboard-wrapper");
   if (wrapper) {
     wrapper.className = `dashboard-wrapper mode-${newMode}`;
@@ -2643,7 +2662,7 @@ function renderPublicView() {
   const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   
   heroContainer.innerHTML = `
-    <div class="public-hero-title">Selected catchment status</div>
+    <div class="public-hero-title">Your area status</div>
     <div class="public-hero-status" style="color: ${severityConfig.colorHex}">${statusWord}</div>
     <p class="public-hero-desc">${selectedMuni.municipality}: ${whatThisMeans}</p>
     <div class="public-hero-timestamp">Last updated: ${timestamp}</div>
@@ -2679,7 +2698,7 @@ function renderPublicView() {
         `;
       }).join("");
     } else {
-      warningsHtml += `<div class="empty-alerts">No active warnings for this basin catchment.</div>`;
+      warningsHtml += `<div class="empty-alerts">No active warnings for this area.</div>`;
     }
     
     if (alertData && alertData.resident_broadcast && alertData.agency_incident && alertData.agency_incident.affected_municipalities.length > 0) {
