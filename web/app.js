@@ -39,12 +39,139 @@ let appState = {
   freshnessCounter: 0,
   lastSyncTime: null,
   selectedBasin: "rio_cauca",
-  reopenedIncidentId: null
+  reopenedIncidentId: null,
+  boundsFitForBasin: null
 };
 
 // Map instances & markers
 let map = null;
-let markers = [];
+let markers = {};
+
+// 3. Design System & Icon Set Foundation
+const HAZARD_ICONS = {
+  FLOOD: `
+    <svg class="hazard-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 12c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0"></path>
+      <path d="M24 12c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0"></path>
+      <path d="M12 18c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0"></path>
+      <path d="M24 18c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0"></path>
+    </svg>
+  `,
+  LANDSLIDE: `
+    <svg class="hazard-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 20h18L12 4z"></path>
+      <circle cx="7" cy="12" r="1" fill="currentColor"></circle>
+      <circle cx="9" cy="15" r="1" fill="currentColor"></circle>
+      <circle cx="15" cy="11" r="1" fill="currentColor"></circle>
+      <circle cx="17" cy="14" r="1.5" fill="currentColor"></circle>
+    </svg>
+  `,
+  SEISMIC: `
+    <svg class="hazard-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2 12h3l2-7 3 14 3-11 2 7 2-4 2 4h3"></path>
+    </svg>
+  `
+};
+
+const HAZARD_INNER_SVGS = {
+  FLOOD: `
+    <path d="M12 12c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0" />
+    <path d="M24 12c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0" />
+    <path d="M12 18c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0" />
+    <path d="M24 18c-2-2.67-4-2.67-6 0-2 2.67-4 2.67-6 0" />
+  `,
+  LANDSLIDE: `
+    <path d="M3 20h18L12 4z" />
+    <circle cx="7" cy="12" r="1" fill="currentColor" />
+    <circle cx="9" cy="15" r="1" fill="currentColor" />
+    <circle cx="15" cy="11" r="1" fill="currentColor" />
+    <circle cx="17" cy="14" r="1.5" fill="currentColor" />
+  `,
+  SEISMIC: `
+    <path d="M2 12h3l2-7 3 14 3-11 2 7 2-4 2 4h3" />
+  `
+};
+
+const SEVERITY_SCALE = {
+  LOW: {
+    label: "Low",
+    class: "low",
+    badgeClass: "badge-low",
+    colorHex: "#22c55e",
+    icon: `
+      <svg class="severity-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"></circle>
+        <path d="m9 12 2 2 4-4"></path>
+      </svg>
+    `
+  },
+  WARNING: {
+    label: "Warning",
+    class: "warning",
+    badgeClass: "badge-warning",
+    colorHex: "#f59e0b",
+    icon: `
+      <svg class="severity-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+    `
+  },
+  DANGER: {
+    label: "Danger",
+    class: "danger",
+    badgeClass: "badge-danger",
+    colorHex: "#ef4444",
+    icon: `
+      <svg class="severity-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+    `
+  },
+  CRITICAL: {
+    label: "Critical",
+    class: "critical",
+    badgeClass: "badge-critical",
+    colorHex: "#a855f7",
+    icon: `
+      <svg class="severity-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="m12 3-1.912 5.886H3.886L8.9 12.528l-1.912 5.886L12 14.828l4.912 3.586-1.912-5.886 5.014-3.642h-6.202L12 3z"></path>
+      </svg>
+    `
+  }
+};
+
+function getSeverityConfig(score) {
+  if (score >= 0.8) return SEVERITY_SCALE.CRITICAL;
+  if (score >= 0.6) return SEVERITY_SCALE.DANGER;
+  if (score >= 0.4) return SEVERITY_SCALE.WARNING;
+  return SEVERITY_SCALE.LOW;
+}
+
+function getSeverityConfigByLabel(label) {
+  const l = (label || '').toUpperCase();
+  if (l === 'EXTREME' || l === 'CRITICAL') return SEVERITY_SCALE.CRITICAL;
+  if (l === 'HIGH' || l === 'DANGER') return SEVERITY_SCALE.DANGER;
+  if (l === 'MODERATE' || l === 'WARNING') return SEVERITY_SCALE.WARNING;
+  return SEVERITY_SCALE.LOW;
+}
+
+function getMarkerIconUrl(color, hazard) {
+  const innerSvg = HAZARD_INNER_SVGS[hazard] || HAZARD_INNER_SVGS.FLOOD;
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36">
+      <path d="M18 2C11.4 2 6 7.4 6 14c0 9 12 20 12 20s12-11 12-20c0-6.6-5.4-12-12-12z" fill="${color}" stroke="#07090f" stroke-width="2"/>
+      <circle cx="18" cy="14" r="7" fill="#07090f"/>
+      <g transform="translate(12, 8) scale(0.5)" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        ${innerSvg}
+      </g>
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg.trim())}`;
+}
 
 // 3. Municipality Coordinates for Google Maps
 const municipalityCoords = {
@@ -316,10 +443,6 @@ function setBackendOfflineState(isOffline) {
 function renderMapMarkers() {
   if (!map || typeof google === "undefined") return;
 
-  // Clear existing markers
-  markers.forEach(m => m.setMap(null));
-  markers = [];
-
   const basinMunis = {
     "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
     "rio_magdalena": ["Honda", "Girardot", "Neiva"]
@@ -329,6 +452,14 @@ function renderMapMarkers() {
   // Filter risk data by selected basin
   const basinRiskData = database.risk.filter(m => allowedMunis.includes(m.municipality));
 
+  // 1. Remove markers that are no longer allowed or in the current basin
+  Object.keys(markers).forEach(muniName => {
+    if (!allowedMunis.includes(muniName)) {
+      markers[muniName].setMap(null);
+      delete markers[muniName];
+    }
+  });
+
   const bounds = new google.maps.LatLngBounds();
   let hasValidCoords = false;
 
@@ -336,51 +467,48 @@ function renderMapMarkers() {
     const coords = municipalityCoords[muni.municipality];
     if (!coords) return;
 
-    let color = "#22c55e"; // Low (Green)
-    if (muni.risk_score >= 0.8) color = "#a855f7"; // Extreme (Purple)
-    else if (muni.risk_score >= 0.6) color = "#ef4444"; // High (Red)
-    else if (muni.risk_score >= 0.4) color = "#f59e0b"; // Moderate (Orange)
-
+    const severityConfig = getSeverityConfig(muni.risk_score);
+    const color = severityConfig.colorHex;
     const dominant = muni.dominant_hazard || "FLOOD";
-    const emoji = dominant === "LANDSLIDE" ? "🪨" : dominant === "SEISMIC" ? "🫨" : "🌊";
 
-    // Custom SVG Pin icon
-    const pinSvg = {
-      path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-      fillColor: color,
-      fillOpacity: 0.95,
-      strokeColor: '#07090f',
-      strokeWeight: 1.5,
-      scale: 1.5,
-      anchor: new google.maps.Point(12, 22),
-      labelOrigin: new google.maps.Point(12, 9)
+    const iconUrl = getMarkerIconUrl(color, dominant);
+    const markerIcon = {
+      url: iconUrl,
+      size: new google.maps.Size(36, 36),
+      anchor: new google.maps.Point(18, 34)
     };
 
-    const marker = new google.maps.Marker({
-      position: coords,
-      map: map,
-      title: muni.municipality,
-      icon: pinSvg,
-      label: {
-        text: emoji,
-        color: '#ffffff',
-        fontSize: '11px'
-      }
-    });
+    if (markers[muni.municipality]) {
+      // Diff / Update existing marker
+      const marker = markers[muni.municipality];
+      marker.setPosition(coords);
+      marker.setIcon(markerIcon);
+    } else {
+      // Create new marker
+      const marker = new google.maps.Marker({
+        position: coords,
+        map: map,
+        title: muni.municipality,
+        icon: markerIcon
+      });
 
-    marker.addListener("click", () => {
-      appState.selectedMuni = muni;
-      displayMuniDetails(muni);
-      initConsoleLog(`Selected region: ${muni.municipality} (Risk Score: ${muni.risk_score.toFixed(2)})`, "action");
-    });
+      marker.addListener("click", () => {
+        appState.selectedMuni = muni;
+        displayMuniDetails(muni);
+        initConsoleLog(`Selected region: ${muni.municipality} (Risk Score: ${muni.risk_score.toFixed(2)})`, "action");
+      });
 
-    markers.push(marker);
+      markers[muni.municipality] = marker;
+    }
+
     bounds.extend(coords);
     hasValidCoords = true;
   });
 
-  if (hasValidCoords) {
+  // Fit bounds only if we haven't fit bounds for this basin yet
+  if (hasValidCoords && appState.boundsFitForBasin !== appState.selectedBasin) {
     map.fitBounds(bounds);
+    appState.boundsFitForBasin = appState.selectedBasin;
   }
 
   // Keep details drawer updated if the selected muni is in the current basin
@@ -391,7 +519,7 @@ function renderMapMarkers() {
     } else {
       const drawer = document.getElementById("muni-detail-drawer");
       if (drawer) {
-        drawer.innerHTML = `<div class="drawer-instruction">Hover over or select a basin area to view detailed telemetry metrics.</div>`;
+        drawer.innerHTML = `<div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>`;
       }
       appState.selectedMuni = null;
     }
@@ -411,28 +539,22 @@ function displayMuniDetails(muni) {
   const drawer = document.getElementById("muni-detail-drawer");
   if (!drawer) return;
   
-  let riskBadge = `<span class="badge" style="background-color: var(--success-glow); color: var(--success);">LOW RISK</span>`;
-  if (muni.risk_score >= 0.8) {
-    riskBadge = `<span class="badge" style="background-color: hsla(290, 80%, 50%, 0.15); color: hsl(290, 80%, 70%);">CRITICAL VALUE</span>`;
-  } else if (muni.risk_score >= 0.6) {
-    riskBadge = `<span class="badge badge-error">HIGH RISK</span>`;
-  } else if (muni.risk_score >= 0.4) {
-    riskBadge = `<span class="badge" style="background-color: var(--warning-glow); color: var(--warning);">MODERATE WARNING</span>`;
-  }
+  const severityConfig = getSeverityConfig(muni.risk_score);
+  const riskBadge = `<span class="badge ${severityConfig.badgeClass}">${severityConfig.label}</span>`;
 
   const dominant = muni.dominant_hazard || 'FLOOD';
-  const dominantEmoji = dominant === 'LANDSLIDE' ? '🪨' : dominant === 'SEISMIC' ? '🫨' : '🌊';
+  const dominantIcon = HAZARD_ICONS[dominant] || HAZARD_ICONS.FLOOD;
   
   const hazardPills = `
-    <span class="hazard-pill dominant">${dominantEmoji} ${dominant} (Dominant)</span>
-    ${muni.flood_score !== undefined && dominant !== 'FLOOD' ? `<span class="hazard-pill secondary">🌊 Flood (${muni.flood_score.toFixed(2)})</span>` : ''}
-    ${muni.landslide_score !== undefined && dominant !== 'LANDSLIDE' ? `<span class="hazard-pill secondary">🪨 Landslide (${muni.landslide_score.toFixed(2)})</span>` : ''}
-    ${muni.seismic_score !== undefined && dominant !== 'SEISMIC' ? `<span class="hazard-pill secondary">🫨 Seismic (${muni.seismic_score.toFixed(2)})</span>` : ''}
+    <span class="hazard-pill dominant">${dominantIcon} ${dominant} (Dominant)</span>
+    ${muni.flood_score !== undefined && dominant !== 'FLOOD' ? `<span class="hazard-pill secondary">${HAZARD_ICONS.FLOOD} Flood (${muni.flood_score.toFixed(2)})</span>` : ''}
+    ${muni.landslide_score !== undefined && dominant !== 'LANDSLIDE' ? `<span class="hazard-pill secondary">${HAZARD_ICONS.LANDSLIDE} Landslide (${muni.landslide_score.toFixed(2)})</span>` : ''}
+    ${muni.seismic_score !== undefined && dominant !== 'SEISMIC' ? `<span class="hazard-pill secondary">${HAZARD_ICONS.SEISMIC} Seismic (${muni.seismic_score.toFixed(2)})</span>` : ''}
   `;
 
   drawer.innerHTML = `
     <div class="drawer-grid">
-      <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+      <div class="muni-detail-header">
         <h3 class="drawer-muni-name">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
@@ -443,60 +565,60 @@ function displayMuniDetails(muni) {
         ${riskBadge}
       </div>
 
-      <div class="drawer-hazard-row" style="grid-column: 1 / -1; display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+      <div class="muni-hazard-row">
         ${hazardPills}
       </div>
       
       <div class="drawer-metric">
         <span class="drawer-label">Calculated Risk</span>
-        <span class="drawer-val" style="color: ${muni.risk_score >= 0.6 ? 'var(--danger)' : muni.risk_score >= 0.4 ? 'var(--warning)' : 'var(--success)'}">
+        <span class="drawer-val tabular-nums ${severityConfig.class}">
           ${muni.risk_score.toFixed(2)}
         </span>
       </div>
 
       <div class="drawer-metric">
         <span class="drawer-label">Dominant Hazard</span>
-        <span class="drawer-val" style="color: var(--warning); text-transform: uppercase;">${muni.dominant_hazard || 'FLOOD'}</span>
+        <span class="drawer-val warning text-critical">${muni.dominant_hazard || 'FLOOD'}</span>
       </div>
       
       <div class="drawer-metric">
         <span class="drawer-label">Rainfall (24h)</span>
-        <span class="drawer-val">${muni.rainfall_mm.toFixed(1)} mm</span>
+        <span class="drawer-val tabular-nums">${muni.rainfall_mm.toFixed(1)} mm</span>
       </div>
       
       <div class="drawer-metric">
         <span class="drawer-label">River Level</span>
-        <span class="drawer-val">${muni.river_level_m.toFixed(2)} m</span>
+        <span class="drawer-val tabular-nums">${muni.river_level_m.toFixed(2)} m</span>
       </div>
       
       <div class="drawer-metric">
         <span class="drawer-label">Soil Saturation</span>
-        <span class="drawer-val">${(muni.soil_saturation * 100).toFixed(0)}%</span>
+        <span class="drawer-val tabular-nums">${(muni.soil_saturation * 100).toFixed(0)}%</span>
       </div>
 
       <div class="drawer-metric">
         <span class="drawer-label">Slope / Susc.</span>
-        <span class="drawer-val">${muni.slope_angle_deg !== undefined ? muni.slope_angle_deg.toFixed(0) + '°' : '--'} / ${muni.susceptibility_index !== undefined ? (muni.susceptibility_index * 100).toFixed(0) + '%' : '--'}</span>
+        <span class="drawer-val tabular-nums">${muni.slope_angle_deg !== undefined ? muni.slope_angle_deg.toFixed(0) + '°' : '--'} / ${muni.susceptibility_index !== undefined ? (muni.susceptibility_index * 100).toFixed(0) + '%' : '--'}</span>
       </div>
 
       <div class="drawer-metric">
         <span class="drawer-label">Earthquake</span>
-        <span class="drawer-val">${muni.earthquake_magnitude ? muni.earthquake_magnitude.toFixed(1) + ' Mw' : 'None'}</span>
+        <span class="drawer-val tabular-nums">${muni.earthquake_magnitude ? muni.earthquake_magnitude.toFixed(1) + ' Mw' : 'None'}</span>
       </div>
 
       <div class="drawer-metric">
         <span class="drawer-label">Flood Score</span>
-        <span class="drawer-val" style="color: var(--text-dark)">${muni.flood_score !== undefined ? muni.flood_score.toFixed(2) : '--'}</span>
+        <span class="drawer-val tabular-nums">${muni.flood_score !== undefined ? muni.flood_score.toFixed(2) : '--'}</span>
       </div>
 
       <div class="drawer-metric">
         <span class="drawer-label">Landslide Score</span>
-        <span class="drawer-val" style="color: var(--text-dark)">${muni.landslide_score !== undefined ? muni.landslide_score.toFixed(2) : '--'}</span>
+        <span class="drawer-val tabular-nums">${muni.landslide_score !== undefined ? muni.landslide_score.toFixed(2) : '--'}</span>
       </div>
 
       <div class="drawer-metric">
         <span class="drawer-label">Seismic Score</span>
-        <span class="drawer-val" style="color: var(--text-dark)">${muni.seismic_score !== undefined ? muni.seismic_score.toFixed(2) : '--'}</span>
+        <span class="drawer-val tabular-nums">${muni.seismic_score !== undefined ? muni.seismic_score.toFixed(2) : '--'}</span>
       </div>
     </div>
   `;
@@ -533,24 +655,30 @@ function renderAlerts() {
   
   // 1. Render Agency Incident Advisory Card
   const incidentCard = document.createElement("div");
-  incidentCard.className = "alert-card alert-extreme";
+  let highestSeverity = "CRITICAL";
+  if (alertData.graded_alert && alertData.graded_alert.length > 0) {
+    const grades = alertData.graded_alert.map(a => getSeverityConfigByLabel(a.severity));
+    if (grades.includes(SEVERITY_SCALE.CRITICAL)) highestSeverity = "CRITICAL";
+    else if (grades.includes(SEVERITY_SCALE.DANGER)) highestSeverity = "DANGER";
+    else if (grades.includes(SEVERITY_SCALE.WARNING)) highestSeverity = "WARNING";
+    else highestSeverity = "LOW";
+  }
+  const mainSeverity = SEVERITY_SCALE[highestSeverity];
+
+  incidentCard.className = `alert-card alert-${mainSeverity.class}`;
   
   incidentCard.innerHTML = `
-    <div class="alert-icon-wrapper" style="color: var(--danger)">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-        <line x1="12" y1="9" x2="12" y2="13"></line>
-        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-      </svg>
+    <div class="alert-icon-wrapper">
+      ${mainSeverity.icon}
     </div>
     <div class="alert-info">
       <div class="alert-title-row">
         <span class="alert-muni">${alertData.agency_incident.title}</span>
-        <span class="alert-type text-danger" style="font-weight: 800; font-size: 0.7rem; border: 1px solid var(--danger); padding: 0.1rem 0.3rem; border-radius: 3px;">CIVIL ADVISORY</span>
+        <span class="alert-type civil-advisory-badge text-${mainSeverity.class}">CIVIL ADVISORY</span>
       </div>
       <p class="alert-desc">${alertData.agency_incident.summary}</p>
-      <div class="alert-meta" style="margin-top: 0.6rem;">
-        <span>CRITICAL SEVERITY</span>
+      <div class="alert-meta alert-meta-row">
+        <span>${mainSeverity.label.toUpperCase()} SEVERITY</span>
         <span>AFFECTED: ${affectedList.join(", ")}</span>
       </div>
     </div>
@@ -602,11 +730,6 @@ function updateConnectorUI() {
   connectors.forEach(conn => {
     const card = document.createElement("div");
     card.className = "connector-card";
-    card.style.border = "1px solid var(--border-color)";
-    card.style.borderRadius = "8px";
-    card.style.padding = "0.75rem";
-    card.style.background = "rgba(255, 255, 255, 0.01)";
-    card.style.transition = "border-color var(--transition-normal)";
     
     const isPaused = conn.status === "paused";
     const badgeClass = isPaused ? "connector-badge broken" : "connector-badge";
@@ -614,25 +737,25 @@ function updateConnectorUI() {
     const freshnessColor = conn.freshness === "FRESH" ? "var(--success)" : "var(--danger)";
     
     card.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-        <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-main);">${conn.name}</span>
+      <div class="connector-header">
+        <span class="connector-title">${conn.name}</span>
         <span class="${badgeClass}">${badgeText}</span>
       </div>
-      <div style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 0.5rem; font-size: 0.7rem; margin-bottom: 0.75rem;">
+      <div class="connector-details-grid">
         <div>
-          <span style="color: var(--text-dark); display: block; font-size: 0.6rem; text-transform: uppercase;">Last Sync</span>
-          <span style="font-weight: 500; font-family: var(--font-mono);">${parseISOTime(conn.last_sync_time)}</span>
+          <span class="connector-detail-label">Last Sync</span>
+          <span class="connector-detail-value tabular-nums">${parseISOTime(conn.last_sync_time)}</span>
         </div>
         <div>
-          <span style="color: var(--text-dark); display: block; font-size: 0.6rem; text-transform: uppercase;">Freshness</span>
-          <span style="font-weight: 600; color: ${freshnessColor};">${conn.freshness}</span>
+          <span class="connector-detail-label">Freshness</span>
+          <span class="connector-detail-value freshness" style="color: ${freshnessColor};">${conn.freshness}</span>
         </div>
       </div>
-      <div style="display: flex; gap: 0.5rem;">
-        <button class="btn btn-danger ${isPaused ? 'hidden' : ''}" style="flex: 1; padding: 0.35rem 0.5rem; font-size: 0.7rem; border-radius: 4px;" onclick="window.breakConnector('${conn.connector_id}')">
+      <div class="connector-actions">
+        <button class="btn btn-danger btn-connector ${isPaused ? 'hidden' : ''}" onclick="window.breakConnector('${conn.connector_id}')">
           Interrupt
         </button>
-        <button class="btn btn-success ${!isPaused ? 'hidden' : ''}" style="flex: 1; padding: 0.35rem 0.5rem; font-size: 0.7rem; border-radius: 4px;" onclick="window.healConnector('${conn.connector_id}')">
+        <button class="btn btn-success btn-connector ${!isPaused ? 'hidden' : ''}" onclick="window.healConnector('${conn.connector_id}')">
           Reconnect
         </button>
       </div>
@@ -729,7 +852,7 @@ function setupEventHandlers() {
       // Clear muni detail drawer
       const drawer = document.getElementById("muni-detail-drawer");
       if (drawer) {
-        drawer.innerHTML = `<div class="drawer-instruction">Hover over or select a basin area to view detailed telemetry metrics.</div>`;
+        drawer.innerHTML = `<div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>`;
       }
       appState.selectedMuni = null;
 
@@ -861,7 +984,7 @@ function renderAutonomousHeals(heals) {
   if (!container) return;
   
   if (!heals || heals.length === 0) {
-    container.innerHTML = `<div class="log-line system" style="color: var(--text-muted);">No autonomous self-heals logged.</div>`;
+    container.innerHTML = `<div class="log-line system">No autonomous self-heals logged.</div>`;
     return;
   }
   
@@ -869,11 +992,11 @@ function renderAutonomousHeals(heals) {
   
   container.innerHTML = sorted.map(h => {
     const timeStr = parseISOTime(h.timestamp);
-    return `<div class="log-line alert" style="border-left: 2px solid #22c55e; padding-left: 0.5rem; margin-bottom: 0.25rem;">
-      <span style="color: var(--text-muted); font-size: 0.75rem;">[${timeStr}]</span>
-      <strong style="color: #22c55e;">HEALED:</strong> 
-      <span style="color: var(--text-dark);">${h.name} (${h.connector_id})</span>
-      <span class="badge" style="background-color: rgba(34, 197, 94, 0.1); color: #22c55e; font-size: 0.55rem; padding: 0.05rem 0.25rem; margin-left: 0.25rem; border-radius: 3px;">autonomous, no human action</span>
+    return `<div class="log-line alert heal-log-item">
+      <span class="heal-log-time tabular-nums">[${timeStr}]</span>
+      <strong class="heal-log-label">HEALED:</strong> 
+      <span class="heal-log-details">${h.name} (${h.connector_id})</span>
+      <span class="badge badge-autonomous-mini">autonomous, no human action</span>
     </div>`;
   }).join("");
 }
@@ -883,7 +1006,7 @@ function renderIncidents(incidents) {
   if (!container) return;
 
   if (!incidents || incidents.length === 0) {
-    container.innerHTML = `<div class="log-line system" style="color: var(--text-muted);">No historical incidents recorded.</div>`;
+    container.innerHTML = `<div class="log-line system">No historical incidents recorded.</div>`;
     return;
   }
 
@@ -893,17 +1016,21 @@ function renderIncidents(incidents) {
     const timeStr = parseISOTime(inc.timestamp);
     const isReopened = appState.reopenedIncidentId === inc.id;
     const typeLabel = inc.type.toUpperCase();
-    const borderLeftColor = inc.type === "alert" ? "#ef4444" : inc.type === "heal" ? "#22c55e" : "#eab308";
     
-    return `<div class="log-line" style="border-left: 2px solid ${borderLeftColor}; padding: 0.35rem 0.5rem; margin-bottom: 0.25rem; display: flex; flex-direction: column; gap: 0.25rem; background: ${isReopened ? 'rgba(255,255,255,0.02)' : 'transparent'};">
-      <div style="display: flex; justify-content: space-between; align-items: center;">
-        <span style="font-size: 0.75rem; color: var(--text-muted);">[${timeStr}] <strong>${typeLabel}</strong> (${inc.basin})</span>
+    let severityClass = "low";
+    if (inc.type === "alert" || inc.type === "outage") severityClass = "danger";
+    else if (inc.type === "heal") severityClass = "low";
+    else severityClass = "warning";
+    
+    return `<div class="log-line incident-log-item border-${severityClass} ${isReopened ? 'reopened' : ''}">
+      <div class="incident-log-header">
+        <span class="incident-log-title tabular-nums">[${timeStr}] <strong>${typeLabel}</strong> (${inc.basin})</span>
         ${isReopened 
-          ? `<span style="font-size: 0.65rem; color: #ef4444; font-weight: bold;">REOPENED</span>` 
-          : `<button onclick="window.reopenIncident('${inc.id}')" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); color: var(--text-dark); font-size: 0.6rem; padding: 0.15rem 0.35rem; border-radius: 3px; cursor: pointer;">Reopen</button>`
+          ? `<span class="incident-log-status-badge">REOPENED</span>` 
+          : `<button onclick="window.reopenIncident('${inc.id}')" class="btn-incident-reopen">Reopen</button>`
         }
       </div>
-      <div style="font-size: 0.75rem; color: var(--text-dark); line-height: 1.2;">${inc.details}</div>
+      <div class="incident-log-details">${inc.details}</div>
     </div>`;
   }).join("");
 }
