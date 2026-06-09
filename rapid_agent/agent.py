@@ -13,7 +13,7 @@ def sleep(seconds: int) -> str:
 
 # Initialize the root agent
 root_agent = LlmAgent(
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     name="centinela_agent",
     instruction="""You are a DataOps agent. You monitor Fivetran connectors for staleness.
 Freshness threshold: A connector is considered stale if its last succeeded sync time is more than 5 minutes ago, or if it has never succeeded and setup is incomplete.

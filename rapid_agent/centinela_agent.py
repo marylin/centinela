@@ -61,7 +61,7 @@ class AlertNarrative(BaseModel):
 # tool calls" when the model emits structured JSON without conversational text.
 # ---------------------------------------------------------------------------
 narration_agent = LlmAgent(
-    model="gemini-2.5-flash",
+    model="gemini-3.5-flash",
     name="centinela_narration_agent",
     instruction=(
         "You are a disaster response AI analyst for the Centinela early-warning system. "
