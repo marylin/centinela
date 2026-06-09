@@ -34,21 +34,34 @@ WEATHER_CACHE_EXPIRY = None
 def fetch_precipitation_for_muni(muni: str, lat: float, lng: float, api_key: str):
     url = "https://weather.googleapis.com/v1/currentConditions:lookup"
     params = {
-        "key": api_key,
         "location.latitude": lat,
         "location.longitude": lng,
         "unitsSystem": "METRIC"
     }
-    try:
-        resp = requests.get(url, params=params, timeout=2.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            precip = data.get("precipitation", {}).get("amount", {}).get("millimeters", 0.0)
-            return float(precip)
-        else:
-            print(f"Weather API error for {muni}: {resp.status_code} - {resp.text}", flush=True)
-    except Exception as e:
-        print(f"Error fetching weather for {muni}: {e}", flush=True)
+    headers = {
+        "X-Goog-Api-Key": api_key
+    }
+    attempts = 3
+    backoff = 1.0
+    for attempt in range(attempts):
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=2.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                precip = data.get("precipitation", {}).get("amount", {}).get("millimeters", 0.0)
+                return float(precip)
+            else:
+                print(f"Weather API error for {muni}: {resp.status_code} (attempt {attempt + 1}/{attempts})", flush=True)
+        except Exception as e:
+            err_msg = str(e)
+            if api_key in err_msg:
+                err_msg = err_msg.replace(api_key, "REDACTED_KEY")
+            print(f"Error fetching weather for {muni}: {err_msg} (attempt {attempt + 1}/{attempts})", flush=True)
+        
+        if attempt < attempts - 1:
+            time.sleep(backoff)
+            backoff *= 2.0
+            
     return None
 
 TESTING = os.environ.get("TESTING", "false").lower() == "true"
@@ -889,7 +902,6 @@ async def get_connector_status(basin: str = "rio_cauca"):
             "connectors": connector_results
         }
         
-    toolset = get_mcp_toolset()
     try:
         connector_results = []
         for conn in basin_connectors:
@@ -907,65 +919,69 @@ async def get_connector_status(basin: str = "rio_cauca"):
                 })
                 continue
 
-            async def call_details(session):
-                return await session.call_tool(
-                    name="get_connection_details",
-                    arguments={
-                        "schema_file": "open-api-definitions/connections/connection_details.json",
-                        "connection_id": conn_id
-                    }
-                )
-            result = await toolset._execute_with_session(call_details, f"Failed to get connection details for {conn_id}")
-            raw_text = result.content[0].text
-            if "Error" in raw_text or "Fivetran API error" in raw_text:
-                if "429" in raw_text:
-                    is_paused = LOCAL_PAUSED_STATES.get(conn_id, False)
+            toolset = get_mcp_toolset()
+            try:
+                async def call_details(session):
+                    return await session.call_tool(
+                        name="get_connection_details",
+                        arguments={
+                            "schema_file": "open-api-definitions/connections/connection_details.json",
+                            "connection_id": conn_id
+                        }
+                    )
+                result = await toolset._execute_with_session(call_details, f"Failed to get connection details for {conn_id}")
+                raw_text = result.content[0].text
+                if "Error" in raw_text or "Fivetran API error" in raw_text:
+                    if "429" in raw_text:
+                        is_paused = LOCAL_PAUSED_STATES.get(conn_id, False)
+                        connector_results.append({
+                            "connector_id": conn_id,
+                            "name": conn["name"],
+                            "status": "paused" if is_paused else "active",
+                            "last_sync_time": datetime.now(timezone.utc).isoformat(),
+                            "freshness": "FRESH"
+                        })
+                        continue
+                        
                     connector_results.append({
                         "connector_id": conn_id,
                         "name": conn["name"],
-                        "status": "paused" if is_paused else "active",
-                        "last_sync_time": datetime.now(timezone.utc).isoformat(),
-                        "freshness": "FRESH"
+                        "status": "error",
+                        "last_sync_time": "never",
+                        "freshness": "UNKNOWN"
                     })
                     continue
+                    
+                data = json.loads(raw_text).get("data", {})
+                paused = data.get("paused", False)
+                succeeded_at_str = data.get("succeeded_at")
+                
+                status_val = "paused" if paused else "active"
+                
+                # If we know it was modified locally, we can override/fallback
+                is_paused = LOCAL_PAUSED_STATES.get(conn_id, paused)
+                if is_paused != paused:
+                    status_val = "paused" if is_paused else "active"
+                
+                # Calculate freshness
+                freshness = "UNKNOWN"
+                if succeeded_at_str:
+                    if succeeded_at_str.endswith("Z"):
+                        succeeded_at_str = succeeded_at_str[:-1]
+                    succeeded_at = datetime.fromisoformat(succeeded_at_str).replace(tzinfo=timezone.utc)
+                    current_time = datetime.now(timezone.utc)
+                    diff_minutes = (current_time - succeeded_at).total_seconds() / 60.0
+                    freshness = "FRESH" if diff_minutes < 60.0 else "STALE"
                     
                 connector_results.append({
                     "connector_id": conn_id,
                     "name": conn["name"],
-                    "status": "error",
-                    "last_sync_time": "never",
-                    "freshness": "UNKNOWN"
+                    "status": status_val,
+                    "last_sync_time": data.get("succeeded_at") or "never",
+                    "freshness": freshness
                 })
-                continue
-                
-            data = json.loads(raw_text).get("data", {})
-            paused = data.get("paused", False)
-            succeeded_at_str = data.get("succeeded_at")
-            
-            status_val = "paused" if paused else "active"
-            
-            # If we know it was modified locally, we can override/fallback
-            is_paused = LOCAL_PAUSED_STATES.get(conn_id, paused)
-            if is_paused != paused:
-                status_val = "paused" if is_paused else "active"
-            
-            # Calculate freshness
-            freshness = "UNKNOWN"
-            if succeeded_at_str:
-                if succeeded_at_str.endswith("Z"):
-                    succeeded_at_str = succeeded_at_str[:-1]
-                succeeded_at = datetime.fromisoformat(succeeded_at_str).replace(tzinfo=timezone.utc)
-                current_time = datetime.now(timezone.utc)
-                diff_minutes = (current_time - succeeded_at).total_seconds() / 60.0
-                freshness = "FRESH" if diff_minutes < 60.0 else "STALE"
-                
-            connector_results.append({
-                "connector_id": conn_id,
-                "name": conn["name"],
-                "status": status_val,
-                "last_sync_time": data.get("succeeded_at") or "never",
-                "freshness": freshness
-            })
+            finally:
+                await toolset.close()
             
         primary = connector_results[0] if connector_results else {"status": "active", "last_sync_time": "never", "freshness": "FRESH"}
         return {
@@ -996,8 +1012,6 @@ async def get_connector_status(basin: str = "rio_cauca"):
                 "connectors": connector_results
             }
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        await toolset.close()
 
 @app.post("/heal")
 async def heal(background_tasks: BackgroundTasks, connector_id: str = "plausibly_illustrate", basin: str = "rio_cauca"):
