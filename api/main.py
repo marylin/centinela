@@ -225,6 +225,14 @@ LAST_GOOD_NARRATIVES = {
     "rio_magdalena": {
         "summary": "Monitoring Rio Magdalena basin for compound flood and multi-hazard risks.",
         "broadcast": "System active. No extreme weather alerts currently active for Rio Magdalena."
+    },
+    "lima_peru": {
+        "summary": "Monitoring Lima (Peru) for seismic hazard along the Pacific subduction margin.",
+        "broadcast": "System active. No major seismic alerts currently active for Lima."
+    },
+    "guatemala_city": {
+        "summary": "Monitoring Guatemala City for seismic hazard along the Central America (Cocos plate) margin.",
+        "broadcast": "System active. No major seismic alerts currently active for Guatemala City."
     }
 }
 
@@ -402,6 +410,44 @@ BASINS = [
                 "type": "gcs"
             }
         ]
+    },
+    {
+        "id": "lima_peru",
+        "name": "Lima",
+        "country": "Peru",
+        "municipalities": ["Lima", "Callao", "Chorrillos"],
+        # Peru bounding box so real coastal-Peru quakes from the global USGS feed
+        # attribute to Lima's municipalities. Existing basins keep the default box.
+        "seismic_bbox": (
+            "    AND latitude BETWEEN -13.0 AND -11.0\n"
+            "    AND longitude BETWEEN -78.0 AND -76.0"
+        ),
+        "connectors": [
+            {
+                "id": "whole_glorify",
+                "name": "USGS Seismic Feed (Connector SDK)",
+                "type": "connector_sdk"
+            }
+        ]
+    },
+    {
+        "id": "guatemala_city",
+        "name": "Guatemala City",
+        "country": "Guatemala",
+        "municipalities": ["Guatemala City", "Mixco", "Villa Nueva"],
+        # Central America bounding box so real quakes from the global USGS feed
+        # attribute to Guatemala City's municipalities. Existing basins keep the default box.
+        "seismic_bbox": (
+            "    AND latitude BETWEEN 13.0 AND 16.0\n"
+            "    AND longitude BETWEEN -92.0 AND -89.0"
+        ),
+        "connectors": [
+            {
+                "id": "whole_glorify",
+                "name": "USGS Seismic Feed (Connector SDK)",
+                "type": "connector_sdk"
+            }
+        ]
     }
 ]
 
@@ -468,6 +514,106 @@ def get_risk(basin: str = "rio_cauca"):
                         "landslide_score": 0.83,
                         "seismic_score": 0.0,
                         "dominant_hazard": "FLOOD"
+                    }
+                ]
+            elif basin == "lima_peru":
+                # Seismic-only basin: flood and landslide read as no-data (0), never
+                # fabricated. risk_score is driven entirely by the seismic_score.
+                return [
+                    {
+                        "municipality": "Lima",
+                        "risk_score": 0.24,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.6,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.8,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Callao",
+                        "risk_score": 0.21,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 4.9,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.7,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Chorrillos",
+                        "risk_score": 0.18,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 4.2,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.6,
+                        "dominant_hazard": "SEISMIC"
+                    }
+                ]
+            elif basin == "guatemala_city":
+                # Seismic-only basin: flood and landslide read as no-data (0), never
+                # fabricated. risk_score is driven entirely by the seismic_score.
+                return [
+                    {
+                        "municipality": "Guatemala City",
+                        "risk_score": 0.25,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.8,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.83,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Mixco",
+                        "risk_score": 0.22,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.1,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.73,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Villa Nueva",
+                        "risk_score": 0.19,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 4.4,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.63,
+                        "dominant_hazard": "SEISMIC"
                     }
                 ]
             else:
@@ -565,6 +711,106 @@ def get_risk(basin: str = "rio_cauca"):
                         "landslide_score": 0.08,
                         "seismic_score": 0.0,
                         "dominant_hazard": "FLOOD"
+                    }
+                ]
+            elif basin == "lima_peru":
+                # Quiet-state seismic-only basin: low real/baseline seismic values,
+                # flood and landslide as no-data (0), never fabricated.
+                return [
+                    {
+                        "municipality": "Lima",
+                        "risk_score": 0.15,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 3.5,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.5,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Callao",
+                        "risk_score": 0.13,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 3.0,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.43,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Chorrillos",
+                        "risk_score": 0.1,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 2.3,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.33,
+                        "dominant_hazard": "SEISMIC"
+                    }
+                ]
+            elif basin == "guatemala_city":
+                # Quiet-state seismic-only basin: low real/baseline seismic values,
+                # flood and landslide as no-data (0), never fabricated.
+                return [
+                    {
+                        "municipality": "Guatemala City",
+                        "risk_score": 0.15,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 3.5,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.5,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Mixco",
+                        "risk_score": 0.13,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 3.0,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.43,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Villa Nueva",
+                        "risk_score": 0.1,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 2.3,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.33,
+                        "dominant_hazard": "SEISMIC"
                     }
                 ]
             else:
@@ -673,6 +919,15 @@ def get_risk(basin: str = "rio_cauca"):
 
         # Dynamically target the requested basin
         query = query.replace("'Rio Cauca'", f"'{basin_name}'")
+
+        # Swap the seismic bounding box per basin. The default is the Rio Cauca/Colombia
+        # box, so existing basins are unchanged (replaced with themselves). Lima supplies
+        # its own Peru box so real coastal-Peru quakes attribute to its municipalities.
+        default_seismic_bbox = (
+            "    AND latitude BETWEEN 2.0 AND 5.0\n"
+            "    AND longitude BETWEEN -78.0 AND -75.0"
+        )
+        query = query.replace(default_seismic_bbox, basin_config.get("seismic_bbox", default_seismic_bbox))
 
         client = bigquery.Client(project='centinela-498622')
         query_job = client.query(query)
@@ -1292,6 +1547,19 @@ def clear_autonomous_heals():
     """Clears the history of autonomous self-heal events for testing."""
     clear_autonomous_heals_store()
     return {"status": "Success"}
+
+@app.get("/basins")
+def get_basins():
+    """Returns the configured basins so the selector can be populated from config."""
+    return [
+        {
+            "id": b["id"],
+            "name": b["name"],
+            "country": b["country"],
+            "municipalities": b["municipalities"]
+        }
+        for b in BASINS
+    ]
 
 @app.get("/incidents")
 def get_incidents():

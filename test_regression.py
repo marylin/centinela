@@ -433,6 +433,120 @@ setTimeout(async () => {
         sys.exit(1)
     print("Success: Multi-basin (Rio Magdalena) risk score checked.")
 
+    # 12. Verify new seismic-only basin (Lima, Peru)
+    print("\nStep 11: Verifying seismic-only basin (Lima, Peru)...")
+
+    # /basins should expose lima_peru from config automatically
+    basins = requests.get(f"{server_url}/basins").json()
+    if not any(b["id"] == "lima_peru" for b in basins):
+        print(f"ERROR: /basins did not include lima_peru from config: {basins}")
+        sys.exit(1)
+    print("Success: /basins exposes lima_peru from config.")
+
+    # /risk for Lima: three real municipalities, seismic-dominant, flood/landslide as no-data
+    lima_risk = requests.get(f"{server_url}/risk", params={"basin": "lima_peru"}).json()
+    expected_munis = {"Lima", "Callao", "Chorrillos"}
+    returned_munis = {r["municipality"] for r in lima_risk}
+    if returned_munis != expected_munis:
+        print(f"ERROR: Lima risk municipalities mismatch. Expected {expected_munis}, got {returned_munis}")
+        sys.exit(1)
+    for r in lima_risk:
+        if r["dominant_hazard"] != "SEISMIC":
+            print(f"ERROR: {r['municipality']} dominant_hazard is {r['dominant_hazard']}, expected SEISMIC")
+            sys.exit(1)
+        if r["seismic_score"] <= 0.0:
+            print(f"ERROR: {r['municipality']} has no seismic_score: {r['seismic_score']}")
+            sys.exit(1)
+        # Honesty: flood and landslide must read as no-data (0), never fabricated
+        if r["flood_score"] != 0.0 or r["landslide_score"] != 0.0:
+            print(f"ERROR: {r['municipality']} shows fabricated flood/landslide: flood={r['flood_score']}, landslide={r['landslide_score']}")
+            sys.exit(1)
+        if r["rainfall_mm"] != 0.0 or r["river_level_m"] != 0.0 or r["soil_saturation"] != 0.0:
+            print(f"ERROR: {r['municipality']} shows fabricated hydrological data")
+            sys.exit(1)
+    print("Success: Lima shows three areas, seismic-dominant, flood/landslide as no-data.")
+
+    # /connector-status for Lima: USGS seismic connector only
+    lima_status = requests.get(f"{server_url}/connector-status", params={"basin": "lima_peru"}).json()
+    lima_connectors = lima_status.get("connectors", [])
+    if not any(c["connector_id"] == "whole_glorify" for c in lima_connectors):
+        print(f"ERROR: Lima connector-status missing the USGS seismic connector: {lima_connectors}")
+        sys.exit(1)
+    print("Success: Lima connector-status returns the USGS seismic feed.")
+
+    # /alert for Lima: graded alerts match risk scores
+    lima_alert = requests.get(f"{server_url}/alert", params={"basin": "lima_peru"}).json()
+    for alert in lima_alert["graded_alert"]:
+        matching = next((x for x in lima_risk if x["municipality"] == alert["municipality"]), None)
+        if not matching or matching["risk_score"] != alert["risk_score"]:
+            print(f"ERROR: Lima alert score mismatch for {alert['municipality']}")
+            sys.exit(1)
+    print("Success: Lima /alert graded alerts match risk scores.")
+
+    # /incidents must still respond for the Lima basin
+    lima_incidents = requests.get(f"{server_url}/incidents", params={"basin": "lima_peru"})
+    if lima_incidents.status_code != 200:
+        print(f"ERROR: /incidents failed for lima_peru with status {lima_incidents.status_code}")
+        sys.exit(1)
+    print("Success: /incidents responds for lima_peru.")
+
+    # 13. Verify second seismic-only basin (Guatemala City)
+    print("\nStep 12: Verifying seismic-only basin (Guatemala City)...")
+
+    # /basins should expose guatemala_city from config automatically
+    basins_gt = requests.get(f"{server_url}/basins").json()
+    if not any(b["id"] == "guatemala_city" for b in basins_gt):
+        print(f"ERROR: /basins did not include guatemala_city from config: {basins_gt}")
+        sys.exit(1)
+    print("Success: /basins exposes guatemala_city from config.")
+
+    # /risk for Guatemala City: three real municipalities, seismic-dominant, flood/landslide as no-data
+    gt_risk = requests.get(f"{server_url}/risk", params={"basin": "guatemala_city"}).json()
+    expected_gt = {"Guatemala City", "Mixco", "Villa Nueva"}
+    returned_gt = {r["municipality"] for r in gt_risk}
+    if returned_gt != expected_gt:
+        print(f"ERROR: Guatemala City risk municipalities mismatch. Expected {expected_gt}, got {returned_gt}")
+        sys.exit(1)
+    for r in gt_risk:
+        if r["dominant_hazard"] != "SEISMIC":
+            print(f"ERROR: {r['municipality']} dominant_hazard is {r['dominant_hazard']}, expected SEISMIC")
+            sys.exit(1)
+        if r["seismic_score"] <= 0.0:
+            print(f"ERROR: {r['municipality']} has no seismic_score: {r['seismic_score']}")
+            sys.exit(1)
+        # Honesty: flood and landslide must read as no-data (0), never fabricated
+        if r["flood_score"] != 0.0 or r["landslide_score"] != 0.0:
+            print(f"ERROR: {r['municipality']} shows fabricated flood/landslide: flood={r['flood_score']}, landslide={r['landslide_score']}")
+            sys.exit(1)
+        if r["rainfall_mm"] != 0.0 or r["river_level_m"] != 0.0 or r["soil_saturation"] != 0.0:
+            print(f"ERROR: {r['municipality']} shows fabricated hydrological data")
+            sys.exit(1)
+    print("Success: Guatemala City shows three areas, seismic-dominant, flood/landslide as no-data.")
+
+    # /connector-status for Guatemala City: USGS seismic connector only
+    gt_status = requests.get(f"{server_url}/connector-status", params={"basin": "guatemala_city"}).json()
+    gt_connectors = gt_status.get("connectors", [])
+    if not any(c["connector_id"] == "whole_glorify" for c in gt_connectors):
+        print(f"ERROR: Guatemala City connector-status missing the USGS seismic connector: {gt_connectors}")
+        sys.exit(1)
+    print("Success: Guatemala City connector-status returns the USGS seismic feed.")
+
+    # /alert for Guatemala City: graded alerts match risk scores
+    gt_alert = requests.get(f"{server_url}/alert", params={"basin": "guatemala_city"}).json()
+    for alert in gt_alert["graded_alert"]:
+        matching = next((x for x in gt_risk if x["municipality"] == alert["municipality"]), None)
+        if not matching or matching["risk_score"] != alert["risk_score"]:
+            print(f"ERROR: Guatemala City alert score mismatch for {alert['municipality']}")
+            sys.exit(1)
+    print("Success: Guatemala City /alert graded alerts match risk scores.")
+
+    # /incidents must still respond for the Guatemala City basin
+    gt_incidents = requests.get(f"{server_url}/incidents", params={"basin": "guatemala_city"})
+    if gt_incidents.status_code != 200:
+        print(f"ERROR: /incidents failed for guatemala_city with status {gt_incidents.status_code}")
+        sys.exit(1)
+    print("Success: /incidents responds for guatemala_city.")
+
 def run_regression():
     print("=====================================================================")
     print("                    STARTING REGRESSION SUITE                        ")

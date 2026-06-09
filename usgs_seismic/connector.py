@@ -10,7 +10,13 @@ from fivetran_connector_sdk import Operations as op
 MUNIS = {
     "Cali": (3.4516, -76.5320),
     "Yumbo": (3.5833, -76.4917),
-    "Jamundí": (3.2667, -76.5333)
+    "Jamundí": (3.2667, -76.5333),
+    "Lima": (-12.046, -77.043),
+    "Callao": (-12.056, -77.118),
+    "Chorrillos": (-12.168, -77.022),
+    "Guatemala City": (14.6349, -90.5069),
+    "Mixco": (14.6333, -90.6064),
+    "Villa Nueva": (14.5269, -90.5969)
 }
 
 def validate_configuration(configuration: dict):
@@ -83,8 +89,12 @@ def update(configuration: dict, state: dict):
     except Exception as e:
         log.warning(f"Failed to fetch real USGS earthquake data: {e}. Using baseline fallback.")
 
-    # Always ensure we have at least one baseline event for the demo/regression
-    if not records:
+    # Preserve only the Rio Cauca demo baseline; never fabricate seismic events for
+    # other municipalities (e.g. Lima). Real quakes always take precedence, and we
+    # never invent or inflate magnitudes outside the original demo basin.
+    CAUCA_DEMO_MUNIS = {"Cali", "Yumbo", "Jamundí"}
+    has_cauca_event = any(r["municipality"] in CAUCA_DEMO_MUNIS for r in records)
+    if not has_cauca_event:
         log.info("No active earthquakes found in basin area. Injecting baseline demo event.")
         now = datetime.now(timezone.utc)
         records.append({
