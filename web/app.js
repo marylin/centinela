@@ -42,17 +42,96 @@ let appState = {
   reopenedIncidentId: null
 };
 
-// 3. UI Node Map Coordinates (Supports 3A mock and 3B live Cali/Yumbo/Jamundí)
-const mapCoordinates = {
-  "Cali": { x: 220, y: 140 },
-  "Yumbo": { x: 380, y: 190 },
-  "Jamundí": { x: 480, y: 270 },
-  "Alto Pass": { x: 150, y: 110 },
-  "Oak Creek": { x: 320, y: 150 },
-  "Silver Valley": { x: 480, y: 100 },
-  "Pine Ridge": { x: 230, y: 280 },
-  "Riverdale": { x: 450, y: 270 }
+// Map instances & markers
+let map = null;
+let markers = [];
+
+// 3. Municipality Coordinates for Google Maps
+const municipalityCoords = {
+  "Cali": { lat: 3.4516, lng: -76.5320 },
+  "Yumbo": { lat: 3.5855, lng: -76.4952 },
+  "Jamundí": { lat: 3.2610, lng: -76.5394 },
+  "Neiva": { lat: 2.9273, lng: -75.2819 },
+  "Girardot": { lat: 4.3009, lng: -74.8061 },
+  "Honda": { lat: 5.2045, lng: -74.7411 },
+  "Alto Pass": { lat: 3.4600, lng: -76.5100 },
+  "Oak Creek": { lat: 3.4800, lng: -76.5200 },
+  "Silver Valley": { lat: 3.5000, lng: -76.5300 },
+  "Pine Ridge": { lat: 3.4000, lng: -76.5000 },
+  "Riverdale": { lat: 3.4200, lng: -76.4900 }
 };
+
+// Google Maps Dark styles
+const darkMapStyles = [
+  { elementType: "geometry", stylers: [{ color: "#0d1326" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#0d1326" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#596f90" }] },
+  {
+    featureType: "administrative.locality",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#8a9eb8" }],
+  },
+  {
+    featureType: "poi",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#8a9eb8" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#111b30" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#3b537a" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#1b253b" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#151e30" }],
+  },
+  {
+    featureType: "road",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#4f6585" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#24324f" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#151e30" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#6b82a3" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#172d54" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.fill",
+    stylers: [{ color: "#3b537a" }],
+  },
+  {
+    featureType: "water",
+    elementType: "labels.text.stroke",
+    stylers: [{ color: "#172d54" }],
+  },
+];
 
 // ==========================================================================
 // Initialization & Lifecycle
@@ -63,11 +142,44 @@ document.addEventListener("DOMContentLoaded", () => {
   setupEventHandlers();
   setupNotifications();
   
+  // If Google Maps script finished loading before DOMContentLoaded
+  if (window.googleMapsReady) {
+    initMap();
+  }
+
   // Initial fetch
   fetchTelemetry().then(() => {
     startSyncCycle();
   });
 });
+
+window.onMapsReadyCallback = () => {
+  initMap();
+};
+
+// Initialize Google Maps
+function initMap() {
+  const mapElement = document.getElementById("google-map");
+  if (!mapElement || typeof google === "undefined") return;
+
+  const center = appState.selectedBasin === "rio_cauca" ? { lat: 3.43, lng: -76.51 } : { lat: 4.14, lng: -74.94 };
+  const zoom = appState.selectedBasin === "rio_cauca" ? 11 : 8;
+
+  map = new google.maps.Map(mapElement, {
+    center: center,
+    zoom: zoom,
+    styles: darkMapStyles,
+    disableDefaultUI: true,
+    zoomControl: true
+  });
+
+  const loader = document.getElementById("map-loading-overlay");
+  if (loader) {
+    loader.classList.add("hidden");
+  }
+
+  renderMapMarkers();
+}
 
 // ==========================================================================
 // Clock & Time Helpers
@@ -76,7 +188,9 @@ function initClock() {
   const clockEl = document.getElementById("current-time");
   setInterval(() => {
     const now = new Date();
-    clockEl.textContent = now.toLocaleTimeString();
+    if (clockEl) {
+      clockEl.textContent = now.toLocaleTimeString();
+    }
     
     // Update freshness calculation from database if available
     if (appState.lastSyncTime && !appState.isOffline && database.connector.status === "active") {
@@ -163,7 +277,7 @@ async function fetchTelemetry() {
     }
 
     // Refresh UI Components
-    renderRiskMap();
+    renderMapMarkers();
     renderAlerts();
     updateConnectorUI();
     renderAutonomousHeals(autoHealsData);
@@ -187,167 +301,94 @@ function setBackendOfflineState(isOffline) {
   const systemText = document.getElementById("system-status-text");
   
   if (isOffline) {
-    banner.classList.remove("hidden");
-    systemLed.className = "led-dot warning-mode";
-    systemText.textContent = "API OFFLINE";
+    if (banner) banner.classList.remove("hidden");
+    if (systemLed) systemLed.className = "led-dot danger-mode";
+    if (systemText) systemText.textContent = "API OFFLINE";
     
     // Clear connectors container and show offline
     const container = document.getElementById("pipeline-connectors-container");
     if (container) {
       container.innerHTML = `<div class="empty-alerts">API Unreachable</div>`;
     }
-    
-    // Set river flow representation to halted
-    const mainRiver = document.getElementById("main-river");
-    if (mainRiver) mainRiver.className.baseVal = "river-path flow-halted";
   } else {
-    banner.classList.add("hidden");
+    if (banner) banner.classList.add("hidden");
   }
 }
 
 // ==========================================================================
-// Interactive SVG Map Renderer
+// Google Maps Marker Rendering
 // ==========================================================================
-function renderRiskMap() {
-  const container = document.getElementById("risk-map-container");
-  if (!container) return;
-  
-  container.innerHTML = "";
-  
-  const width = 650;
-  const height = 360;
-  
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-  svg.setAttribute("class", "map-svg");
-  
-  svg.innerHTML = `
-    <defs>
-      <filter id="glow-heavy" x="-20%" y="-20%" width="140%" height="140%">
-        <feGaussianBlur stdDeviation="6" result="blur" />
-        <feComposite in="SourceGraphic" in2="blur" operator="over" />
-      </filter>
-      <linearGradient id="river-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#1e3a8a" />
-        <stop offset="50%" stop-color="#3b82f6" />
-        <stop offset="100%" stop-color="#0284c7" />
-      </linearGradient>
-    </defs>
-    
-    <!-- Background Grid Lines -->
-    <g stroke="rgba(255,255,255,0.015)" stroke-width="1">
-      <line x1="0" y1="60" x2="650" y2="60" />
-      <line x1="0" y1="120" x2="650" y2="120" />
-      <line x1="0" y1="180" x2="650" y2="180" />
-      <line x1="0" y1="240" x2="650" y2="240" />
-      <line x1="0" y1="300" x2="650" y2="300" />
-      <line x1="100" y1="0" x2="100" y2="360" />
-      <line x1="200" y1="0" x2="200" y2="360" />
-      <line x1="300" y1="0" x2="300" y2="360" />
-      <line x1="400" y1="0" x2="400" y2="360" />
-      <line x1="500" y1="0" x2="500" y2="360" />
-      <line x1="600" y1="0" x2="600" y2="360" />
-    </g>
-    
-    <!-- Channels -->
-    <path id="main-river" class="river-path" d="M 50 80 Q 200 120 300 200 T 580 320" stroke="url(#river-gradient)" stroke-width="6" />
-    <path id="trib-1" class="tributary-path" d="M 480 100 Q 420 180 350 200" />
-    <path id="trib-2" class="tributary-path" d="M 150 110 Q 220 120 250 160" />
-  `;
+function renderMapMarkers() {
+  if (!map || typeof google === "undefined") return;
 
-  // Draw nodes from risk data array
-  database.risk.forEach(muni => {
-    const coords = mapCoordinates[muni.municipality] || { x: 300, y: 180 }; // Fallback to center
-    
-    const nodeGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    nodeGroup.setAttribute("class", `muni-node ${appState.selectedMuni?.municipality === muni.municipality ? 'selected' : ''}`);
-    nodeGroup.setAttribute("id", `muni-${muni.municipality.toLowerCase().replace(/\s+/g, '-')}`);
-    
-    let color = "var(--success)";
-    if (muni.risk_score >= 0.8) color = "hsl(290, 80%, 50%)"; // Critical (Purple)
-    else if (muni.risk_score >= 0.6) color = "var(--danger)"; // Danger (Red)
-    else if (muni.risk_score >= 0.4) color = "var(--warning)"; // Warning (Orange)
-    
-    const selectionRing = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    selectionRing.setAttribute("cx", coords.x);
-    selectionRing.setAttribute("cy", coords.y);
-    selectionRing.setAttribute("r", 20);
-    selectionRing.setAttribute("class", "muni-node-ring");
-    
-    if (muni.risk_score >= 0.6) {
-      const glowCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      glowCircle.setAttribute("cx", coords.x);
-      glowCircle.setAttribute("cy", coords.y);
-      glowCircle.setAttribute("r", 15);
-      glowCircle.setAttribute("fill", "none");
-      glowCircle.setAttribute("stroke", color);
-      glowCircle.setAttribute("stroke-width", 2);
-      glowCircle.setAttribute("opacity", 0.6);
-      glowCircle.style.animation = "pulseGrad 2s infinite";
-      nodeGroup.appendChild(glowCircle);
-    }
-    
-    const mainNode = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-    mainNode.setAttribute("cx", coords.x);
-    mainNode.setAttribute("cy", coords.y);
-    mainNode.setAttribute("r", 10);
-    mainNode.setAttribute("fill", color);
-    
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", coords.x);
-    text.setAttribute("y", coords.y - 18);
-    text.setAttribute("class", "muni-text");
-    text.textContent = muni.municipality;
-    
-    nodeGroup.appendChild(selectionRing);
-    nodeGroup.appendChild(mainNode);
-    nodeGroup.appendChild(text);
-    
-    nodeGroup.addEventListener("mouseenter", () => displayMuniDetails(muni));
-    nodeGroup.addEventListener("click", () => {
+  // Clear existing markers
+  markers.forEach(m => m.setMap(null));
+  markers = [];
+
+  const basinNameMap = {
+    "rio_cauca": "Rio Cauca",
+    "rio_magdalena": "Rio Magdalena"
+  };
+  const selectedBasinName = basinNameMap[appState.selectedBasin] || "Rio Cauca";
+  
+  // Filter risk data by selected basin
+  const basinRiskData = database.risk.filter(m => m.basin === selectedBasinName);
+
+  basinRiskData.forEach(muni => {
+    const coords = municipalityCoords[muni.municipality] || { lat: 3.43, lng: -76.51 };
+
+    let color = "#22c55e"; // Low (Green)
+    if (muni.risk_score >= 0.8) color = "#a855f7"; // Extreme (Purple)
+    else if (muni.risk_score >= 0.6) color = "#ef4444"; // High (Red)
+    else if (muni.risk_score >= 0.4) color = "#f59e0b"; // Moderate (Orange)
+
+    const dominant = muni.dominant_hazard || "FLOOD";
+    const emoji = dominant === "LANDSLIDE" ? "🪨" : dominant === "SEISMIC" ? "🫨" : "🌊";
+
+    // Custom SVG Pin icon
+    const pinSvg = {
+      path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
+      fillColor: color,
+      fillOpacity: 0.95,
+      strokeColor: '#07090f',
+      strokeWeight: 1.5,
+      scale: 1.5,
+      anchor: new google.maps.Point(12, 22),
+      labelOrigin: new google.maps.Point(12, 9)
+    };
+
+    const marker = new google.maps.Marker({
+      position: coords,
+      map: map,
+      title: muni.municipality,
+      icon: pinSvg,
+      label: {
+        text: emoji,
+        color: '#ffffff',
+        fontSize: '11px'
+      }
+    });
+
+    marker.addListener("click", () => {
       appState.selectedMuni = muni;
-      renderRiskMap();
       displayMuniDetails(muni);
       initConsoleLog(`Selected region: ${muni.municipality} (Risk Score: ${muni.risk_score.toFixed(2)})`, "action");
     });
-    
-    svg.appendChild(nodeGroup);
-  });
-  
-  container.appendChild(svg);
-  updateMapFlowVisuals();
-  
-  // Update details drawer if selection exists
-  if (appState.selectedMuni) {
-    const updated = database.risk.find(m => m.municipality === appState.selectedMuni.municipality);
-    if (updated) displayMuniDetails(updated);
-  }
-}
 
-// Adjust visual water currents depending on status
-function updateMapFlowVisuals() {
-  const mainRiver = document.getElementById("main-river");
-  const trib1 = document.getElementById("trib-1");
-  const trib2 = document.getElementById("trib-2");
-  
-  if (!mainRiver) return;
-  
-  const anyPaused = database.connector.connectors?.some(c => c.status === "paused") || database.connector.status === "paused";
-  
-  if (appState.isOffline || anyPaused) {
-    mainRiver.className.baseVal = "river-path flow-halted";
-    if (trib1) trib1.className.baseVal = "tributary-path flow-halted";
-    if (trib2) trib2.className.baseVal = "tributary-path flow-halted";
-  } else {
-    mainRiver.className.baseVal = "river-path";
-    if (trib1) trib1.className.baseVal = "tributary-path";
-    if (trib2) trib2.className.baseVal = "tributary-path";
-    
-    const hasCritical = database.risk.some(m => m.risk_score >= 0.6);
-    if (hasCritical) {
-      mainRiver.classList.add("flow-high");
+    markers.push(marker);
+  });
+
+  // Keep details drawer updated if the selected muni is in the current basin
+  if (appState.selectedMuni) {
+    const updated = basinRiskData.find(m => m.municipality === appState.selectedMuni.municipality);
+    if (updated) {
+      displayMuniDetails(updated);
     } else {
-      mainRiver.classList.remove("flow-high");
+      const drawer = document.getElementById("muni-detail-drawer");
+      if (drawer) {
+        drawer.innerHTML = `<div class="drawer-instruction">Hover over or select a basin area to view detailed telemetry metrics.</div>`;
+      }
+      appState.selectedMuni = null;
     }
   }
 }
@@ -368,6 +409,16 @@ function displayMuniDetails(muni) {
     riskBadge = `<span class="badge" style="background-color: var(--warning-glow); color: var(--warning);">MODERATE WARNING</span>`;
   }
 
+  const dominant = muni.dominant_hazard || 'FLOOD';
+  const dominantEmoji = dominant === 'LANDSLIDE' ? '🪨' : dominant === 'SEISMIC' ? '🫨' : '🌊';
+  
+  const hazardPills = `
+    <span class="hazard-pill dominant">${dominantEmoji} ${dominant} (Dominant)</span>
+    ${muni.flood_score !== undefined && dominant !== 'FLOOD' ? `<span class="hazard-pill secondary">🌊 Flood (${muni.flood_score.toFixed(2)})</span>` : ''}
+    ${muni.landslide_score !== undefined && dominant !== 'LANDSLIDE' ? `<span class="hazard-pill secondary">🪨 Landslide (${muni.landslide_score.toFixed(2)})</span>` : ''}
+    ${muni.seismic_score !== undefined && dominant !== 'SEISMIC' ? `<span class="hazard-pill secondary">🫨 Seismic (${muni.seismic_score.toFixed(2)})</span>` : ''}
+  `;
+
   drawer.innerHTML = `
     <div class="drawer-grid">
       <div style="grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
@@ -379,6 +430,10 @@ function displayMuniDetails(muni) {
           ${muni.municipality}
         </h3>
         ${riskBadge}
+      </div>
+
+      <div class="drawer-hazard-row" style="grid-column: 1 / -1; display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.5rem;">
+        ${hazardPills}
       </div>
       
       <div class="drawer-metric">
@@ -523,13 +578,13 @@ function updateConnectorUI() {
 
   const anyPaused = connectors.some(c => c.status === "paused");
   if (anyPaused) {
-    systemLed.className = "led-dot danger-mode";
-    systemStatusText.textContent = "TELEMETRY DEGRADED";
-    progressBar.classList.add("halted");
+    if (systemLed) systemLed.className = "led-dot danger-mode";
+    if (systemStatusText) systemStatusText.textContent = "TELEMETRY DEGRADED";
+    if (progressBar) progressBar.classList.add("halted");
   } else {
-    systemLed.className = "led-dot";
-    systemStatusText.textContent = "SYSTEM ONLINE";
-    progressBar.classList.remove("halted");
+    if (systemLed) systemLed.className = "led-dot";
+    if (systemStatusText) systemStatusText.textContent = "SYSTEM ONLINE";
+    if (progressBar) progressBar.classList.remove("halted");
   }
 
   container.innerHTML = "";
@@ -586,13 +641,13 @@ function startSyncCycle() {
   
   appState.syncTimer = setInterval(() => {
     if (appState.isOffline) {
-      progressBar.style.width = "0%";
+      if (progressBar) progressBar.style.width = "0%";
       return;
     }
     
     currentStep++;
     appState.syncProgress = (currentStep / steps) * 100;
-    progressBar.style.width = `${appState.syncProgress}%`;
+    if (progressBar) progressBar.style.width = `${appState.syncProgress}%`;
     
     if (currentStep >= steps) {
       currentStep = 0;
@@ -642,6 +697,25 @@ function setupEventHandlers() {
     basinSelect.addEventListener("change", (e) => {
       appState.selectedBasin = e.target.value;
       initConsoleLog(`Switched catchment basin scope to: ${appState.selectedBasin}`, "action");
+      
+      // Center map on new basin
+      if (map) {
+        if (appState.selectedBasin === "rio_cauca") {
+          map.setCenter({ lat: 3.43, lng: -76.51 });
+          map.setZoom(11);
+        } else {
+          map.setCenter({ lat: 4.14, lng: -74.94 });
+          map.setZoom(8);
+        }
+      }
+      
+      // Clear muni detail drawer
+      const drawer = document.getElementById("muni-detail-drawer");
+      if (drawer) {
+        drawer.innerHTML = `<div class="drawer-instruction">Hover over or select a basin area to view detailed telemetry metrics.</div>`;
+      }
+      appState.selectedMuni = null;
+
       fetchTelemetry();
     });
   }
@@ -710,8 +784,8 @@ async function setupNotifications() {
         
         if (token) {
           fcmToken = token;
-          tokenCode.textContent = token;
-          tokenBox.classList.remove("hidden");
+          if (tokenCode) tokenCode.textContent = token;
+          if (tokenBox) tokenBox.classList.remove("hidden");
           initConsoleLog("FCM token retrieved successfully.", "telemetry");
           
           // Send token to backend
