@@ -192,9 +192,13 @@ def run_narration_turn(basin: str, risk_data: list[dict[str, Any]]) -> dict[str,
     Logs and returns empty strings on failure rather than crashing the endpoint.
     """
     try:
-        return asyncio.run(
-            asyncio.wait_for(_run_agent_turn(basin, risk_data), timeout=30.0)
-        )
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                asyncio.wait_for(_run_agent_turn(basin, risk_data), timeout=30.0)
+            )
+        finally:
+            loop.close()
     except asyncio.TimeoutError:
         print(
             "ERROR: ADK narration agent timed out after 30s -- returning empty narrative",
