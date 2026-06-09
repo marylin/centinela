@@ -28,6 +28,7 @@ Call path:
 import asyncio
 import json
 import os
+import threading
 import uuid
 from typing import Any
 
@@ -265,21 +266,40 @@ async def _run_event_agent_turn(event: dict[str, Any]) -> str:
     raise ValueError("ADK event narration agent returned no usable output")
 
 
+# One persistent loop, shared by all narration turns. The Gemini client is
+# cached on the module-level agents and binds its connections to the loop that
+# first runs it; a per-call new_event_loop()+close() leaves that cached client
+# bound to a dead loop, so every later call fails with "Event loop is closed".
+_NARRATION_LOOP: asyncio.AbstractEventLoop | None = None
+_NARRATION_LOOP_LOCK = threading.Lock()
+
+
+def _get_narration_loop() -> asyncio.AbstractEventLoop:
+    global _NARRATION_LOOP
+    with _NARRATION_LOOP_LOCK:
+        if _NARRATION_LOOP is None or _NARRATION_LOOP.is_closed():
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, daemon=True).start()
+            _NARRATION_LOOP = loop
+        return _NARRATION_LOOP
+
+
 def run_event_narration_turn(event: dict[str, Any]) -> str:
     """Synchronous wrapper for `_run_event_agent_turn`.
 
     Enforces a 30-second hard timeout. Returns an empty string on failure so
     callers can fall back to a template narration.
     """
+    future = None
     try:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                asyncio.wait_for(_run_event_agent_turn(event), timeout=30.0)
-            )
-        finally:
-            loop.close()
-    except asyncio.TimeoutError:
+        future = asyncio.run_coroutine_threadsafe(
+            asyncio.wait_for(_run_event_agent_turn(event), timeout=30.0),
+            _get_narration_loop(),
+        )
+        return future.result(timeout=35.0)
+    except TimeoutError:
+        if future is not None:
+            future.cancel()
         print(
             "ERROR: ADK event narration agent timed out after 30s -- returning empty narration",
             flush=True,
@@ -299,15 +319,16 @@ def run_narration_turn(basin: str, risk_data: list[dict[str, Any]]) -> dict[str,
     Returns dict with 'summary' and 'broadcast'.
     Logs and returns empty strings on failure rather than crashing the endpoint.
     """
+    future = None
     try:
-        loop = asyncio.new_event_loop()
-        try:
-            return loop.run_until_complete(
-                asyncio.wait_for(_run_agent_turn(basin, risk_data), timeout=30.0)
-            )
-        finally:
-            loop.close()
-    except asyncio.TimeoutError:
+        future = asyncio.run_coroutine_threadsafe(
+            asyncio.wait_for(_run_agent_turn(basin, risk_data), timeout=30.0),
+            _get_narration_loop(),
+        )
+        return future.result(timeout=35.0)
+    except TimeoutError:
+        if future is not None:
+            future.cancel()
         print(
             "ERROR: ADK narration agent timed out after 30s -- returning empty narrative",
             flush=True,

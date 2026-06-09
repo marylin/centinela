@@ -2391,7 +2391,7 @@ function renderIncidents(incidents) {
     
     return `<div class="log-line incident-log-item border-${severityClass} ${isReopened ? 'reopened' : ''}">
       <div class="incident-log-header">
-        <span class="incident-log-title tabular-nums">[${timeStr}] <strong>${typeLabel}</strong> (${inc.basin})</span>
+        <span class="incident-log-title tabular-nums">[${timeStr}] <strong>${typeLabel}</strong>${(inc.basin || inc.item_name) ? ` (${inc.basin || inc.item_name})` : ""}</span>
         ${isReopened 
           ? `<span class="incident-log-status-badge">REOPENED</span>` 
           : `<button onclick="window.reopenIncident('${inc.id}')" class="btn-incident-reopen">Reopen</button>`
