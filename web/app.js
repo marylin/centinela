@@ -269,6 +269,8 @@ document.addEventListener("DOMContentLoaded", () => {
   setupEventHandlers();
   setupNotifications();
   
+  appState.mode = "operations";
+  
   // If Google Maps script finished loading before DOMContentLoaded
   if (window.googleMapsReady) {
     initMap();
@@ -405,6 +407,12 @@ async function fetchTelemetry() {
     renderAutonomousHeals(autoHealsData);
     renderIncidents(incidentsData);
 
+    // Populate municipality dropdown and refresh public view if in public mode
+    populateMuniDropdown();
+    if (appState.mode === "public") {
+      renderPublicView();
+    }
+
   } catch (err) {
     console.error("Fetch telemetry failed:", err);
     if (!appState.isOffline) {
@@ -517,7 +525,7 @@ function renderMapMarkers() {
     if (updated) {
       displayMuniDetails(updated);
     } else {
-      const drawer = document.getElementById("muni-detail-drawer");
+      const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
       if (drawer) {
         drawer.innerHTML = `<div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>`;
       }
@@ -536,7 +544,7 @@ function renderMapMarkers() {
 // Details Panel / Drawer Rendering
 // ==========================================================================
 function displayMuniDetails(muni) {
-  const drawer = document.getElementById("muni-detail-drawer");
+  const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
   if (!drawer) return;
   
   const severityConfig = getSeverityConfig(muni.risk_score);
@@ -849,12 +857,15 @@ function setupEventHandlers() {
         loader.classList.remove("hidden");
       }
       
-      // Clear muni detail drawer
-      const drawer = document.getElementById("muni-detail-drawer");
+      // Clear muni detail drawer/rail
+      const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
       if (drawer) {
         drawer.innerHTML = `<div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>`;
       }
       appState.selectedMuni = null;
+
+      // Populate dropdown for Public mode
+      populateMuniDropdown();
 
       fetchTelemetry();
     });
@@ -875,6 +886,30 @@ function setupEventHandlers() {
         }
       } catch (err) {
         initConsoleLog(`Error clearing reopened incident: ${err.message}`, "error");
+      }
+    });
+  }
+
+  // Initialize diagnostics slideout
+  setupDiagnosticsSlideout();
+  
+  // Set up mode switch handlers
+  const btnOps = document.getElementById("mode-btn-operations");
+  const btnPub = document.getElementById("mode-btn-public");
+  if (btnOps && btnPub) {
+    btnOps.addEventListener("click", () => switchMode("operations"));
+    btnPub.addEventListener("click", () => switchMode("public"));
+  }
+  
+  // Set up muni selector dropdown change handler
+  const muniSelect = document.getElementById("muni-select");
+  if (muniSelect) {
+    muniSelect.addEventListener("change", (e) => {
+      const muniName = e.target.value;
+      const muniObj = database.risk.find(r => r.municipality === muniName);
+      if (muniObj) {
+        appState.selectedMuni = muniObj;
+        renderPublicView();
       }
     });
   }
@@ -1051,3 +1086,191 @@ window.reopenIncident = async (id) => {
     initConsoleLog(`Error reopening incident: ${err.message}`, "error");
   }
 };
+
+function populateMuniDropdown() {
+  const muniSelect = document.getElementById("muni-select");
+  if (!muniSelect) return;
+  
+  const basinMunis = {
+    "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
+    "rio_magdalena": ["Honda", "Girardot", "Neiva"]
+  };
+  const munis = basinMunis[appState.selectedBasin] || [];
+  
+  const currentOptions = Array.from(muniSelect.options).map(o => o.value);
+  const optionsChanged = currentOptions.length !== munis.length || !currentOptions.every((val, i) => val === munis[i]);
+  
+  if (optionsChanged) {
+    muniSelect.innerHTML = munis.map(m => `<option value="${m}">${m}</option>`).join("");
+  }
+  
+  if (!appState.selectedMuni || !munis.includes(appState.selectedMuni.municipality)) {
+    const updated = database.risk.find(r => r.municipality === munis[0]);
+    appState.selectedMuni = updated || { municipality: munis[0], risk_score: 0, dominant_hazard: "FLOOD" };
+  } else {
+    const updated = database.risk.find(r => r.municipality === appState.selectedMuni.municipality);
+    if (updated) {
+      appState.selectedMuni = updated;
+    }
+  }
+  
+  muniSelect.value = appState.selectedMuni.municipality;
+}
+
+function switchMode(newMode) {
+  appState.mode = newMode;
+  
+  const wrapper = document.getElementById("dashboard-wrapper");
+  if (wrapper) {
+    wrapper.className = `dashboard-wrapper mode-${newMode}`;
+  }
+  
+  const btnOps = document.getElementById("mode-btn-operations");
+  const btnPub = document.getElementById("mode-btn-public");
+  if (btnOps && btnPub) {
+    if (newMode === "operations") {
+      btnOps.classList.add("active");
+      btnPub.classList.remove("active");
+    } else {
+      btnPub.classList.add("active");
+      btnOps.classList.remove("active");
+    }
+  }
+  
+  if (newMode === "operations") {
+    if (map) {
+      google.maps.event.trigger(map, 'resize');
+    }
+  } else {
+    populateMuniDropdown();
+    renderPublicView();
+  }
+}
+
+function setupDiagnosticsSlideout() {
+  const toggleBtn = document.getElementById("diagnostics-toggle-btn");
+  const closeBtn = document.getElementById("diagnostics-close-btn");
+  const overlay = document.getElementById("diagnostics-overlay");
+  const slideout = document.getElementById("diagnostics-slideout");
+  
+  if (!toggleBtn || !slideout) return;
+  
+  const openSlideout = () => {
+    slideout.classList.add("open");
+    if (overlay) overlay.classList.add("open");
+  };
+  
+  const closeSlideout = () => {
+    slideout.classList.remove("open");
+    if (overlay) overlay.classList.remove("open");
+  };
+  
+  toggleBtn.addEventListener("click", openSlideout);
+  if (closeBtn) closeBtn.addEventListener("click", closeSlideout);
+  if (overlay) overlay.addEventListener("click", closeSlideout);
+}
+
+function renderPublicView() {
+  const heroContainer = document.getElementById("public-status-hero");
+  const guidanceList = document.getElementById("public-guidance-list");
+  const warningsList = document.getElementById("public-warnings-list");
+  
+  if (!heroContainer) return;
+  
+  const selectedMuni = appState.selectedMuni || (database.risk.length > 0 ? database.risk[0] : null);
+  if (!selectedMuni) {
+    heroContainer.innerHTML = `<div>No area data available.</div>`;
+    return;
+  }
+  
+  const severityConfig = getSeverityConfig(selectedMuni.risk_score);
+  const statusWord = severityConfig.label.toUpperCase();
+  
+  let whatThisMeans = "Hydrological conditions are safe and stable.";
+  let guidanceItems = [
+    "No immediate actions are required.",
+    "Stay informed via local safety advisories and public announcements."
+  ];
+  
+  if (statusWord === "CRITICAL") {
+    whatThisMeans = "Severe risk of flood, landslide, or seismic activity. Immediate threat to life and property.";
+    guidanceItems = [
+      "EVACUATE IMMEDIATELY to higher ground.",
+      "Avoid low-lying areas, river catchments, and steep slopes.",
+      "Follow instructions from civil protection authorities without delay.",
+      "Check on neighbors and vulnerable family members if safe to do so."
+    ];
+  } else if (statusWord === "DANGER") {
+    whatThisMeans = "High hazard probability detected. Conditions are deteriorating rapidly.";
+    guidanceItems = [
+      "PREPARE TO EVACUATE. Secure emergency supply kits.",
+      "Move valuable items, electronics, and documents to upper floors.",
+      "Stand by and monitor official radio or messaging channels for evacuation orders.",
+      "Avoid crossing flooded roads or flowing water."
+    ];
+  } else if (statusWord === "WARNING") {
+    whatThisMeans = "Moderate risk. Precautionary measures and vigilance are advised.";
+    guidanceItems = [
+      "STAY VIGILANT. Monitor water levels in local streams and catchments.",
+      "Review your family emergency plans and supply kits.",
+      "Avoid steep terrains and non-essential travel in affected zones.",
+      "Keep safety devices charged and notification options active."
+    ];
+  }
+  
+  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  
+  heroContainer.innerHTML = `
+    <div class="public-hero-title">Selected catchment status</div>
+    <div class="public-hero-status" style="color: ${severityConfig.colorHex}">${statusWord}</div>
+    <p class="public-hero-desc">${selectedMuni.municipality}: ${whatThisMeans}</p>
+    <div class="public-hero-timestamp">Last updated: ${timestamp}</div>
+  `;
+  
+  if (guidanceList) {
+    guidanceList.innerHTML = guidanceItems.map(item => `
+      <div class="guidance-item">
+        <span class="guidance-item-bullet">&bull;</span>
+        <span>${item}</span>
+      </div>
+    `).join("");
+  }
+  
+  if (warningsList) {
+    const alertData = database.alert;
+    let warningsHtml = "";
+    
+    const allowedMunis = database.risk.map(m => m.municipality);
+    const activeAlerts = (alertData && alertData.graded_alert) 
+      ? alertData.graded_alert.filter(a => allowedMunis.includes(a.municipality) && a.severity !== 'LOW')
+      : [];
+      
+    if (activeAlerts.length > 0) {
+      warningsHtml += activeAlerts.map(alert => {
+        const sevConfig = getSeverityConfig(alert.risk_score);
+        const hazardName = alert.dominant_hazard === 'FLOOD' ? 'River Flooding' : alert.dominant_hazard === 'LANDSLIDE' ? 'Landslide' : 'Earthquake / Seismic Activity';
+        return `
+          <div class="plain-warning-card" style="border-left: 3px solid ${sevConfig.colorHex};">
+            <span class="plain-warning-title">${alert.municipality}</span>
+            <span class="plain-warning-body">${hazardName} risk is currently <strong>${sevConfig.label}</strong>.</span>
+          </div>
+        `;
+      }).join("");
+    } else {
+      warningsHtml += `<div class="empty-alerts">No active warnings for this basin catchment.</div>`;
+    }
+    
+    if (alertData && alertData.resident_broadcast && alertData.agency_incident && alertData.agency_incident.affected_municipalities.length > 0) {
+      warningsHtml += `
+        <div class="broadcast-box" style="margin-top: 1rem;">
+          <div class="broadcast-header">
+            <span class="broadcast-tag">OFFICIAL EMERGENCY ADVISORY</span>
+          </div>
+          <pre class="broadcast-text" style="white-space: pre-wrap; font-family: inherit; font-size: 0.8rem; padding: 1rem; color: var(--text-main);">${alertData.resident_broadcast}</pre>
+        </div>
+      `;
+    }
+    
+    warningsList.innerHTML = warningsHtml;
+  }
+}

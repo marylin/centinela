@@ -12,7 +12,7 @@
 </head>
 <body>
   <div id="api-offline-banner" class="api-offline-banner hidden">CRITICAL: BACKEND API OFFLINE - ATTEMPTING RECONNECTION...</div>
-  <div class="dashboard-wrapper">
+  <div class="dashboard-wrapper mode-operations" id="dashboard-wrapper">
     <!-- Header Area -->
     <header class="app-header">
       <div class="brand">
@@ -31,12 +31,33 @@
         </div>
       </div>
       
+      <!-- Mode Switcher Segmented Control -->
+      <div class="mode-switch-wrapper">
+        <button type="button" class="mode-switch-btn active" id="mode-btn-operations" data-mode="operations">Operations</button>
+        <button type="button" class="mode-switch-btn" id="mode-btn-public" data-mode="public">Public Alert</button>
+      </div>
+
       <div class="basin-selector-wrapper">
         <select id="basin-select" class="basin-select">
           <option value="rio_cauca">Rio Cauca (Colombia)</option>
           <option value="rio_magdalena">Rio Magdalena (Colombia)</option>
         </select>
+        <!-- Municipality selector (Public mode only) -->
+        <select id="muni-select" class="basin-select muni-select-dropdown">
+          <!-- Populated dynamically -->
+        </select>
       </div>
+
+      <!-- Toggle Diagnostics (Operations mode only) -->
+      <button type="button" class="btn btn-sm btn-diagnostics" id="diagnostics-toggle-btn">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+          <line x1="6" y1="6" x2="6.01" y2="6"></line>
+          <line x1="6" y1="18" x2="6.01" y2="18"></line>
+        </svg>
+        <span>Diagnostics</span>
+      </button>
 
       <div class="header-meta">
         <div class="system-time">
@@ -53,8 +74,8 @@
 
     <!-- Main Grid Layout -->
     <main class="dashboard-grid">
-      <!-- Left Column: Risk Map & Alerts -->
-      <div class="main-column">
+      <!-- OPERATIONS VIEW PANELS -->
+      <div class="ops-panels-container">
         <!-- Basin Risk Map Panel -->
         <section class="card risk-map-panel" aria-labelledby="risk-map-title">
           <div class="card-header">
@@ -66,23 +87,25 @@
               <span class="legend-item"><span class="legend-dot critical"></span> Critical</span>
             </div>
           </div>
-          <div class="card-body map-container" id="risk-map-container">
-            <div class="map-loading" id="map-loading-overlay">
-              <div class="map-loading-spinner"></div>
-              <span>Loading hazard data...</span>
+          <div class="card-body map-panel-split">
+            <div class="map-wrapper" id="risk-map-container">
+              <div class="map-loading" id="map-loading-overlay">
+                <div class="map-loading-spinner"></div>
+                <span>Loading hazard data...</span>
+              </div>
+              <div id="google-map" class="google-map"></div>
             </div>
-            <div id="google-map" class="google-map"></div>
-          </div>
-          <!-- Selected Municipality Detail Panel -->
-          <div class="detail-drawer" id="muni-detail-drawer">
-            <div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>
+            <!-- Side Detail Rail -->
+            <aside class="detail-rail" id="muni-detail-rail">
+              <div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>
+            </aside>
           </div>
         </section>
 
-        <!-- Alert Area Panel -->
+        <!-- Incident Triage alerts panel -->
         <section class="card alerts-panel" aria-labelledby="alerts-title">
           <div class="card-header">
-            <h2 id="alerts-title">Active Flood & Flow Alerts</h2>
+            <h2 id="alerts-title">Incident Triage: Active Alerts</h2>
             <span class="badge badge-error" id="active-alert-count">0 Alerts</span>
           </div>
           <div class="card-body alert-list" id="alert-feed-container">
@@ -92,32 +115,37 @@
         </section>
       </div>
 
-      <!-- Right Column: Status & Control Panels -->
-      <aside class="sidebar-column">
-        <!-- Pipeline Status Card -->
-        <section class="card status-panel" id="pipeline-status-card" aria-labelledby="pipeline-title">
-          <div class="card-header">
-            <h2 id="pipeline-title">Pipeline Status</h2>
-          </div>
-          <div class="card-body connectors-container" id="pipeline-connectors-container">
-            <div class="empty-alerts">Loading connectors...</div>
-          </div>
-          <div class="card-footer card-footer-compact">
-            <div class="sync-progress-bar">
-              <div class="progress-bar-fill" id="sync-progress"></div>
-            </div>
+      <!-- PUBLIC ALERT VIEW PANELS -->
+      <div class="public-panels-container">
+        <!-- Status Hero Card -->
+        <section class="card public-hero-card" id="public-status-hero">
+          <!-- Dynamic plain-language status hero -->
+        </section>
+        
+        <!-- Safety Guidance Card -->
+        <section class="card guidance-card">
+          <h2 class="guidance-title">Guidance & Protective Action</h2>
+          <div class="guidance-list" id="public-guidance-list">
+            <!-- Dynamic guidance list -->
           </div>
         </section>
-
-        <!-- Firebase Alerts Subscription Panel -->
-        <section class="card notification-panel" aria-labelledby="notification-title">
+        
+        <!-- Active Warnings & Broadcast Card -->
+        <section class="card guidance-card">
+          <h2 class="guidance-title">Public Advisories & Alerts</h2>
+          <div class="plain-warnings-list" id="public-warnings-list">
+            <!-- Dynamic plain warnings list -->
+          </div>
+        </section>
+        
+        <!-- Firebase Subscription panel (CTA) -->
+        <section class="card notification-panel">
           <div class="card-header">
-            <h2 id="notification-title">Real-Time Alerts</h2>
-            <span class="badge badge-demo-optin">Demo Opt-in</span>
+            <h2 id="notification-title">Subscribe to Real-Time Warnings</h2>
           </div>
           <div class="card-body notification-panel-body">
             <p class="control-description control-description-compact">
-              Opt-in to receive live flood warnings via Firebase Cloud Messaging. This is a controlled demo delivery and will only push warnings to registered testing devices.
+              Register your browser to receive instant emergency notifications directly on your device when hazard alerts are triggered.
             </p>
             <button type="button" class="btn btn-success btn-full-width" id="enable-notifications-btn">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -133,39 +161,7 @@
             </div>
           </div>
         </section>
-        
-        <!-- Autonomous Self-Heal History -->
-        <section class="card autonomous-heals-panel" aria-labelledby="auto-heals-title">
-          <div class="card-header">
-            <h2 id="auto-heals-title">Autonomous Self-Heal Logs</h2>
-            <span class="badge badge-autonomous">autonomous, no human action</span>
-          </div>
-          <div class="card-body log-console logs-container-max-150" id="auto-heals-container">
-            <div class="log-line system">No autonomous self-heals logged.</div>
-          </div>
-        </section>
-        
-        <!-- Incident History Panel -->
-        <section class="card incidents-panel" aria-labelledby="incidents-history-title">
-          <div class="card-header">
-            <h2 id="incidents-history-title">Incident History</h2>
-            <button id="clear-reopen-btn" class="btn btn-sm btn-return-live hidden">Return to Live</button>
-          </div>
-          <div class="card-body log-console logs-container-max-180" id="incidents-history-container">
-            <div class="log-line system">No historical incidents recorded.</div>
-          </div>
-        </section>
-        
-        <!-- Live System Logs / Telemetry Stream -->
-        <section class="card logs-panel" aria-labelledby="logs-title">
-          <div class="card-header">
-            <h2 id="logs-title">Telemetry Stream Logs</h2>
-          </div>
-          <div class="card-body log-console" id="log-console-container">
-            <div class="log-line system">[SYSTEM] Dashboard UI initialized. Reading telemetry data contract...</div>
-          </div>
-        </section>
-      </aside>
+      </div>
     </main>
 
     <!-- Footer -->
@@ -173,6 +169,62 @@
       <p>&copy; 2026 Centinela Systems. Flood Prevention and Catchment Basin Analytics. Unit 3A Scaffold.</p>
     </footer>
   </div>
+
+  <!-- Collapsible Pipeline Diagnostics Slide-over -->
+  <div class="diagnostics-overlay" id="diagnostics-overlay"></div>
+  <aside class="diagnostics-slideout" id="diagnostics-slideout">
+    <div class="slideout-header">
+      <h2>Pipeline & Diagnostics</h2>
+      <button type="button" class="slideout-close-btn" id="diagnostics-close-btn">&times;</button>
+    </div>
+    <div class="slideout-body">
+      <!-- Pipeline Status Card -->
+      <section class="card status-panel" id="pipeline-status-card" aria-labelledby="pipeline-title">
+        <div class="card-header">
+          <h2 id="pipeline-title">Pipeline Status</h2>
+        </div>
+        <div class="card-body connectors-container" id="pipeline-connectors-container">
+          <div class="empty-alerts">Loading connectors...</div>
+        </div>
+        <div class="card-footer card-footer-compact">
+          <div class="sync-progress-bar">
+            <div class="progress-bar-fill" id="sync-progress"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Autonomous Self-Heal History -->
+      <section class="card autonomous-heals-panel" aria-labelledby="auto-heals-title">
+        <div class="card-header">
+          <h2 id="auto-heals-title">Autonomous Self-Heal Logs</h2>
+        </div>
+        <div class="card-body log-console logs-container-max-150" id="auto-heals-container">
+          <div class="log-line system">No autonomous self-heals logged.</div>
+        </div>
+      </section>
+      
+      <!-- Incident History Panel -->
+      <section class="card incidents-panel" aria-labelledby="incidents-history-title">
+        <div class="card-header">
+          <h2 id="incidents-history-title">Incident History</h2>
+          <button id="clear-reopen-btn" class="btn btn-sm btn-return-live hidden">Return to Live</button>
+        </div>
+        <div class="card-body log-console logs-container-max-180" id="incidents-history-container">
+          <div class="log-line system">No historical incidents recorded.</div>
+        </div>
+      </section>
+      
+      <!-- Live System Logs / Telemetry Stream -->
+      <section class="card logs-panel" aria-labelledby="logs-title">
+        <div class="card-header">
+          <h2 id="logs-title">Telemetry Stream Logs</h2>
+        </div>
+        <div class="card-body log-console" id="log-console-container">
+          <div class="log-line system">[SYSTEM] Dashboard UI initialized. Reading telemetry data contract...</div>
+        </div>
+      </section>
+    </div>
+  </aside>
   
   <!-- Firebase App & Messaging compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
