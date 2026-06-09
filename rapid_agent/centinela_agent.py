@@ -42,7 +42,7 @@ from google.genai.types import Content, Part
 # These are project-config values, not secrets.
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "centinela-498622")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
+os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us")
 
 
 # ---------------------------------------------------------------------------
