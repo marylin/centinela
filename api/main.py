@@ -2260,7 +2260,9 @@ def format_raw_event_row(row_dict: dict) -> dict:
         t = t.strftime("%Y-%m-%dT%H:%M:%SZ")
     return {
         "id": row_dict.get("id"),
-        "magnitude": float(row_dict.get("magnitude") or 0.0),
+        # BigQuery stores float32; round to USGS's 0.1 precision so prose and
+        # UI never show artifacts like 5.199999809265137.
+        "magnitude": round(float(row_dict.get("magnitude") or 0.0), 1),
         "place": row_dict.get("place") or "Unknown",
         "time": t,
         "latitude": float(row_dict.get("latitude") or 0.0),
@@ -2317,7 +2319,7 @@ def get_seismic_events():
                 {
                     "region": row_dict.get("region") or "Unknown",
                     "count": int(row_dict.get("count") or 0),
-                    "max_magnitude": float(row_dict.get("max_magnitude") or 0.0)
+                    "max_magnitude": round(float(row_dict.get("max_magnitude") or 0.0), 1)
                 }
                 for row_dict in (dict(row) for row in region_rows)
             ]
