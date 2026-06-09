@@ -78,8 +78,9 @@ h1, h2, h3, h4 {
 /* Header */
 .app-header {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 1rem 1.5rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--border-color);
 }
@@ -852,8 +853,10 @@ h1, h2, h3, h4 {
 }
 
 .basin-selector-wrapper {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
   margin-left: auto;
-  margin-right: 2rem;
 }
 
 .basin-select {
@@ -1217,7 +1220,6 @@ h1, h2, h3, h4 {
   background: rgba(56, 189, 248, 0.1);
   color: var(--primary);
   border: 1px solid rgba(56, 189, 248, 0.2);
-  margin-left: 1.5rem;
 }
 .btn-diagnostics:hover {
   background: var(--primary);
@@ -1422,4 +1424,25 @@ h1, h2, h3, h4 {
     padding-top: 1.5rem;
   }
 }
+
+@media (max-width: 1024px) {
+  .basin-selector-wrapper {
+    margin-left: 0;
+  }
+  .header-meta {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .mode-switch-wrapper {
+    margin-left: 0;
+  }
+  .header-meta {
+    margin-left: 0;
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
 
