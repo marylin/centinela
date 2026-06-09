@@ -181,6 +181,12 @@ const municipalityCoords = {
   "Neiva": { lat: 2.9273, lng: -75.2819 },
   "Girardot": { lat: 4.3009, lng: -74.8061 },
   "Honda": { lat: 5.2045, lng: -74.7411 },
+  "Lima": { lat: -12.046, lng: -77.043 },
+  "Callao": { lat: -12.056, lng: -77.118 },
+  "Chorrillos": { lat: -12.168, lng: -77.022 },
+  "Guatemala City": { lat: 14.6349, lng: -90.5069 },
+  "Mixco": { lat: 14.6333, lng: -90.6064 },
+  "Villa Nueva": { lat: 14.5269, lng: -90.5969 },
   "Alto Pass": { lat: 3.4600, lng: -76.5100 },
   "Oak Creek": { lat: 3.4800, lng: -76.5200 },
   "Silver Valley": { lat: 3.5000, lng: -76.5300 },
@@ -231,6 +237,54 @@ let directionsService = null;
 let directionsRenderer = null;
 let safeRouteBusy = false; // guards against overlapping searches
 const COMPASS_DEGREES = { north: 0, northeast: 45, east: 90, southeast: 135, south: 180, southwest: 225, west: 270, northwest: 315 };
+
+// Offline fallback used only if GET /basins fails or returns empty, so the UI
+// never breaks. Mirrors the original two hardcoded basins.
+const FALLBACK_BASINS = [
+  { id: "rio_cauca", name: "Rio Cauca", country: "Colombia", municipalities: ["Cali", "Yumbo", "Jamundí"] },
+  { id: "rio_magdalena", name: "Rio Magdalena", country: "Colombia", municipalities: ["Neiva", "Girardot", "Honda"] }
+];
+
+// Preserve the original municipality ordering for the two existing basins so they
+// render exactly as before; any other basin (e.g. Lima) is driven from config.
+const FALLBACK_BASIN_MUNIS = {
+  "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
+  "rio_magdalena": ["Honda", "Girardot", "Neiva"]
+};
+
+function getBasinMunis(basinId) {
+  if (FALLBACK_BASIN_MUNIS[basinId]) return FALLBACK_BASIN_MUNIS[basinId];
+  const b = (appState.basins || []).find(x => x.id === basinId);
+  return (b && Array.isArray(b.municipalities)) ? b.municipalities : [];
+}
+
+// Fetch the basin catalog from the backend and build the selector options from it,
+// so any basin in config (including Lima/Peru) appears automatically.
+async function loadBasins() {
+  const basinSelect = document.getElementById("basin-select");
+  try {
+    const res = await fetch(`${API_BASE}/basins`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) throw new Error("Empty basins config");
+
+    appState.basins = data;
+    if (basinSelect) {
+      basinSelect.innerHTML = data
+        .map(b => `<option value="${b.id}">${b.name} (${b.country})</option>`)
+        .join("");
+    }
+    // Default to the first basin returned (keeps rio_cauca as today).
+    appState.selectedBasin = data[0].id;
+    if (basinSelect) basinSelect.value = appState.selectedBasin;
+    initConsoleLog(`Loaded ${data.length} basins from configuration.`, "telemetry");
+  } catch (err) {
+    // Resilience: keep the existing hardcoded options/basins; never crash.
+    appState.basins = FALLBACK_BASINS;
+    console.warn("Could not load basins from backend; using fallback list:", err && err.message);
+    initConsoleLog("Basin config unavailable; using built-in basin list.", "warn");
+  }
+}
 
 // Google Maps Dark styles
 const darkMapStyles = [
@@ -307,7 +361,7 @@ const darkMapStyles = [
 // ==========================================================================
 // Initialization & Lifecycle
 // ==========================================================================
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   initConsoleLog("Dashboard UI initialized. Attempting connection to local backend API...");
   initClock();
   setupEventHandlers();
@@ -315,7 +369,10 @@ document.addEventListener("DOMContentLoaded", () => {
   setupSafeRouteControls();
 
   appState.mode = "operations";
-  
+
+  // Populate the basin selector from backend config before loading telemetry.
+  await loadBasins();
+
   // If Google Maps script finished loading before DOMContentLoaded
   if (window.googleMapsReady) {
     initMap();
@@ -342,8 +399,10 @@ function initMap() {
   const mapElement = document.getElementById("google-map");
   if (!mapElement || typeof google === "undefined") return;
 
-  const center = appState.selectedBasin === "rio_cauca" ? { lat: 3.43, lng: -76.51 } : { lat: 4.14, lng: -74.94 };
-  const zoom = appState.selectedBasin === "rio_cauca" ? 11 : 8;
+  // Neutral default view; the per-basin bounds-fit recenters from the basin's
+  // municipality markers as soon as they render, so no basin coords are hardcoded.
+  const center = { lat: 0, lng: -75 };
+  const zoom = 4;
 
   map = new google.maps.Map(mapElement, {
     center: center,
@@ -1004,11 +1063,7 @@ function setBackendOfflineState(isOffline) {
 function renderMapMarkers() {
   if (!map || typeof google === "undefined") return;
 
-  const basinMunis = {
-    "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
-    "rio_magdalena": ["Honda", "Girardot", "Neiva"]
-  };
-  const allowedMunis = basinMunis[appState.selectedBasin] || [];
+  const allowedMunis = getBasinMunis(appState.selectedBasin);
   
   // Filter risk data by selected basin
   const basinRiskData = database.risk.filter(m => allowedMunis.includes(m.municipality));
@@ -1468,18 +1523,11 @@ function setupEventHandlers() {
     basinSelect.addEventListener("change", (e) => {
       appState.selectedBasin = e.target.value;
       initConsoleLog(`Switched catchment basin scope to: ${appState.selectedBasin}`, "action");
-      
-      // Center map on new basin
-      if (map) {
-        if (appState.selectedBasin === "rio_cauca") {
-          map.setCenter({ lat: 3.43, lng: -76.51 });
-          map.setZoom(11);
-        } else {
-          map.setCenter({ lat: 4.14, lng: -74.94 });
-          map.setZoom(8);
-        }
-      }
-      
+
+      // Recenter happens via the per-basin bounds-fit once the new basin's markers
+      // render; reset the fit flag so it re-fits on this basin change (not every poll).
+      appState.boundsFitForBasin = null;
+
       // Show loading overlay
       const loader = document.getElementById("map-loading-overlay");
       if (loader) {
@@ -1719,12 +1767,8 @@ window.reopenIncident = async (id) => {
 function populateMuniDropdown() {
   const muniSelect = document.getElementById("muni-select");
   if (!muniSelect) return;
-  
-  const basinMunis = {
-    "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
-    "rio_magdalena": ["Honda", "Girardot", "Neiva"]
-  };
-  const munis = basinMunis[appState.selectedBasin] || [];
+
+  const munis = getBasinMunis(appState.selectedBasin);
   
   const currentOptions = Array.from(muniSelect.options).map(o => o.value);
   const optionsChanged = currentOptions.length !== munis.length || !currentOptions.every((val, i) => val === munis[i]);
