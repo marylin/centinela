@@ -1445,11 +1445,30 @@ function renderSeismicEvents() {
 async function focusSeismicEvent(eventId) {
   if (!eventId || appState.isOffline) return;
   initConsoleLog(`Requesting seismic-only focus for event ${eventId}...`, "action");
+
+  // Instant feedback: the feed row already carries the event facts, so the
+  // rail and map respond immediately; risk + narration stream in afterwards.
+  const known = (database.seismicEvents.events || []).find(ev => ev && ev.id === eventId);
+  if (known) {
+    appState.seismicFocus = { event: known, pending: true };
+    renderSeismicFocusRail();
+    placeSeismicFocusOnMap();
+    const mapPanel = document.getElementById("risk-map-container");
+    if (mapPanel && typeof mapPanel.scrollIntoView === "function") {
+      mapPanel.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "nearest" });
+    }
+  }
+
+  const stillFocused = () =>
+    appState.seismicFocus && appState.seismicFocus.event && appState.seismicFocus.event.id === eventId;
+
   try {
     const res = await fetch(`${API_BASE}/seismic-focus?id=${encodeURIComponent(eventId)}`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
     const data = await res.json();
     if (!data || !data.event) throw new Error("Unexpected /seismic-focus payload");
+    // The user may have clicked another event or closed the focus meanwhile.
+    if (known && !stillFocused()) return;
     appState.seismicFocus = data;
     renderSeismicFocusRail();
     placeSeismicFocusOnMap();
@@ -1457,13 +1476,19 @@ async function focusSeismicEvent(eventId) {
     initConsoleLog(
       `SEISMIC FOCUS: M ${(Number(ev.magnitude) || 0).toFixed(1)} — ${ev.place || "unknown location"} ` +
       `${ev.simulated === true ? "(SIMULATED)" : "(LIVE USGS)"}`, "telemetry");
-    // Bring the map into view; instant (no smooth scroll) under reduced motion.
-    const mapPanel = document.getElementById("risk-map-container");
-    if (mapPanel && typeof mapPanel.scrollIntoView === "function") {
-      mapPanel.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "nearest" });
+    if (!known) {
+      const mapPanel = document.getElementById("risk-map-container");
+      if (mapPanel && typeof mapPanel.scrollIntoView === "function") {
+        mapPanel.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "nearest" });
+      }
     }
   } catch (err) {
     initConsoleLog(`Seismic focus failed: ${err.message}. The /seismic-focus endpoint may not be deployed yet.`, "error");
+    if (known && stillFocused()) {
+      appState.seismicFocus.pending = false;
+      appState.seismicFocus.error = true;
+      renderSeismicFocusRail();
+    }
   }
 }
 
@@ -1564,6 +1589,21 @@ function renderSeismicFocusRail() {
         <span class="drawer-val tabular-nums">${coordsText}</span>
       </div>
       <div class="drawer-divider"></div>
+      ${focus.pending ? `
+      <div class="drawer-metric">
+        <span class="drawer-label">Derived Seismic Risk</span>
+        <span class="skeleton-block" style="width: 110px; height: 18px;" aria-hidden="true"></span>
+      </div>
+      <div class="seismic-focus-narration" aria-busy="true">
+        <span class="drawer-label">Narration &middot; generating&hellip;</span>
+        <span class="skeleton-block" style="width: 100%; height: 12px; margin-top: 6px;" aria-hidden="true"></span>
+        <span class="skeleton-block" style="width: 85%; height: 12px; margin-top: 6px;" aria-hidden="true"></span>
+        <span class="skeleton-block" style="width: 60%; height: 12px; margin-top: 6px;" aria-hidden="true"></span>
+      </div>` : focus.error ? `
+      <div class="drawer-metric">
+        <span class="drawer-label">Derived Seismic Risk</span>
+        <span class="drawer-val">Assessment unavailable &mdash; feed data shown.</span>
+      </div>` : `
       <div class="drawer-metric">
         <span class="drawer-label">Derived Seismic Risk</span>
         <span class="drawer-val tabular-nums" style="color: ${sevRisk.colorHex};">
@@ -1574,7 +1614,7 @@ function renderSeismicFocusRail() {
       <div class="seismic-focus-narration">
         <span class="drawer-label">Narration</span>
         <p>${escapeHtml(focus.narration)}</p>
-      </div>` : ""}
+      </div>` : ""}`}
       <p class="seismic-focus-note">${noteText}</p>
     </div>
   `;
@@ -2368,6 +2408,12 @@ function renderAutonomousHeals(heals) {
   }).join("");
 }
 
+function basinDisplayName(basinId) {
+  if (!basinId) return null;
+  const basin = (appState.basins || []).find(b => b && b.id === basinId);
+  return basin ? basin.name : basinId;
+}
+
 function renderIncidents(incidents) {
   const container = document.getElementById("incidents-history-container");
   if (!container) return;
@@ -2391,7 +2437,7 @@ function renderIncidents(incidents) {
     
     return `<div class="log-line incident-log-item border-${severityClass} ${isReopened ? 'reopened' : ''}">
       <div class="incident-log-header">
-        <span class="incident-log-title tabular-nums">[${timeStr}] <strong>${typeLabel}</strong>${(inc.basin || inc.item_name) ? ` (${inc.basin || inc.item_name})` : ""}</span>
+        <span class="incident-log-title tabular-nums">[${timeStr}] <strong>${typeLabel}</strong>${(basinDisplayName(inc.basin) || inc.item_name) ? ` (${basinDisplayName(inc.basin) || inc.item_name})` : ""}</span>
         ${isReopened 
           ? `<span class="incident-log-status-badge">REOPENED</span>` 
           : `<button onclick="window.reopenIncident('${inc.id}')" class="btn-incident-reopen">Reopen</button>`

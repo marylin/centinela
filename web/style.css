@@ -1104,10 +1104,17 @@ h1, h2, h3, h4 {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-color);
   color: var(--text-dark);
-  font-size: 0.6rem;
-  padding: 0.15rem 0.35rem;
-  border-radius: 3px;
+  font-size: 0.72rem;
+  padding: 0.4rem 0.85rem;
+  min-height: 44px;
+  min-width: 64px;
+  border-radius: 4px;
   cursor: pointer;
+}
+
+.btn-incident-reopen:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
 }
 
 .incident-log-details {
@@ -1836,6 +1843,10 @@ h1, h2, h3, h4 {
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
   100% { background-position:  400px 0; }
+}
+
+span.skeleton-block {
+  display: inline-block;
 }
 
 .skeleton-block {
