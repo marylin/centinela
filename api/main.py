@@ -211,8 +211,85 @@ TOKEN_COOLDOWNS = {}  # token -> {state_repr: datetime}
 SENT_PUSH_HISTORY = []  # list of dicts for testing
 
 # Cache for alert data response to avoid redundant Gemini calls during polling
-CACHED_ALERT_RESPONSE = None
-CACHED_RISK_DATA_JSON = None
+CACHED_ALERT_RESPONSES = {}  # basin -> response_dict
+CACHED_RISK_DATA_JSONS = {}  # basin -> risk_json
+GENERATING_NARRATIONS = set()  # set of basins currently generating
+
+LAST_GOOD_NARRATIVES = {
+    "rio_cauca": {
+        "summary": "Monitoring Rio Cauca basin for compound flood and multi-hazard risks.",
+        "broadcast": "System active. No extreme weather alerts currently active for Rio Cauca."
+    },
+    "rio_magdalena": {
+        "summary": "Monitoring Rio Magdalena basin for compound flood and multi-hazard risks.",
+        "broadcast": "System active. No extreme weather alerts currently active for Rio Magdalena."
+    }
+}
+
+def generate_narration_in_background(basin: str, risk_data: list):
+    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES, GENERATING_NARRATIONS
+    try:
+        print(f"Background narration generation started for {basin}...", flush=True)
+        if TESTING:
+            narratives = {
+                "summary": f"Mock technical summary describing {basin} basin compound multi-hazard risk.",
+                "broadcast": f"Mock resident warning broadcast message mentioning affected municipalities in {basin}."
+            }
+        else:
+            narratives = run_narration_turn(basin, risk_data)
+            
+        summary = narratives.get("summary", "")
+        broadcast = narratives.get("broadcast", "")
+        
+        if summary and broadcast:
+            LAST_GOOD_NARRATIVES[basin] = {
+                "summary": summary,
+                "broadcast": broadcast
+            }
+            
+            # Construct the full cached alert response
+            graded_alert = []
+            affected_municipalities = []
+            for muni_risk in risk_data:
+                muni = muni_risk["municipality"]
+                score = muni_risk["risk_score"]
+                if score >= 0.8:
+                    severity = "EXTREME"
+                elif score >= 0.6:
+                    severity = "HIGH"
+                elif score >= 0.4:
+                    severity = "MODERATE"
+                else:
+                    severity = "LOW"
+                graded_alert.append({
+                    "municipality": muni,
+                    "risk_score": score,
+                    "severity": severity,
+                    "dominant_hazard": muni_risk.get("dominant_hazard", "FLOOD")
+                })
+                if severity in ["HIGH", "EXTREME"]:
+                    affected_municipalities.append(muni)
+                    
+            title = f"{basin.replace('_', ' ').title()} Basin Compound Multi-Hazard Alert"
+            
+            alert_response = {
+                "graded_alert": graded_alert,
+                "agency_incident": {
+                    "title": title,
+                    "summary": summary,
+                    "affected_municipalities": affected_municipalities
+                },
+                "resident_broadcast": broadcast
+            }
+            
+            risk_json = json.dumps(risk_data, sort_keys=True)
+            CACHED_ALERT_RESPONSES[basin] = alert_response
+            CACHED_RISK_DATA_JSONS[basin] = risk_json
+            print(f"Background narration generation completed successfully for {basin}!", flush=True)
+    except Exception as e:
+        print(f"Error in background narration generation: {e}", flush=True)
+    finally:
+        GENERATING_NARRATIONS.discard(basin)
 
 # Local simulation state in case Fivetran API is rate-limited (429)
 LOCAL_PAUSED_STATES = {}  # connector_id -> bool
@@ -657,14 +734,14 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
             return
             
         # Check if we have cached narratives matching this risk data
-        global CACHED_ALERT_RESPONSE, CACHED_RISK_DATA_JSON
+        global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES
         risk_json = json.dumps(risk_data, sort_keys=True)
         
         resident_broadcast_text = ""
-        title = "Rio Cauca Basin Compound Flood Risk Alert"
+        title = f"{basin.replace('_', ' ').title()} Basin Compound Flood Risk Alert"
         
-        if CACHED_ALERT_RESPONSE and CACHED_RISK_DATA_JSON == risk_json:
-            resident_broadcast_text = CACHED_ALERT_RESPONSE.get("resident_broadcast", "")
+        if CACHED_ALERT_RESPONSES.get(basin) and CACHED_RISK_DATA_JSONS.get(basin) == risk_json:
+            resident_broadcast_text = CACHED_ALERT_RESPONSES[basin].get("resident_broadcast", "")
             
         if not resident_broadcast_text:
             if TESTING:
@@ -675,43 +752,51 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
             else:
                 # Phase 6: narration produced via ADK LlmAgent Runner
                 narratives = run_narration_turn(basin, risk_data)
+            summary = narratives.get("summary", "")
             resident_broadcast_text = narratives.get("broadcast", "")
             
-            # Cache the response for GET /alert
-            graded_alert = []
-            for muni_risk in risk_data:
-                muni = muni_risk["municipality"]
-                score = muni_risk["risk_score"]
-                if score >= 0.8:
-                    severity = "EXTREME"
-                elif score >= 0.6:
-                    severity = "HIGH"
-                elif score >= 0.4:
-                    severity = "MODERATE"
-                else:
-                    severity = "LOW"
-                graded_alert.append({
-                    "municipality": muni,
-                    "risk_score": score,
-                    "severity": severity
-                })
+            if summary and resident_broadcast_text:
+                LAST_GOOD_NARRATIVES[basin] = {
+                    "summary": summary,
+                    "broadcast": resident_broadcast_text
+                }
                 
-            CACHED_ALERT_RESPONSE = {
-                "graded_alert": graded_alert,
-                "agency_incident": {
-                    "title": title,
-                    "summary": narratives.get("summary", ""),
-                    "affected_municipalities": affected_municipalities
-                },
-                "resident_broadcast": resident_broadcast_text
-            }
-            CACHED_RISK_DATA_JSON = risk_json
-            
+                # Cache the response for GET /alert
+                graded_alert = []
+                for muni_risk in risk_data:
+                    muni = muni_risk["municipality"]
+                    score = muni_risk["risk_score"]
+                    if score >= 0.8:
+                        severity = "EXTREME"
+                    elif score >= 0.6:
+                        severity = "HIGH"
+                    elif score >= 0.4:
+                        severity = "MODERATE"
+                    else:
+                        severity = "LOW"
+                    graded_alert.append({
+                        "municipality": muni,
+                        "risk_score": score,
+                        "severity": severity,
+                        "dominant_hazard": muni_risk.get("dominant_hazard", "FLOOD")
+                    })
+                    
+                CACHED_ALERT_RESPONSES[basin] = {
+                    "graded_alert": graded_alert,
+                    "agency_incident": {
+                        "title": title,
+                        "summary": summary,
+                        "affected_municipalities": affected_municipalities
+                    },
+                    "resident_broadcast": resident_broadcast_text
+                }
+                CACHED_RISK_DATA_JSONS[basin] = risk_json
+                
         if not resident_broadcast_text:
             return
             
         # Log active alert incident to Firestore
-        log_alert_or_outage("alert", basin, f"Compound multi-hazard alert active for basin: {CACHED_ALERT_RESPONSE['agency_incident']['summary'][:120]}", risk_data)
+        log_alert_or_outage("alert", basin, f"Compound multi-hazard alert active for basin: {CACHED_ALERT_RESPONSES[basin]['agency_incident']['summary'][:120]}", risk_data)
 
         # 4. Send pushes
         failed_tokens = []
@@ -761,9 +846,9 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
         print(f"Error checking/triggering push: {e}")
 
 @app.get("/alert")
-def get_alert(basin: str = "rio_cauca"):
+def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None):
     """Turns the current risk scores into graded alerts, incident report, and resident warning."""
-    global CACHED_ALERT_RESPONSE, CACHED_RISK_DATA_JSON, REOPENED_INCIDENT_ID
+    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES, GENERATING_NARRATIONS, REOPENED_INCIDENT_ID
     
     if REOPENED_INCIDENT_ID:
         incidents = get_incidents_list()
@@ -803,8 +888,8 @@ def get_alert(basin: str = "rio_cauca"):
         
         # Check cache
         risk_json = json.dumps(risk_data, sort_keys=True)
-        if CACHED_ALERT_RESPONSE and CACHED_RISK_DATA_JSON == risk_json:
-            return CACHED_ALERT_RESPONSE
+        if CACHED_ALERT_RESPONSES.get(basin) and CACHED_RISK_DATA_JSONS.get(basin) == risk_json:
+            return CACHED_ALERT_RESPONSES[basin]
             
         graded_alert = []
         affected_municipalities = []
@@ -833,32 +918,32 @@ def get_alert(basin: str = "rio_cauca"):
             if severity in ["HIGH", "EXTREME"]:
                 affected_municipalities.append(muni)
                 
-        # Phase 6: narration produced via ADK LlmAgent Runner (not raw genai.generate_content)
-        if TESTING:
-            narratives = {
-                "summary": f"Mock technical summary describing {basin} basin compound multi-hazard risk.",
-                "broadcast": f"Mock resident warning broadcast message mentioning affected municipalities in {basin}."
-            }
-        else:
-            narratives = run_narration_turn(basin, risk_data)
+        # Cache miss: return last good narration or placeholder instantly and run generation in background
+        last_good = LAST_GOOD_NARRATIVES.get(basin, {
+            "summary": f"Monitoring {basin.replace('_', ' ').title()} basin situation.",
+            "broadcast": f"Status check in progress for {basin.replace('_', ' ').title()}."
+        })
         
         title = f"{basin.replace('_', ' ').title()} Basin Compound Multi-Hazard Alert"
-        resident_broadcast_text = narratives.get("broadcast", "")
-        
         alert_response = {
             "graded_alert": graded_alert,
             "agency_incident": {
                 "title": title,
-                "summary": narratives.get("summary", ""),
+                "summary": last_good["summary"],
                 "affected_municipalities": affected_municipalities
             },
-            "resident_broadcast": resident_broadcast_text
+            "resident_broadcast": last_good["broadcast"]
         }
         
-        # Cache the result
-        CACHED_ALERT_RESPONSE = alert_response
-        CACHED_RISK_DATA_JSON = risk_json
-        
+        # Trigger background generation task if not already generating
+        if basin not in GENERATING_NARRATIONS:
+            GENERATING_NARRATIONS.add(basin)
+            if background_tasks:
+                background_tasks.add_task(generate_narration_in_background, basin, risk_data)
+            else:
+                import asyncio
+                asyncio.create_task(asyncio.to_thread(generate_narration_in_background, basin, risk_data))
+                
         return alert_response
     except Exception as e:
         import traceback
@@ -1195,23 +1280,23 @@ def get_incidents():
 @app.post("/incidents/{incident_id}/reopen")
 def reopen_incident(incident_id: str):
     """Reopens a past incident override to display on the dashboard."""
-    global REOPENED_INCIDENT_ID, CACHED_ALERT_RESPONSE, CACHED_RISK_DATA_JSON
+    global REOPENED_INCIDENT_ID, CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
     incidents = get_incidents_list()
     matching = next((inc for inc in incidents if inc["id"] == incident_id), None)
     if not matching:
         raise HTTPException(status_code=404, detail="Incident not found")
     REOPENED_INCIDENT_ID = incident_id
-    CACHED_ALERT_RESPONSE = None
-    CACHED_RISK_DATA_JSON = None
+    CACHED_ALERT_RESPONSES.clear()
+    CACHED_RISK_DATA_JSONS.clear()
     return {"status": "Success", "reopened_incident_id": REOPENED_INCIDENT_ID}
 
 @app.post("/incidents/clear-reopen")
 def clear_reopen():
     """Clears reopened incident override and resumes live data view."""
-    global REOPENED_INCIDENT_ID, CACHED_ALERT_RESPONSE, CACHED_RISK_DATA_JSON
+    global REOPENED_INCIDENT_ID, CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
     REOPENED_INCIDENT_ID = None
-    CACHED_ALERT_RESPONSE = None
-    CACHED_RISK_DATA_JSON = None
+    CACHED_ALERT_RESPONSES.clear()
+    CACHED_RISK_DATA_JSONS.clear()
     return {"status": "Success"}
 
 @app.post("/test/clear-incidents")
