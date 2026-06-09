@@ -207,6 +207,61 @@ def log_alert_or_outage(event_type: str, basin: str, details: str, risk_data=Non
     add_incident(incident_entry)
     print(f"DEBUG: Incident logged: {incident_entry}", flush=True)
 
+# --- Composite-risk sample history (one Firestore doc per basin) -------------
+# The live risk timeline used to be session-only; recording throttled ticks
+# server-side lets every page load seed the sparkline with real history.
+RISK_SAMPLE_MIN_INTERVAL_S = 60
+RISK_SAMPLE_WINDOW_S = 24 * 3600
+RISK_SAMPLE_MAX_TICKS = 300
+RISK_SAMPLE_LAST_WRITE = {}   # basin -> epoch seconds of last persisted tick
+RISK_SAMPLES_MOCK = {}        # basin -> ticks (TESTING / no-Firestore fallback)
+
+def record_risk_sample_tick(basin: str, risk_data):
+    """Persist one composite-risk tick per basin, at most once per minute.
+    Read-trim-append on a single per-basin doc: no indexes needed, and the
+    24h/300-tick cap bounds the doc size. Last write wins across instances,
+    which is fine for a once-a-minute dashboard series."""
+    try:
+        now_s = time.time()
+        if now_s - RISK_SAMPLE_LAST_WRITE.get(basin, 0) < RISK_SAMPLE_MIN_INTERVAL_S:
+            return
+        RISK_SAMPLE_LAST_WRITE[basin] = now_s
+        tick = {
+            "t": int(now_s * 1000),
+            "samples": {
+                m["municipality"]: round(float(m.get("risk_score", 0.0) or 0.0), 4)
+                for m in (risk_data or [])
+                if isinstance(m, dict) and m.get("municipality")
+            }
+        }
+        if not tick["samples"]:
+            return
+        cutoff_ms = int((now_s - RISK_SAMPLE_WINDOW_S) * 1000)
+        if db is not None:
+            doc_ref = db.collection("risk_samples").document(basin)
+            snap = doc_ref.get()
+            ticks = (snap.to_dict() or {}).get("ticks", []) if snap.exists else []
+            ticks = [x for x in ticks if isinstance(x, dict) and x.get("t", 0) >= cutoff_ms]
+            ticks.append(tick)
+            doc_ref.set({"basin": basin, "updated": tick["t"], "ticks": ticks[-RISK_SAMPLE_MAX_TICKS:]})
+        else:
+            ticks = [x for x in RISK_SAMPLES_MOCK.get(basin, []) if x.get("t", 0) >= cutoff_ms]
+            ticks.append(tick)
+            RISK_SAMPLES_MOCK[basin] = ticks[-RISK_SAMPLE_MAX_TICKS:]
+    except Exception as e:
+        print(f"Error recording risk sample for {basin}: {e}", flush=True)
+
+def get_risk_sample_ticks(basin: str):
+    if db is not None:
+        try:
+            snap = db.collection("risk_samples").document(basin).get()
+            if snap.exists:
+                ticks = (snap.to_dict() or {}).get("ticks", [])
+                return ticks[-RISK_SAMPLE_MAX_TICKS:]
+        except Exception as e:
+            print(f"Error reading risk history for {basin}: {e}", flush=True)
+    return RISK_SAMPLES_MOCK.get(basin, [])
+
 # State and cooldown tracking for push notifications
 TOKEN_LAST_SENT_STATES = {}  # token -> state_repr
 TOKEN_COOLDOWNS = {}  # token -> {state_repr: datetime}
@@ -1216,7 +1271,90 @@ def compute_base_risk(basin: str = "rio_cauca"):
 @app.get("/risk")
 def get_risk(basin: str = "rio_cauca"):
     """Returns graded risk per municipality, merging any active simulated demo event at read time."""
-    return merge_demo_event_into_risk(basin, compute_base_risk(basin=basin))
+    results = merge_demo_event_into_risk(basin, compute_base_risk(basin=basin))
+    # Record what users actually see (demo spikes included) so the timeline
+    # history matches the lived dashboard.
+    record_risk_sample_tick(basin, results)
+    return results
+
+@app.get("/risk-history")
+def get_risk_history(basin: str = "rio_cauca"):
+    """Recent composite-risk ticks for the basin (recorded server-side, one
+    tick per minute while the dashboard is polled) so the live risk timeline
+    is pre-seeded across page loads. Shape:
+    {basin, ticks: [{t: epoch_ms, samples: {municipality: score}}]}."""
+    if TESTING:
+        # Deterministic seeded series: 30 one-minute ticks ending now, gently
+        # varying around the current seeded risk values.
+        risk = merge_demo_event_into_risk(basin, compute_base_risk(basin=basin))
+        now_ms = int(time.time() * 1000)
+        ticks = []
+        for i in range(30, 0, -1):
+            samples = {}
+            for m in risk:
+                base = float(m.get("risk_score", 0.0) or 0.0)
+                wiggle = 0.015 * math.sin(i / 3.0)
+                samples[m["municipality"]] = round(min(1.0, max(0.0, base + wiggle)), 4)
+            ticks.append({"t": now_ms - i * 60_000, "samples": samples})
+        return {"basin": basin, "ticks": ticks}
+    return {"basin": basin, "ticks": get_risk_sample_ticks(basin)}
+
+@app.get("/telemetry-history")
+def get_telemetry_history(basin: str = "rio_cauca"):
+    """River-level (7d) and hourly rainfall (48h) series for the trend chart.
+    Honesty contract: rainfall rows are genuinely real (live Google Weather
+    readings recorded on each refresh); river-level rows come through the real
+    sheet -> Fivetran -> BigQuery pipeline but carry seeded values."""
+    basin_config = next((b for b in BASINS if b["id"] == basin), None)
+    if basin_config is None:
+        raise HTTPException(status_code=404, detail=f"Unknown basin: {basin}")
+    basin_name = basin_config["name"]
+
+    if TESTING:
+        now = datetime.now(timezone.utc)
+        river = [
+            {
+                "time": (now - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "river_level_m": round(4.1 + 0.65 * math.sin((48 - h) / 7.0) + (48 - h) * 0.012, 2),
+                "threshold_m": 4.0
+            }
+            for h in range(48, -1, -6)
+        ]
+        rainfall = [
+            {
+                "time": (now - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "precipitation_mm": round(max(0.0, 2.2 * math.sin((48 - h) / 5.0)) , 2)
+            }
+            for h in range(48, -1, -2)
+        ]
+        return {"basin": basin, "river": river, "rainfall": rainfall,
+                "provenance": {"rainfall": "live", "river": "pipeline-seeded"}}
+
+    river, rainfall = [], []
+    try:
+        client = bigquery.Client(project='centinela-498622')
+        river_sql = load_sql("telemetry_river_history.sql").replace("'Rio Cauca'", f"'{basin_name}'")
+        for row in client.query(river_sql).result():
+            rd = dict(row)
+            t = rd.get("reading_time")
+            river.append({
+                "time": t.strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(t, datetime) else str(t),
+                "river_level_m": float(rd.get("river_level_m") or 0.0),
+                "threshold_m": float(rd.get("alert_threshold_m") or 0.0)
+            })
+        rain_sql = load_sql("telemetry_rainfall_history.sql").replace("'Rio Cauca'", f"'{basin_name}'")
+        for row in client.query(rain_sql).result():
+            rd = dict(row)
+            t = rd.get("hour")
+            rainfall.append({
+                "time": t.strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(t, datetime) else str(t),
+                "precipitation_mm": float(rd.get("precipitation_mm") or 0.0)
+            })
+    except Exception as e:
+        # Degrade to empty (well-formed) series; the chart shows its empty state.
+        print(f"Error querying telemetry history for {basin}: {e}", flush=True)
+    return {"basin": basin, "river": river, "rainfall": rainfall,
+            "provenance": {"rainfall": "live", "river": "pipeline-seeded"}}
 
 def get_alert_state_repr(risk_data):
     active_alerts = []
@@ -2253,10 +2391,13 @@ def active_regions_from_rows(rows):
     return ranked[:15]
 
 
-def load_raw_events_sql(filename: str) -> str:
+def load_sql(filename: str) -> str:
     with open(f"sql/{filename}", "r", encoding="utf-8") as f:
-        query = f.read()
-    return query.replace("usgs_raw_events.events", RAW_EVENTS_TABLE)
+        return f.read()
+
+
+def load_raw_events_sql(filename: str) -> str:
+    return load_sql(filename).replace("usgs_raw_events.events", RAW_EVENTS_TABLE)
 
 
 def format_raw_event_row(row_dict: dict) -> dict:

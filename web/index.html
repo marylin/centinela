@@ -123,6 +123,8 @@
             <div class="risk-timeline-meta">
               <span class="risk-timeline-muni" id="risk-timeline-muni">&mdash;</span>
               <span class="risk-timeline-value tabular-nums" id="risk-timeline-value">--%</span>
+              <button type="button" class="btn btn-sm chart-table-toggle" id="timeline-table-toggle"
+                      aria-pressed="false" aria-controls="risk-timeline-table">View as table</button>
             </div>
           </div>
           <div class="card-body">
@@ -131,7 +133,29 @@
                  aria-describedby="risk-timeline-summary">
               <div class="risk-timeline-empty">Collecting samples&hellip;</div>
             </div>
+            <div id="risk-timeline-table" class="chart-table-wrap" hidden></div>
             <p id="risk-timeline-summary" class="visually-hidden" aria-live="off"></p>
+          </div>
+        </section>
+
+        <!-- River & rainfall trend (warehouse telemetry history) -->
+        <section class="card telemetry-trend-panel" aria-labelledby="telemetry-trend-title">
+          <div class="card-header">
+            <h2 id="telemetry-trend-title">River &amp; Rainfall Trend</h2>
+            <div class="risk-timeline-meta">
+              <span class="trend-provenance">rainfall: live recorded &middot; river level: pipeline data (simulated gauge)</span>
+              <button type="button" class="btn btn-sm chart-table-toggle" id="trend-table-toggle"
+                      aria-pressed="false" aria-controls="telemetry-trend-table">View as table</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="telemetry-trend-chart" class="telemetry-trend-chart" tabindex="0" role="img"
+                 aria-label="River level and hourly rainfall over the recent window"
+                 aria-describedby="telemetry-trend-summary">
+              <div class="risk-timeline-empty">Loading telemetry history&hellip;</div>
+            </div>
+            <div id="telemetry-trend-table" class="chart-table-wrap" hidden></div>
+            <p id="telemetry-trend-summary" class="visually-hidden" aria-live="off"></p>
           </div>
         </section>
 

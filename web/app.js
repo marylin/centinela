@@ -397,6 +397,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     initMap();
   }
 
+  // Warehouse-backed history: pre-seed the risk sparkline and load the
+  // river/rainfall trend for the starting basin.
+  setupChartTableToggles();
+  seedRiskHistory(appState.selectedBasin);
+  fetchTelemetryHistory(appState.selectedBasin);
+
   // Initial fetch
   fetchTelemetry().then(() => {
     startSyncCycle();
@@ -1244,6 +1250,203 @@ function renderRiskTimeline() {
       `Last ${samples.length} samples range from ${minV}% to ${maxV}%. ` +
       `Thresholds: warning 40%, danger 60%, critical 80%.`;
   }
+
+  renderRiskTimelineTable(samples, selected);
+}
+
+// C3: data-table fallback for the sparkline.
+function renderRiskTimelineTable(samples, selected) {
+  const tableEl = document.getElementById("risk-timeline-table");
+  if (!tableEl || tableEl.hidden) return;
+  if (!selected || !samples || samples.length === 0) {
+    tableEl.innerHTML = `<p class="chart-table-note">No samples yet.</p>`;
+    return;
+  }
+  const recent = samples.slice(-12).reverse();
+  tableEl.innerHTML = `
+    <table class="chart-table">
+      <caption class="visually-hidden">Recent composite risk samples for ${escapeHtml(selected.municipality)}</caption>
+      <thead><tr><th scope="col">Time</th><th scope="col">Composite risk</th></tr></thead>
+      <tbody>
+        ${recent.map(s => `<tr>
+          <td class="tabular-nums">${new Date(s.t).toLocaleTimeString()}</td>
+          <td class="tabular-nums">${(s.score * 100).toFixed(0)}%</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
+// Seed the sparkline buffers from the server-recorded history so a fresh
+// page load starts with real samples instead of "Collecting samples...".
+async function seedRiskHistory(basin) {
+  try {
+    const res = await fetch(`${API_BASE}/risk-history?basin=${encodeURIComponent(basin)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const ticks = (data && Array.isArray(data.ticks)) ? data.ticks : [];
+    if (!ticks.length) return;
+    const seeded = new Set();
+    ticks.forEach(tick => {
+      if (!tick || typeof tick.t !== "number" || !tick.samples) return;
+      Object.entries(tick.samples).forEach(([muni, score]) => {
+        const key = riskHistoryKey(basin, muni);
+        // Only pre-seed buffers the session has not started filling itself.
+        if (riskHistory[key] && riskHistory[key].length && !seeded.has(key)) return;
+        seeded.add(key);
+        if (!riskHistory[key]) riskHistory[key] = [];
+        riskHistory[key].push({ t: tick.t, score: Number(score) || 0 });
+        if (riskHistory[key].length > RISK_TIMELINE_MAX_SAMPLES) {
+          riskHistory[key].splice(0, riskHistory[key].length - RISK_TIMELINE_MAX_SAMPLES);
+        }
+      });
+    });
+    if (seeded.size) {
+      initConsoleLog(`Risk timeline seeded with ${ticks.length} recorded ticks for ${basin}.`, "telemetry");
+      renderRiskTimeline();
+    }
+  } catch (err) {
+    console.warn("Could not seed risk history:", err && err.message);
+  }
+}
+
+// ==========================================================================
+// River & Rainfall Trend (warehouse history: real rainfall, seeded river)
+// ==========================================================================
+async function fetchTelemetryHistory(basin) {
+  const chartEl = document.getElementById("telemetry-trend-chart");
+  try {
+    const res = await fetch(`${API_BASE}/telemetry-history?basin=${encodeURIComponent(basin)}`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    database.telemetryHistory = await res.json();
+    renderTelemetryTrend();
+  } catch (err) {
+    database.telemetryHistory = null;
+    if (chartEl) chartEl.innerHTML = `<div class="risk-timeline-empty">Telemetry history unavailable.</div>`;
+    console.warn("Could not load telemetry history:", err && err.message);
+  }
+}
+
+function renderTelemetryTrend() {
+  const chartEl = document.getElementById("telemetry-trend-chart");
+  const summaryEl = document.getElementById("telemetry-trend-summary");
+  if (!chartEl) return;
+  const hist = database.telemetryHistory;
+  const river = (hist && Array.isArray(hist.river)) ? hist.river.filter(r => r && r.time) : [];
+  const rain = (hist && Array.isArray(hist.rainfall)) ? hist.rainfall.filter(r => r && r.time) : [];
+
+  if (river.length < 2 && rain.length < 2) {
+    chartEl.innerHTML = `<div class="risk-timeline-empty">Not enough telemetry history yet. The series grows as live readings accumulate.</div>`;
+    if (summaryEl) summaryEl.textContent = "Telemetry history is still accumulating.";
+    renderTelemetryTrendTable(river, rain);
+    return;
+  }
+
+  const W = 300, H = 100, PAD = 4;
+  const times = [...river.map(r => Date.parse(r.time)), ...rain.map(r => Date.parse(r.time))].filter(t => !isNaN(t));
+  const minT = Math.min(...times), maxT = Math.max(...times);
+  const spanT = Math.max(1, maxT - minT);
+  const x = t => PAD + ((t - minT) / spanT) * (W - 2 * PAD);
+
+  // Rainfall bars: own scale from zero to its max.
+  const maxRain = Math.max(1, ...rain.map(r => Number(r.precipitation_mm) || 0));
+  const rainBars = rain.map(r => {
+    const v = Number(r.precipitation_mm) || 0;
+    const h = (v / maxRain) * (H * 0.45);
+    return `<rect x="${(x(Date.parse(r.time)) - 1.6).toFixed(1)}" y="${(H - h).toFixed(1)}" width="3.2" height="${h.toFixed(1)}"
+              fill="var(--primary)" opacity="0.45">
+              <title>${new Date(r.time).toLocaleString()}: ${v.toFixed(1)} mm rainfall (live)</title>
+            </rect>`;
+  }).join("");
+
+  // River line: scale around level + threshold.
+  let riverLine = "", thresholdLine = "", breachMarks = "";
+  const threshold = river.length ? Number(river[river.length - 1].threshold_m) || 0 : 0;
+  if (river.length) {
+    const levels = river.map(r => Number(r.river_level_m) || 0);
+    const lo = Math.min(...levels, threshold) * 0.92;
+    const hi = Math.max(...levels, threshold) * 1.08;
+    const y = v => H - PAD - ((v - lo) / Math.max(0.001, hi - lo)) * (H - 2 * PAD);
+    const pts = river.map(r => `${x(Date.parse(r.time)).toFixed(1)},${y(Number(r.river_level_m) || 0).toFixed(1)}`);
+    riverLine = river.length > 1
+      ? `<polyline points="${pts.join(" ")}" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"></polyline>`
+      : `<circle cx="${pts[0].split(",")[0]}" cy="${pts[0].split(",")[1]}" r="2.5" fill="#38bdf8"></circle>`;
+    if (threshold > 0) {
+      thresholdLine = `<line x1="0" y1="${y(threshold).toFixed(1)}" x2="${W}" y2="${y(threshold).toFixed(1)}"
+        stroke="#ef4444" stroke-width="0.8" stroke-dasharray="4 3" opacity="0.8"></line>`;
+      // Breach markers: shape, not color alone.
+      breachMarks = river.filter(r => (Number(r.river_level_m) || 0) > threshold).map(r => {
+        const bx = x(Date.parse(r.time)), by = y(Number(r.river_level_m) || 0);
+        return `<path d="M ${bx.toFixed(1)} ${(by - 4).toFixed(1)} l 3.4 5.8 l -6.8 0 Z" fill="#ef4444">
+                  <title>${new Date(r.time).toLocaleString()}: ${(Number(r.river_level_m) || 0).toFixed(1)} m exceeds the ${threshold.toFixed(1)} m threshold</title>
+                </path>`;
+      }).join("");
+    }
+  }
+
+  chartEl.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" focusable="false" class="telemetry-trend-svg">
+      ${rainBars}${thresholdLine}${riverLine}${breachMarks}
+    </svg>
+    <div class="trend-legend" aria-hidden="true">
+      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-river"></span>River level (m)</span>
+      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-rain"></span>Rainfall (mm/h)</span>
+      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-threshold"></span>Alert threshold</span>
+    </div>`;
+
+  if (summaryEl) {
+    const latestRiver = river.length ? Number(river[river.length - 1].river_level_m) || 0 : null;
+    const totalRain = rain.reduce((acc, r) => acc + (Number(r.precipitation_mm) || 0), 0);
+    const breaches = threshold > 0 ? river.filter(r => (Number(r.river_level_m) || 0) > threshold).length : 0;
+    summaryEl.textContent =
+      `${rain.length} hourly rainfall readings totaling ${totalRain.toFixed(1)} mm. ` +
+      (latestRiver !== null
+        ? `Latest river level ${latestRiver.toFixed(1)} m against a ${threshold.toFixed(1)} m threshold; ${breaches} reading${breaches === 1 ? "" : "s"} above threshold.`
+        : `No river readings in the window.`);
+  }
+
+  renderTelemetryTrendTable(river, rain);
+}
+
+// C3: data-table fallback for the trend chart.
+function renderTelemetryTrendTable(river, rain) {
+  const tableEl = document.getElementById("telemetry-trend-table");
+  if (!tableEl || tableEl.hidden) return;
+  const riverRows = (river || []).slice(-10).reverse().map(r => `<tr>
+      <td class="tabular-nums">${new Date(r.time).toLocaleString()}</td>
+      <td class="tabular-nums">${(Number(r.river_level_m) || 0).toFixed(1)} m</td>
+      <td class="tabular-nums">${(Number(r.threshold_m) || 0).toFixed(1)} m</td>
+    </tr>`).join("");
+  const rainRows = (rain || []).slice(-10).reverse().map(r => `<tr>
+      <td class="tabular-nums">${new Date(r.time).toLocaleString()}</td>
+      <td class="tabular-nums">${(Number(r.precipitation_mm) || 0).toFixed(1)} mm</td>
+    </tr>`).join("");
+  tableEl.innerHTML = `
+    <table class="chart-table">
+      <caption>River level (pipeline data, simulated gauge)</caption>
+      <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Threshold</th></tr></thead>
+      <tbody>${riverRows || `<tr><td colspan="3">No readings in the window.</td></tr>`}</tbody>
+    </table>
+    <table class="chart-table">
+      <caption>Hourly rainfall (live recorded)</caption>
+      <thead><tr><th scope="col">Hour</th><th scope="col">Rainfall</th></tr></thead>
+      <tbody>${rainRows || `<tr><td colspan="2">No readings in the window.</td></tr>`}</tbody>
+    </table>`;
+}
+
+function setupChartTableToggles() {
+  const wire = (btnId, wrapId, rerender) => {
+    const btn = document.getElementById(btnId);
+    const wrap = document.getElementById(wrapId);
+    if (!btn || !wrap) return;
+    btn.addEventListener("click", () => {
+      wrap.hidden = !wrap.hidden;
+      btn.setAttribute("aria-pressed", String(!wrap.hidden));
+      btn.textContent = wrap.hidden ? "View as table" : "Hide table";
+      if (!wrap.hidden) rerender();
+    });
+  };
+  wire("timeline-table-toggle", "risk-timeline-table", () => renderRiskTimeline());
+  wire("trend-table-toggle", "telemetry-trend-table", () => renderTelemetryTrend());
 }
 
 // ==========================================================================
@@ -2294,6 +2497,12 @@ function setupEventHandlers() {
 
       // Populate dropdown for Public mode
       populateMuniDropdown();
+
+      // History panels follow the basin scope; a region filter belongs to
+      // the global feed and is cleared for a clean slate.
+      appState.regionFilter = null;
+      seedRiskHistory(appState.selectedBasin);
+      fetchTelemetryHistory(appState.selectedBasin);
 
       fetchTelemetry();
     });
