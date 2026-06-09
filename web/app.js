@@ -445,11 +445,7 @@ function initPublicMap() {
 function renderPublicMap(selectedMuni) {
   if (!publicMap || typeof google === "undefined" || !selectedMuni) return;
 
-  const basinMunis = {
-    "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
-    "rio_magdalena": ["Honda", "Girardot", "Neiva"]
-  };
-  const allowed = basinMunis[appState.selectedBasin] || [];
+  const allowed = getBasinMunis(appState.selectedBasin);
 
   // Drop markers no longer in this basin.
   Object.keys(publicMarkers).forEach(name => {
