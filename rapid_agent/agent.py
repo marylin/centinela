@@ -11,9 +11,33 @@ def sleep(seconds: int) -> str:
     time.sleep(seconds)
     return f"Slept for {seconds} seconds."
 
+from functools import cached_property
+from google.adk.models.google_llm import Gemini
+from google.genai import Client
+
+# Force location to "us" globally for all environment configurations.
+os.environ["GOOGLE_CLOUD_LOCATION"] = "us"
+
+class UsVertexGemini(Gemini):
+    @cached_property
+    def api_client(self) -> Client:
+        return Client(
+            vertexai=True,
+            project="centinela-498622",
+            location="us"
+        )
+
+    @cached_property
+    def _live_api_client(self) -> Client:
+        return Client(
+            vertexai=True,
+            project="centinela-498622",
+            location="us"
+        )
+
 # Initialize the root agent
 root_agent = LlmAgent(
-    model="gemini-3.5-flash",
+    model=UsVertexGemini(model="gemini-3.5-flash"),
     name="centinela_agent",
     instruction="""You are a DataOps agent. You monitor Fivetran connectors for staleness.
 Freshness threshold: A connector is considered stale if its last succeeded sync time is more than 5 minutes ago, or if it has never succeeded and setup is incomplete.

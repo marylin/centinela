@@ -42,8 +42,29 @@ from google.genai.types import Content, Part
 # These are project-config values, not secrets.
 os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "centinela-498622")
-os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us")
+from functools import cached_property
+from google.adk.models.google_llm import Gemini
+from google.genai import Client
 
+# Force location to "us" globally for all environment configurations.
+os.environ["GOOGLE_CLOUD_LOCATION"] = "us"
+
+class UsVertexGemini(Gemini):
+    @cached_property
+    def api_client(self) -> Client:
+        return Client(
+            vertexai=True,
+            project="centinela-498622",
+            location="us"
+        )
+
+    @cached_property
+    def _live_api_client(self) -> Client:
+        return Client(
+            vertexai=True,
+            project="centinela-498622",
+            location="us"
+        )
 
 # ---------------------------------------------------------------------------
 # Structured output schema (Pydantic) -- ADK output_schema mechanism
@@ -61,7 +82,7 @@ class AlertNarrative(BaseModel):
 # tool calls" when the model emits structured JSON without conversational text.
 # ---------------------------------------------------------------------------
 narration_agent = LlmAgent(
-    model="gemini-3.5-flash",
+    model=UsVertexGemini(model="gemini-3.5-flash"),
     name="centinela_narration_agent",
     instruction=(
         "You are a disaster response AI analyst for the Centinela early-warning system. "
