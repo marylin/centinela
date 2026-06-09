@@ -994,6 +994,9 @@ async function fetchTelemetry() {
     database.connector = statusData;
     database.alert = alertData;
 
+    // One timeline sample per poll cycle, from data already fetched.
+    recordRiskSamples(riskData);
+
     // Detect reopened incident state
     const clearReopenBtn = document.getElementById("clear-reopen-btn");
     if (alertData.agency_incident && alertData.agency_incident.title.startsWith("REOPENED HISTORICAL INCIDENT")) {
@@ -1023,6 +1026,7 @@ async function fetchTelemetry() {
 
     // Populate municipality dropdown and refresh public view if in public mode
     populateMuniDropdown();
+    renderRiskTimeline();
     if (appState.mode === "public") {
       renderPublicView();
     }
@@ -1056,6 +1060,114 @@ function setBackendOfflineState(isOffline) {
     }
   } else {
     if (banner) banner.classList.add("hidden");
+  }
+}
+
+// ==========================================================================
+// Live Risk Timeline (selected municipality's composite risk over the poll)
+// ==========================================================================
+// Rolling buffer per basin+municipality, appended once per poll cycle from
+// the risk data the poll already loads — no extra fetches. Inline SVG only.
+const RISK_TIMELINE_MAX_SAMPLES = 60;
+const riskHistory = {}; // "basin|municipality" -> [{ t, score }]
+
+function riskHistoryKey(basin, municipality) {
+  return `${basin}|${municipality}`;
+}
+
+// Append one sample per municipality in the polled basin, so switching the
+// selection shows that municipality's accumulated history, not a restart.
+function recordRiskSamples(riskData) {
+  if (!Array.isArray(riskData)) return;
+  const now = Date.now();
+  riskData.forEach(m => {
+    if (!m || typeof m.risk_score !== "number") return;
+    const key = riskHistoryKey(appState.selectedBasin, m.municipality);
+    if (!riskHistory[key]) riskHistory[key] = [];
+    riskHistory[key].push({ t: now, score: m.risk_score });
+    if (riskHistory[key].length > RISK_TIMELINE_MAX_SAMPLES) {
+      riskHistory[key].splice(0, riskHistory[key].length - RISK_TIMELINE_MAX_SAMPLES);
+    }
+  });
+}
+
+function prefersReducedMotion() {
+  try {
+    return typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch (e) {
+    return true; // when unknown, prefer the non-animated rendering
+  }
+}
+
+function renderRiskTimeline() {
+  const chartEl = document.getElementById("risk-timeline-chart");
+  const valueEl = document.getElementById("risk-timeline-value");
+  const muniEl = document.getElementById("risk-timeline-muni");
+  const summaryEl = document.getElementById("risk-timeline-summary");
+  if (!chartEl) return;
+
+  const selected = appState.selectedMuni;
+  const samples = selected
+    ? (riskHistory[riskHistoryKey(appState.selectedBasin, selected.municipality)] || [])
+    : [];
+
+  if (muniEl) muniEl.textContent = selected ? selected.municipality : "—";
+
+  if (!selected || samples.length < 2) {
+    chartEl.innerHTML = `<div class="risk-timeline-empty">Collecting samples&hellip;</div>`;
+    if (valueEl) { valueEl.textContent = "--%"; valueEl.style.color = ""; }
+    if (summaryEl) summaryEl.textContent = "Risk timeline is collecting samples.";
+    return;
+  }
+
+  const latest = samples[samples.length - 1].score;
+  const sev = getSeverityConfig(latest);
+  if (valueEl) {
+    valueEl.textContent = `${(latest * 100).toFixed(0)}%`;
+    valueEl.style.color = sev.colorHex;
+  }
+
+  // ViewBox is 0..300 wide, 0..100 tall; score 0..1 maps bottom-to-top.
+  const W = 300, H = 100;
+  const stepX = W / (RISK_TIMELINE_MAX_SAMPLES - 1);
+  const points = samples
+    .map((s, i) => `${(i * stepX).toFixed(1)},${(H - Math.min(Math.max(s.score, 0), 1) * H).toFixed(1)}`)
+    .join(" ");
+  const lastX = ((samples.length - 1) * stepX).toFixed(1);
+  const lastY = (H - Math.min(Math.max(latest, 0), 1) * H).toFixed(1);
+
+  const animateClass = prefersReducedMotion() ? "" : "risk-timeline-line-animated";
+
+  chartEl.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" focusable="false" class="risk-timeline-svg">
+      <!-- Threshold bands: warning 40-60, danger 60-80, critical 80-100 -->
+      <rect x="0" y="0"  width="${W}" height="20" fill="#a855f7" opacity="0.10"></rect>
+      <rect x="0" y="20" width="${W}" height="20" fill="#ef4444" opacity="0.09"></rect>
+      <rect x="0" y="40" width="${W}" height="20" fill="#f59e0b" opacity="0.07"></rect>
+      <line x1="0" y1="20" x2="${W}" y2="20" stroke="#a855f7" stroke-width="0.6" stroke-dasharray="3 3" opacity="0.55"></line>
+      <line x1="0" y1="40" x2="${W}" y2="40" stroke="#ef4444" stroke-width="0.6" stroke-dasharray="3 3" opacity="0.55"></line>
+      <line x1="0" y1="60" x2="${W}" y2="60" stroke="#f59e0b" stroke-width="0.6" stroke-dasharray="3 3" opacity="0.55"></line>
+      <polyline class="risk-timeline-line ${animateClass}" points="${points}"
+        fill="none" stroke="${sev.colorHex}" stroke-width="1.8"
+        stroke-linejoin="round" stroke-linecap="round"></polyline>
+      <circle cx="${lastX}" cy="${lastY}" r="2.6" fill="${sev.colorHex}"></circle>
+    </svg>
+    <div class="risk-timeline-band-labels" aria-hidden="true">
+      <span class="band-label critical">80%</span>
+      <span class="band-label danger">60%</span>
+      <span class="band-label warning">40%</span>
+    </div>
+  `;
+
+  if (summaryEl) {
+    const scores = samples.map(s => s.score * 100);
+    const minV = Math.min(...scores).toFixed(0);
+    const maxV = Math.max(...scores).toFixed(0);
+    summaryEl.textContent =
+      `${selected.municipality} composite risk is ${(latest * 100).toFixed(0)}% (${sev.label}). ` +
+      `Last ${samples.length} samples range from ${minV}% to ${maxV}%. ` +
+      `Thresholds: warning 40%, danger 60%, critical 80%.`;
   }
 }
 
@@ -1252,6 +1364,7 @@ function renderMapMarkers() {
       marker.addListener("click", () => {
         appState.selectedMuni = muni;
         displayMuniDetails(muni);
+        renderRiskTimeline();
         initConsoleLog(`Selected region: ${muni.municipality} (Risk Score: ${muni.risk_score.toFixed(2)})`, "action");
       });
 
@@ -1682,6 +1795,7 @@ function setupEventHandlers() {
         drawer.innerHTML = `<div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>`;
       }
       appState.selectedMuni = null;
+      renderRiskTimeline();
 
       // Populate dropdown for Public mode
       populateMuniDropdown();
@@ -1734,6 +1848,7 @@ function setupEventHandlers() {
       const muniObj = database.risk.find(r => r.municipality === muniName);
       if (muniObj) {
         appState.selectedMuni = muniObj;
+        renderRiskTimeline();
         renderPublicView();
       }
     });

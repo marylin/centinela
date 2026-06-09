@@ -115,6 +115,25 @@
           </div>
         </section>
 
+        <!-- Live Risk Timeline (selected municipality's composite risk over the poll) -->
+        <section class="card risk-timeline-panel" aria-labelledby="risk-timeline-title">
+          <div class="card-header">
+            <h2 id="risk-timeline-title">Live Risk Timeline</h2>
+            <div class="risk-timeline-meta">
+              <span class="risk-timeline-muni" id="risk-timeline-muni">&mdash;</span>
+              <span class="risk-timeline-value tabular-nums" id="risk-timeline-value">--%</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div id="risk-timeline-chart" class="risk-timeline-chart" tabindex="0" role="img"
+                 aria-label="Composite risk timeline for the selected municipality"
+                 aria-describedby="risk-timeline-summary">
+              <div class="risk-timeline-empty">Collecting samples&hellip;</div>
+            </div>
+            <p id="risk-timeline-summary" class="visually-hidden" aria-live="off"></p>
+          </div>
+        </section>
+
         <!-- Incident Triage alerts panel -->
         <section class="card alerts-panel" aria-labelledby="alerts-title">
           <div class="card-header">
