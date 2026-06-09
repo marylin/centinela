@@ -325,17 +325,21 @@ function renderMapMarkers() {
   markers.forEach(m => m.setMap(null));
   markers = [];
 
-  const basinNameMap = {
-    "rio_cauca": "Rio Cauca",
-    "rio_magdalena": "Rio Magdalena"
+  const basinMunis = {
+    "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
+    "rio_magdalena": ["Honda", "Girardot", "Neiva"]
   };
-  const selectedBasinName = basinNameMap[appState.selectedBasin] || "Rio Cauca";
+  const allowedMunis = basinMunis[appState.selectedBasin] || [];
   
   // Filter risk data by selected basin
-  const basinRiskData = database.risk.filter(m => m.basin === selectedBasinName);
+  const basinRiskData = database.risk.filter(m => allowedMunis.includes(m.municipality));
+
+  const bounds = new google.maps.LatLngBounds();
+  let hasValidCoords = false;
 
   basinRiskData.forEach(muni => {
-    const coords = municipalityCoords[muni.municipality] || { lat: 3.43, lng: -76.51 };
+    const coords = municipalityCoords[muni.municipality];
+    if (!coords) return;
 
     let color = "#22c55e"; // Low (Green)
     if (muni.risk_score >= 0.8) color = "#a855f7"; // Extreme (Purple)
@@ -376,7 +380,13 @@ function renderMapMarkers() {
     });
 
     markers.push(marker);
+    bounds.extend(coords);
+    hasValidCoords = true;
   });
+
+  if (hasValidCoords) {
+    map.fitBounds(bounds);
+  }
 
   // Keep details drawer updated if the selected muni is in the current basin
   if (appState.selectedMuni) {
