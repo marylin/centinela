@@ -173,11 +173,6 @@ function initMap() {
     zoomControl: true
   });
 
-  const loader = document.getElementById("map-loading-overlay");
-  if (loader) {
-    loader.classList.add("hidden");
-  }
-
   renderMapMarkers();
 }
 
@@ -400,6 +395,12 @@ function renderMapMarkers() {
       }
       appState.selectedMuni = null;
     }
+  }
+
+  // Hide loading overlay once markers are plotted
+  const loader = document.getElementById("map-loading-overlay");
+  if (loader && basinRiskData.length > 0) {
+    loader.classList.add("hidden");
   }
 }
 
@@ -717,6 +718,12 @@ function setupEventHandlers() {
           map.setCenter({ lat: 4.14, lng: -74.94 });
           map.setZoom(8);
         }
+      }
+      
+      // Show loading overlay
+      const loader = document.getElementById("map-loading-overlay");
+      if (loader) {
+        loader.classList.remove("hidden");
       }
       
       // Clear muni detail drawer
