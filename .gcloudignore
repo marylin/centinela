@@ -20,3 +20,5 @@ package-lock.json
 build-log.md
 test_demo_endpoints.py
 test_regression.py
+test_seismic_events.py
+test_history_endpoints.py
