@@ -88,10 +88,11 @@
           <div class="card-header">
             <h2 id="risk-map-title">Basin Risk-Map</h2>
             <div class="card-actions">
-              <span class="legend-item"><span class="legend-dot low"></span> Low</span>
-              <span class="legend-item"><span class="legend-dot warning"></span> Warning</span>
-              <span class="legend-item"><span class="legend-dot danger"></span> Danger</span>
-              <span class="legend-item"><span class="legend-dot critical"></span> Critical</span>
+              <span class="legend-item"><span class="legend-dot low"></span> Low &lt;40%</span>
+              <span class="legend-item"><span class="legend-dot warning"></span> Warning 40%+</span>
+              <span class="legend-item"><span class="legend-dot danger"></span> Danger 60%+</span>
+              <span class="legend-item"><span class="legend-dot critical"></span> Critical 80%+</span>
+              <button type="button" class="btn btn-sm" id="choropleth-toggle" aria-pressed="true">Risk zones: on</button>
             </div>
           </div>
           <div class="card-body map-panel-split">

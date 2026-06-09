@@ -40,6 +40,7 @@ let appState = {
   seismicFocus: null,
   regionFilter: null,
   regionsExpanded: false,
+  choroplethOn: true,
   simulatedActive: false,
   selectedMuni: null,
   syncProgress: 0,
@@ -54,6 +55,7 @@ let appState = {
 // Map instances & markers
 let map = null;
 let markers = {};
+let riskZoneCircles = {}; // municipality -> google.maps.Circle (choropleth-style risk zones)
 
 // Seismic-focus map artifacts (transient overlay, separate from basin markers)
 let seismicFocusMarker = null;
@@ -1769,6 +1771,8 @@ async function focusSeismicEvent(eventId) {
 function placeSeismicFocusOnMap() {
   const focus = appState.seismicFocus;
   if (!focus || !map || typeof google === "undefined") return;
+  // The focus owns the map: basin risk zones come back when the focus closes.
+  Object.values(riskZoneCircles).forEach(c => c.setMap(null));
   const ev = focus.event;
   if (typeof ev.latitude !== "number" || typeof ev.longitude !== "number") return;
 
@@ -1972,6 +1976,50 @@ async function clearDemoEvent() {
 // ==========================================================================
 // Google Maps Marker Rendering
 // ==========================================================================
+// Translucent risk-colored circle per municipality (glance-level basin
+// overview). Color is never the sole signal: the legend carries the numeric
+// thresholds and each marker keeps its severity-labeled detail.
+function syncRiskZones(basinRiskData) {
+  if (!map || typeof google === "undefined") return;
+
+  // Hidden entirely while a seismic focus owns the map, or when toggled off.
+  if (!appState.choroplethOn || appState.seismicFocus) {
+    Object.values(riskZoneCircles).forEach(c => c.setMap(null));
+    return;
+  }
+
+  const present = new Set();
+  basinRiskData.forEach(muni => {
+    const coords = municipalityCoords[muni.municipality];
+    if (!coords) return;
+    present.add(muni.municipality);
+    const sev = getSeverityConfig(muni.risk_score);
+    const options = {
+      center: { lat: coords.lat, lng: coords.lng },
+      radius: 9000,
+      strokeColor: sev.colorHex,
+      strokeOpacity: 0.45,
+      strokeWeight: 1,
+      fillColor: sev.colorHex,
+      fillOpacity: 0.13,
+      clickable: false,
+      map: map
+    };
+    if (riskZoneCircles[muni.municipality]) {
+      riskZoneCircles[muni.municipality].setOptions(options);
+    } else {
+      riskZoneCircles[muni.municipality] = new google.maps.Circle(options);
+    }
+  });
+
+  Object.keys(riskZoneCircles).forEach(name => {
+    if (!present.has(name)) {
+      riskZoneCircles[name].setMap(null);
+      delete riskZoneCircles[name];
+    }
+  });
+}
+
 function renderMapMarkers() {
   if (!map || typeof google === "undefined") return;
 
@@ -2043,6 +2091,9 @@ function renderMapMarkers() {
     map.fitBounds(bounds);
     appState.boundsFitForBasin = appState.selectedBasin;
   }
+
+  // Choropleth-style risk zones follow the same render cycle as the markers.
+  syncRiskZones(basinRiskData);
 
   // Keep details drawer updated if the selected muni is in the current basin.
   // A live seismic focus owns the rail until it is closed — the poll must not
@@ -2538,6 +2589,17 @@ function setupEventHandlers() {
       if (clearBtn) { toggleRegionFilter(appState.regionFilter); return; }
       const row = e.target.closest(".seismic-event-btn");
       if (row && row.dataset && row.dataset.eventId) focusSeismicEvent(row.dataset.eventId);
+    });
+  }
+
+  // Choropleth-style risk zones toggle on the map header.
+  const choroToggle = document.getElementById("choropleth-toggle");
+  if (choroToggle) {
+    choroToggle.addEventListener("click", () => {
+      appState.choroplethOn = !appState.choroplethOn;
+      choroToggle.setAttribute("aria-pressed", String(appState.choroplethOn));
+      choroToggle.textContent = `Risk zones: ${appState.choroplethOn ? "on" : "off"}`;
+      renderMapMarkers();
     });
   }
 
