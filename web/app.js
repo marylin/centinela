@@ -550,16 +550,19 @@ function displayMuniDetails(muni) {
   const severityConfig = getSeverityConfig(muni.risk_score);
   const riskBadge = `<span class="badge ${severityConfig.badgeClass}">${severityConfig.label}</span>`;
 
-  const dominant = muni.dominant_hazard || 'FLOOD';
-  const dominantIcon = HAZARD_ICONS[dominant] || HAZARD_ICONS.FLOOD;
+  // Calculations for River vs Threshold bullet gauge
+  const pct = muni.threshold > 0 ? (muni.river_level_m / muni.threshold) * 100 : 0;
+  const pctText = pct.toFixed(0);
+  const isExceeded = muni.river_level_m > muni.threshold;
+  const exceededText = isExceeded ? '<span class="gauge-exceeded-label" aria-live="polite">[EXCEEDED]</span>' : '';
+  const exceededClass = isExceeded ? 'exceeded' : '';
   
-  const hazardPills = `
-    <span class="hazard-pill dominant">${dominantIcon} ${dominant} (Dominant)</span>
-    ${muni.flood_score !== undefined && dominant !== 'FLOOD' ? `<span class="hazard-pill secondary">${HAZARD_ICONS.FLOOD} Flood (${muni.flood_score.toFixed(2)})</span>` : ''}
-    ${muni.landslide_score !== undefined && dominant !== 'LANDSLIDE' ? `<span class="hazard-pill secondary">${HAZARD_ICONS.LANDSLIDE} Landslide (${muni.landslide_score.toFixed(2)})</span>` : ''}
-    ${muni.seismic_score !== undefined && dominant !== 'SEISMIC' ? `<span class="hazard-pill secondary">${HAZARD_ICONS.SEISMIC} Seismic (${muni.seismic_score.toFixed(2)})</span>` : ''}
-  `;
+  // Dynamic scaling for bullet gauge
+  const maxScaleValue = Math.max(muni.threshold * 1.3, muni.river_level_m);
+  const fillPct = maxScaleValue > 0 ? (muni.river_level_m / maxScaleValue) * 100 : 0;
+  const targetPct = maxScaleValue > 0 ? (muni.threshold / maxScaleValue) * 100 : 0;
 
+  // Render HTML
   drawer.innerHTML = `
     <div class="drawer-grid">
       <div class="muni-detail-header">
@@ -573,32 +576,120 @@ function displayMuniDetails(muni) {
         ${riskBadge}
       </div>
 
-      <div class="muni-hazard-row">
-        ${hazardPills}
-      </div>
-      
-      <div class="drawer-metric">
-        <span class="drawer-label">Calculated Risk</span>
-        <span class="drawer-val tabular-nums ${severityConfig.class}">
-          ${muni.risk_score.toFixed(2)}
-        </span>
+      <!-- Composite Risk Readout -->
+      <div class="composite-risk-card">
+        <div class="detail-section-header">
+          <span class="drawer-label">Composite Risk Index</span>
+          <div class="tooltip-wrapper">
+            <button type="button" class="tooltip-trigger" aria-label="Composite Risk Info" aria-describedby="risk-tooltip">
+              <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </button>
+            <div id="risk-tooltip" class="tooltip-content" role="tooltip">
+              Weighted composite of active hazard models including flood levels, landslide susceptibility, and seismic activity.
+            </div>
+          </div>
+        </div>
+        <div class="risk-percentage-display ${severityConfig.class}">
+          <span class="risk-percentage-num tabular-nums">${(muni.risk_score * 100).toFixed(0)}%</span>
+          <span class="risk-percentage-label">${severityConfig.label} Risk Level</span>
+        </div>
       </div>
 
+      <!-- River vs Threshold Bullet Gauge -->
+      <div class="bullet-gauge-card">
+        <div class="detail-section-header">
+          <span class="drawer-label">River vs Alert Threshold</span>
+          <div class="tooltip-wrapper">
+            <button type="button" class="tooltip-trigger" aria-label="River Level vs Threshold Info" aria-describedby="river-tooltip">
+              <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </button>
+            <div id="river-tooltip" class="tooltip-content" role="tooltip">
+              Current river level in meters compared to the alert threshold. Values above 100% represent warning exceedance.
+            </div>
+          </div>
+        </div>
+        <div class="bullet-gauge-meta">
+          <span class="bullet-gauge-text-val tabular-nums">Level: <strong>${muni.river_level_m.toFixed(2)}m</strong> / Thresh: ${muni.threshold.toFixed(2)}m</span>
+          <span class="bullet-gauge-pct tabular-nums ${isExceeded ? 'text-danger font-bold' : ''}">
+            ${pctText}% ${exceededText}
+          </span>
+        </div>
+        <div class="bullet-gauge-track" aria-label="River level of ${muni.river_level_m.toFixed(2)}m compared to threshold of ${muni.threshold.toFixed(2)}m (${pctText}%)">
+          <div class="bullet-gauge-fill ${exceededClass}" style="width: ${fillPct}%"></div>
+          <div class="bullet-gauge-target" style="left: ${targetPct}%" title="Threshold: ${muni.threshold.toFixed(2)}m"></div>
+        </div>
+      </div>
+
+      <!-- Hazard Sub-scores horizontal bars -->
+      <div class="sub-scores-card">
+        <div class="detail-section-header">
+          <span class="drawer-label">Hazard Sub-Scores</span>
+          <div class="tooltip-wrapper">
+            <button type="button" class="tooltip-trigger" aria-label="Hazard Sub-scores Info" aria-describedby="hazards-tooltip">
+              <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+            </button>
+            <div id="hazards-tooltip" class="tooltip-content" role="tooltip">
+              Individual hazard index scores modeled for flood propagation, landslide slope slip, and seismic activity.
+            </div>
+          </div>
+        </div>
+
+        <div class="sub-score-item">
+          <div class="sub-score-info">
+            <span class="sub-score-icon-label">${HAZARD_ICONS.FLOOD} Flood</span>
+            <span class="sub-score-val tabular-nums">${muni.flood_score !== undefined ? (muni.flood_score * 100).toFixed(0) + '%' : '--'}</span>
+          </div>
+          <div class="sub-score-track" aria-label="Flood sub-score: ${muni.flood_score !== undefined ? (muni.flood_score * 100).toFixed(0) + '%' : '--'}">
+            <div class="sub-score-fill flood-fill" style="width: ${muni.flood_score !== undefined ? (muni.flood_score * 100) : 0}%"></div>
+          </div>
+        </div>
+
+        <div class="sub-score-item">
+          <div class="sub-score-info">
+            <span class="sub-score-icon-label">${HAZARD_ICONS.LANDSLIDE} Landslide</span>
+            <span class="sub-score-val tabular-nums">${muni.landslide_score !== undefined ? (muni.landslide_score * 100).toFixed(0) + '%' : '--'}</span>
+          </div>
+          <div class="sub-score-track" aria-label="Landslide sub-score: ${muni.landslide_score !== undefined ? (muni.landslide_score * 100).toFixed(0) + '%' : '--'}">
+            <div class="sub-score-fill landslide-fill" style="width: ${muni.landslide_score !== undefined ? (muni.landslide_score * 100) : 0}%"></div>
+          </div>
+        </div>
+
+        <div class="sub-score-item">
+          <div class="sub-score-info">
+            <span class="sub-score-icon-label">${HAZARD_ICONS.SEISMIC} Seismic</span>
+            <span class="sub-score-val tabular-nums">${muni.seismic_score !== undefined ? (muni.seismic_score * 100).toFixed(0) + '%' : '--'}</span>
+          </div>
+          <div class="sub-score-track" aria-label="Seismic sub-score: ${muni.seismic_score !== undefined ? (muni.seismic_score * 100).toFixed(0) + '%' : '--'}">
+            <div class="sub-score-fill seismic-fill" style="width: ${muni.seismic_score !== undefined ? (muni.seismic_score * 100) : 0}%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Other Telemetry Metrics -->
+      <div class="drawer-divider"></div>
+      
       <div class="drawer-metric">
         <span class="drawer-label">Dominant Hazard</span>
         <span class="drawer-val warning text-critical">${muni.dominant_hazard || 'FLOOD'}</span>
       </div>
-      
+
       <div class="drawer-metric">
         <span class="drawer-label">Rainfall (24h)</span>
         <span class="drawer-val tabular-nums">${muni.rainfall_mm.toFixed(1)} mm</span>
       </div>
-      
-      <div class="drawer-metric">
-        <span class="drawer-label">River Level</span>
-        <span class="drawer-val tabular-nums">${muni.river_level_m.toFixed(2)} m</span>
-      </div>
-      
+
       <div class="drawer-metric">
         <span class="drawer-label">Soil Saturation</span>
         <span class="drawer-val tabular-nums">${(muni.soil_saturation * 100).toFixed(0)}%</span>
@@ -612,21 +703,6 @@ function displayMuniDetails(muni) {
       <div class="drawer-metric">
         <span class="drawer-label">Earthquake</span>
         <span class="drawer-val tabular-nums">${muni.earthquake_magnitude ? muni.earthquake_magnitude.toFixed(1) + ' Mw' : 'None'}</span>
-      </div>
-
-      <div class="drawer-metric">
-        <span class="drawer-label">Flood Score</span>
-        <span class="drawer-val tabular-nums">${muni.flood_score !== undefined ? muni.flood_score.toFixed(2) : '--'}</span>
-      </div>
-
-      <div class="drawer-metric">
-        <span class="drawer-label">Landslide Score</span>
-        <span class="drawer-val tabular-nums">${muni.landslide_score !== undefined ? muni.landslide_score.toFixed(2) : '--'}</span>
-      </div>
-
-      <div class="drawer-metric">
-        <span class="drawer-label">Seismic Score</span>
-        <span class="drawer-val tabular-nums">${muni.seismic_score !== undefined ? muni.seismic_score.toFixed(2) : '--'}</span>
       </div>
     </div>
   `;
