@@ -19,6 +19,7 @@ load_dotenv()
 
 import requests
 import concurrent.futures
+import math
 
 MUNICIPALITY_COORDINATES = {
     "Cali": {"lat": 3.4516, "lng": -76.5320, "basin": "Rio Cauca"},
@@ -453,8 +454,7 @@ BASINS = [
 
 CONNECTOR_ID = "plausibly_illustrate"
 
-@app.get("/risk")
-def get_risk(basin: str = "rio_cauca"):
+def compute_base_risk(basin: str = "rio_cauca"):
     """Runs the tracked risk-score SQL, returns graded risk per municipality."""
     global REOPENED_INCIDENT_ID
     if REOPENED_INCIDENT_ID:
@@ -958,6 +958,11 @@ def get_risk(basin: str = "rio_cauca"):
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/risk")
+def get_risk(basin: str = "rio_cauca"):
+    """Returns graded risk per municipality, merging any active simulated demo event at read time."""
+    return merge_demo_event_into_risk(basin, compute_base_risk(basin=basin))
 
 def get_alert_state_repr(risk_data):
     active_alerts = []
@@ -1614,3 +1619,247 @@ def set_db_state(data: DbStateUpdate):
     """Sets the mock database state for testing."""
     MOCK_DB_STATE["populated"] = data.populated
     return {"status": "Success", "populated": MOCK_DB_STATE["populated"]}
+
+# ---------------------------------------------------------------------------
+# Portfolio demo: live USGS seismic feed + simulated event injection
+# ---------------------------------------------------------------------------
+
+# Same coordinates the USGS connector uses for nearest-municipality attribution,
+# extended with the Rio Magdalena municipalities from MUNICIPALITY_COORDINATES.
+LIVE_SEISMIC_COORDINATES = {
+    "Cali": (3.4516, -76.5320),
+    "Yumbo": (3.5833, -76.4917),
+    "Jamundí": (3.2667, -76.5333),
+    "Neiva": (2.9273, -75.2819),
+    "Girardot": (4.3009, -74.8061),
+    "Honda": (5.2045, -74.7411),
+    "Lima": (-12.046, -77.043),
+    "Callao": (-12.056, -77.118),
+    "Chorrillos": (-12.168, -77.022),
+    "Guatemala City": (14.6349, -90.5069),
+    "Mixco": (14.6333, -90.6064),
+    "Villa Nueva": (14.5269, -90.5969)
+}
+
+USGS_LIVE_FEED_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
+USGS_LIVE_CACHE = {"data": None, "fetched_at": 0.0}
+USGS_LIVE_CACHE_TTL_SECONDS = 60.0
+
+def fetch_usgs_live_feed():
+    now = time.time()
+    cached = USGS_LIVE_CACHE["data"]
+    if cached is not None and (now - USGS_LIVE_CACHE["fetched_at"]) < USGS_LIVE_CACHE_TTL_SECONDS:
+        return cached
+    try:
+        resp = requests.get(USGS_LIVE_FEED_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        USGS_LIVE_CACHE["data"] = data
+        USGS_LIVE_CACHE["fetched_at"] = now
+        return data
+    except Exception as e:
+        print(f"Error fetching USGS live feed: {e}", flush=True)
+        if cached is not None:
+            return cached
+        raise HTTPException(status_code=502, detail="USGS live feed unavailable")
+
+@app.get("/live-seismic")
+def get_live_seismic(basin: str = "rio_cauca"):
+    """Returns real USGS events from the live feed attributed to the basin's
+    municipalities (nearest within 150 km), newest first. Stateless and always
+    real data: simulated demo events never appear here."""
+    basin_config = next((b for b in BASINS if b["id"] == basin), None)
+    if basin_config is None:
+        raise HTTPException(status_code=404, detail=f"Unknown basin: {basin}")
+    munis = {
+        m: LIVE_SEISMIC_COORDINATES[m]
+        for m in basin_config["municipalities"]
+        if m in LIVE_SEISMIC_COORDINATES
+    }
+    feed = fetch_usgs_live_feed()
+    events = []
+    for feature in feed.get("features", []):
+        coords = (feature.get("geometry") or {}).get("coordinates") or []
+        if len(coords) < 3:
+            continue
+        lon, lat, depth = coords[:3]
+        closest_muni = None
+        min_dist = float("inf")
+        for name, (mlat, mlon) in munis.items():
+            dist = math.sqrt((lat - mlat) ** 2 + (lon - mlon) ** 2) * 111.0
+            if dist < min_dist:
+                min_dist = dist
+                closest_muni = name
+        if not closest_muni or min_dist >= 150.0:
+            continue
+        prop = feature.get("properties") or {}
+        t_ms = prop.get("time") or 0
+        dt = datetime.fromtimestamp(t_ms / 1000.0, tz=timezone.utc)
+        events.append({
+            "municipality": closest_muni,
+            "magnitude": float(prop.get("mag") or 0.0),
+            "place": prop.get("place", "Unknown"),
+            "time": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "depth_km": float(depth),
+            "latitude": float(lat),
+            "longitude": float(lon),
+            "simulated": False
+        })
+    events.sort(key=lambda e: e["time"], reverse=True)
+    return events
+
+# Simulated demo events live in Firestore (Cloud Run runs multiple instances,
+# so in-memory state would not be seen by the next request). The in-memory
+# dict is only the local/TESTING fallback when no Firestore client exists.
+DEMO_EVENTS_MOCK = {}
+
+def get_demo_event(basin: str):
+    if db is not None:
+        try:
+            doc = db.collection("demo_events").document(basin).get()
+            return doc.to_dict() if doc.exists else None
+        except Exception as e:
+            print(f"Error reading demo event from Firestore: {e}", flush=True)
+    return DEMO_EVENTS_MOCK.get(basin)
+
+def set_demo_event(basin: str, event: dict):
+    if db is not None:
+        try:
+            db.collection("demo_events").document(basin).set(event)
+            return
+        except Exception as e:
+            print(f"Error writing demo event to Firestore: {e}", flush=True)
+    DEMO_EVENTS_MOCK[basin] = event
+
+def delete_demo_event(basin: str):
+    if db is not None:
+        try:
+            db.collection("demo_events").document(basin).delete()
+        except Exception as e:
+            print(f"Error deleting demo event from Firestore: {e}", flush=True)
+    DEMO_EVENTS_MOCK.pop(basin, None)
+
+def merge_demo_event_into_risk(basin: str, results):
+    """Read-time merge of an active simulated demo event into the risk rows.
+    Uses the same weights as sql/risk_score.sql (seismic = magnitude/7.0,
+    compound = 0.40 flood + 0.30 landslide + 0.30 seismic). For seismic-only
+    basins (flood and landslide read as no-data), the seismic score carries
+    the full compound weight so the injected event is visible. The merged row
+    is tagged simulated so it is never presented as a real USGS detection."""
+    if not isinstance(results, list):
+        return results
+    event = get_demo_event(basin)
+    if not event:
+        return results
+    muni = event.get("municipality")
+    try:
+        magnitude = float(event.get("magnitude") or 0.0)
+    except (TypeError, ValueError):
+        return results
+    for row in results:
+        if not isinstance(row, dict) or row.get("municipality") != muni:
+            continue
+        seismic_score = round(min(1.0, max(0.0, magnitude / 7.0)), 2)
+        flood = float(row.get("flood_score") or 0.0)
+        landslide = float(row.get("landslide_score") or 0.0)
+        if flood == 0.0 and landslide == 0.0:
+            risk_score = seismic_score
+        else:
+            risk_score = round((0.40 * flood) + (0.30 * landslide) + (0.30 * seismic_score), 2)
+        if flood >= landslide and flood >= seismic_score:
+            dominant = "FLOOD"
+        elif landslide >= flood and landslide >= seismic_score:
+            dominant = "LANDSLIDE"
+        else:
+            dominant = "SEISMIC"
+        row["earthquake_magnitude"] = magnitude
+        row["seismic_score"] = seismic_score
+        row["risk_score"] = risk_score
+        row["dominant_hazard"] = dominant
+        row["simulated"] = True
+    return results
+
+def remove_simulated_incidents(basin: str):
+    """Removes incidents created by a simulated demo event for the basin."""
+    global INCIDENTS
+
+    def is_simulated_incident(inc):
+        if not isinstance(inc, dict) or inc.get("basin") != basin:
+            return False
+        if inc.get("simulated"):
+            return True
+        return any(
+            isinstance(r, dict) and r.get("simulated")
+            for r in inc.get("risk_data", [])
+        )
+
+    if db is not None:
+        try:
+            for doc in db.collection("incidents").stream():
+                if is_simulated_incident(doc.to_dict() or {}):
+                    doc.reference.delete()
+        except Exception as e:
+            print(f"Error removing simulated incidents from Firestore: {e}", flush=True)
+    INCIDENTS = [inc for inc in INCIDENTS if not is_simulated_incident(inc)]
+
+class DemoEventRequest(BaseModel):
+    basin: str
+    municipality: str
+    magnitude: float
+
+class DemoClearRequest(BaseModel):
+    basin: str
+
+@app.post("/demo/inject-event")
+def demo_inject_event(data: DemoEventRequest, background_tasks: BackgroundTasks):
+    """Stores a simulated seismic event for the basin, merged into /risk at read
+    time and tagged simulated everywhere. Triggers the narration recompute so
+    /alert reflects it, and logs a clearly simulated incident."""
+    basin_config = next((b for b in BASINS if b["id"] == data.basin), None)
+    if basin_config is None:
+        raise HTTPException(status_code=404, detail=f"Unknown basin: {data.basin}")
+    if data.municipality not in basin_config["municipalities"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Municipality {data.municipality} is not part of basin {data.basin}"
+        )
+    now_iso = datetime.now(timezone.utc).isoformat()
+    event = {
+        "basin": data.basin,
+        "municipality": data.municipality,
+        "magnitude": float(data.magnitude),
+        "simulated": True,
+        "injected_at": now_iso
+    }
+    set_demo_event(data.basin, event)
+
+    risk_data = get_risk(basin=data.basin)
+    incident_entry = {
+        "id": f"inc_sim_{int(time.time())}",
+        "timestamp": now_iso,
+        "basin": data.basin,
+        "type": "alert",
+        "simulated": True,
+        "details": (
+            f"SIMULATED demo event: M{event['magnitude']:.1f} earthquake injected near "
+            f"{data.municipality}. Not a real USGS detection."
+        ),
+        "risk_data": risk_data or []
+    }
+    add_incident(incident_entry)
+
+    # Reuse the existing check-alerts narration path so /alert reflects the event
+    background_tasks.add_task(run_alerts_and_narration_check, data.basin)
+    return {"status": "Success", "event": event, "risk_data": risk_data}
+
+@app.post("/demo/clear-event")
+def demo_clear_event(data: DemoClearRequest, background_tasks: BackgroundTasks):
+    """Removes the simulated demo event for the basin so /risk, /alert and
+    /incidents return to normal."""
+    basin_config = next((b for b in BASINS if b["id"] == data.basin), None)
+    if basin_config is None:
+        raise HTTPException(status_code=404, detail=f"Unknown basin: {data.basin}")
+    delete_demo_event(data.basin)
+    remove_simulated_incidents(data.basin)
+    background_tasks.add_task(run_alerts_and_narration_check, data.basin)
+    return {"status": "Success", "basin": data.basin}
