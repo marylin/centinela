@@ -173,6 +173,9 @@ MOCK_DB_STATE = {"populated": True}
 # Import the existing agent logic
 from rapid_agent.agent import check_and_heal_connector, get_mcp_toolset, call_with_retry
 
+# Import ADK narration agent (Phase 6: all prose runs through the ADK LlmAgent Runner)
+from rapid_agent.centinela_agent import run_narration_turn
+
 app = FastAPI(title="Centinela Backend API")
 
 # Enable CORS for frontend integration
@@ -571,29 +574,8 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
                     "broadcast": f"Mock resident warning broadcast message mentioning affected municipalities in {basin}."
                 }
             else:
-                client = genai.Client(vertexai=True, project='centinela-498622', location='us')
-                prompt = (
-                    "You are a disaster response AI assistant. Based strictly on the following structured risk data "
-                    f"for the {basin} basin (do not invent or change any numbers or facts):\n\n"
-                    f"{json.dumps(risk_data, indent=2)}\n\n"
-                    "Please generate:\n"
-                    "1. 'summary': A concise, technical summary of the compound multi-hazard risk (flooding, landslides, and seismic activity) for the agency incident report. "
-                    "Describe the overall basin situation and affected municipalities.\n"
-                    "2. 'broadcast': A plain-language, urgent warning message to be broadcast to local residents. Mention "
-                    "the specific municipalities, their risk severities, dominant hazards, and the driving parameters (precipitation/rainfall, "
-                    "river levels, soil saturation index, slope angles, susceptibility, earthquake magnitude) using the exact numbers from the data. Keep it highly grounded."
-                )
-                
-                response = client.models.generate_content(
-                    model='gemini-3.5-flash',
-                    contents=prompt,
-                    config=genai.types.GenerateContentConfig(
-                        response_mime_type='application/json',
-                        response_schema=AlertNarratives
-                    )
-                )
-                
-                narratives = json.loads(response.text)
+                # Phase 6: narration produced via ADK LlmAgent Runner
+                narratives = run_narration_turn(basin, risk_data)
             resident_broadcast_text = narratives.get("broadcast", "")
             
             # Cache the response for GET /alert
@@ -752,36 +734,14 @@ def get_alert(basin: str = "rio_cauca"):
             if severity in ["HIGH", "EXTREME"]:
                 affected_municipalities.append(muni)
                 
-        # Call Gemini to generate the prose summary and resident broadcast warning
+        # Phase 6: narration produced via ADK LlmAgent Runner (not raw genai.generate_content)
         if TESTING:
             narratives = {
                 "summary": f"Mock technical summary describing {basin} basin compound multi-hazard risk.",
                 "broadcast": f"Mock resident warning broadcast message mentioning affected municipalities in {basin}."
             }
         else:
-            client = genai.Client(vertexai=True, project='centinela-498622', location='us')
-            prompt = (
-                "You are a disaster response AI assistant. Based strictly on the following structured risk data "
-                f"for the {basin} basin (do not invent or change any numbers or facts):\n\n"
-                f"{json.dumps(risk_data, indent=2)}\n\n"
-                "Please generate:\n"
-                "1. 'summary': A concise, technical summary of the compound multi-hazard risk (flooding, landslides, and seismic activity) for the agency incident report. "
-                "Describe the overall basin situation and affected municipalities.\n"
-                "2. 'broadcast': A plain-language, urgent warning message to be broadcast to local residents. Mention "
-                "the specific municipalities, their risk severities, dominant hazards, and the driving parameters (precipitation/rainfall, "
-                "river levels, soil saturation index, slope angles, susceptibility, earthquake magnitude) using the exact numbers from the data. Keep it highly grounded."
-            )
-            
-            response = client.models.generate_content(
-                model='gemini-3.5-flash',
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    response_mime_type='application/json',
-                    response_schema=AlertNarratives
-                )
-            )
-            
-            narratives = json.loads(response.text)
+            narratives = run_narration_turn(basin, risk_data)
         
         title = f"{basin.replace('_', ' ').title()} Basin Compound Multi-Hazard Alert"
         resident_broadcast_text = narratives.get("broadcast", "")
