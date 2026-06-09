@@ -1804,6 +1804,12 @@ h1, h2, h3, h4 {
   gap: 1rem;
 }
 
+/* Keep slideout cards at natural height; the panel scrolls instead of
+   compressing cards (which clipped their content, e.g. the demo buttons). */
+.slideout-body > .card {
+  flex-shrink: 0;
+}
+
 /* ==========================================================================
    Step 4: Selector Labels
    ========================================================================== */
