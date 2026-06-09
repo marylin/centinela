@@ -1,0 +1,22 @@
+# Deploy build context excludes. Keep this lean so Cloud Build uploads only the app.
+.git/
+.venv/
+.worktrees/
+node_modules/
+docs/
+.gstack/
+__pycache__/
+*.pyc
+*.pyo
+
+# Never ship local env / secrets / local-only artifacts.
+# A shipped .env with TESTING=true would make production run all-mock.
+.env
+.env.*
+*.log
+*.csv
+tmp*
+package-lock.json
+build-log.md
+test_demo_endpoints.py
+test_regression.py
