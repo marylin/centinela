@@ -38,6 +38,8 @@ let appState = {
   seismicFeedAvailable: true,
   seismicEventsAvailable: false,
   seismicFocus: null,
+  regionFilter: null,
+  regionsExpanded: false,
   simulatedActive: false,
   selectedMuni: null,
   syncProgress: 0,
@@ -1377,6 +1379,40 @@ async function fetchSeismicFeed() {
   }
 }
 
+// Region of one event, matching sql/seismic_active_regions.sql: the text
+// after the last comma of the USGS place string (or the whole string).
+function eventRegion(ev) {
+  const place = (ev && ev.place) ? String(ev.place) : "";
+  const idx = place.lastIndexOf(",");
+  return (idx >= 0 ? place.slice(idx + 1) : place).trim();
+}
+
+// Toggle the live-feed region filter; with matches (and no seismic focus
+// owning the map) the map fits the matched epicenters, and clearing restores
+// the basin view via the normal bounds-fit path.
+function toggleRegionFilter(region) {
+  appState.regionFilter = appState.regionFilter === region ? null : region;
+  renderSeismicEvents();
+
+  if (appState.seismicFocus || !map || typeof google === "undefined") return;
+
+  if (appState.regionFilter) {
+    const matches = (database.seismicEvents.events || []).filter(ev =>
+      eventRegion(ev) === appState.regionFilter &&
+      typeof ev.latitude === "number" && typeof ev.longitude === "number");
+    if (matches.length) {
+      const bounds = new google.maps.LatLngBounds();
+      matches.forEach(ev => bounds.extend({ lat: ev.latitude, lng: ev.longitude }));
+      map.fitBounds(bounds);
+      if (matches.length === 1) map.setZoom(6);
+      initConsoleLog(`Map fitted to ${matches.length} recent event${matches.length === 1 ? "" : "s"} in ${appState.regionFilter}.`, "telemetry");
+    }
+  } else {
+    appState.boundsFitForBasin = null;
+    renderMapMarkers();
+  }
+}
+
 function renderSeismicEvents() {
   const container = document.getElementById("seismic-feed-container");
   const regionsEl = document.getElementById("seismic-regions-container");
@@ -1392,15 +1428,27 @@ function renderSeismicEvents() {
       // Strongest regions first; defensive sort in case the backend reorders.
       const regions = [...activeRegions].sort((a, b) =>
         ((b.max_magnitude || 0) - (a.max_magnitude || 0)) || ((b.count || 0) - (a.count || 0)));
-      regionsEl.innerHTML = regions.map(r => {
+      // On small screens the full chip wall pushes the first event below the
+      // fold, so cap it behind a "show all" toggle.
+      const isNarrow = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
+      const capped = isNarrow && !appState.regionsExpanded && regions.length > 6;
+      const visibleRegions = capped ? regions.slice(0, 6) : regions;
+      regionsEl.innerHTML = visibleRegions.map(r => {
         const maxMag = typeof r.max_magnitude === "number" ? r.max_magnitude : 0;
         const sev = getMagnitudeSeverity(maxMag);
+        const active = appState.regionFilter === r.region;
         return `
-          <span class="seismic-region-chip" style="border-left-color: ${sev.colorHex};">
+          <button type="button" class="seismic-region-chip ${active ? "active" : ""}"
+                  data-region="${escapeHtml(r.region)}" aria-pressed="${active}"
+                  aria-label="${active ? "Clear the" : "Filter the live feed to the"} ${escapeHtml(r.region)} region"
+                  style="border-left-color: ${sev.colorHex};">
             <span class="seismic-region-name">${escapeHtml(r.region)}</span>
             <span class="seismic-region-meta tabular-nums">${Number(r.count) || 0} event${(Number(r.count) || 0) === 1 ? "" : "s"} &middot; max M ${maxMag.toFixed(1)}</span>
-          </span>`;
-      }).join("");
+          </button>`;
+      }).join("") + (isNarrow && regions.length > 6 ? `
+          <button type="button" class="seismic-region-chip seismic-regions-toggle" data-regions-toggle="1">
+            <span class="seismic-region-name">${capped ? `Show all ${regions.length}` : "Show less"}</span>
+          </button>` : "");
     }
   }
 
@@ -1413,7 +1461,30 @@ function renderSeismicEvents() {
   const sorted = [...events].sort((a, b) =>
     (new Date(b.time) - new Date(a.time)) || (b.magnitude - a.magnitude));
 
-  container.innerHTML = sorted.map(ev => {
+  // Region filter: same parse as the active-regions SQL (text after the last
+  // comma of the USGS place string).
+  const filtered = appState.regionFilter
+    ? sorted.filter(ev => eventRegion(ev) === appState.regionFilter)
+    : sorted;
+
+  let filterBar = "";
+  if (appState.regionFilter) {
+    filterBar = `
+      <div class="seismic-filter-bar">
+        <span>Showing 48h events in <strong>${escapeHtml(appState.regionFilter)}</strong></span>
+        <button type="button" class="btn btn-sm seismic-filter-clear" data-clear-region-filter="1">Clear filter</button>
+      </div>`;
+  }
+
+  if (appState.regionFilter && filtered.length === 0) {
+    container.innerHTML = filterBar + `
+      <div class="empty-alerts">
+        ${escapeHtml(appState.regionFilter)} is active over the last 30 days, but has no M4.5+ events in the last 48 hours.
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = filterBar + filtered.map(ev => {
     const sev = getMagnitudeSeverity(ev.magnitude);
     const simulated = ev.simulated === true;
     const sourceTag = simulated
@@ -2254,8 +2325,26 @@ function setupEventHandlers() {
   if (seismicFeed) {
     seismicFeed.addEventListener("click", (e) => {
       if (!e.target || typeof e.target.closest !== "function") return;
+      const clearBtn = e.target.closest("[data-clear-region-filter]");
+      if (clearBtn) { toggleRegionFilter(appState.regionFilter); return; }
       const row = e.target.closest(".seismic-event-btn");
       if (row && row.dataset && row.dataset.eventId) focusSeismicEvent(row.dataset.eventId);
+    });
+  }
+
+  // Active-region chips: delegate so chips re-rendered each poll stay live.
+  const seismicRegions = document.getElementById("seismic-regions-container");
+  if (seismicRegions) {
+    seismicRegions.addEventListener("click", (e) => {
+      if (!e.target || typeof e.target.closest !== "function") return;
+      const toggle = e.target.closest("[data-regions-toggle]");
+      if (toggle) {
+        appState.regionsExpanded = !appState.regionsExpanded;
+        renderSeismicEvents();
+        return;
+      }
+      const chip = e.target.closest(".seismic-region-chip");
+      if (chip && chip.dataset && chip.dataset.region) toggleRegionFilter(chip.dataset.region);
     });
   }
 

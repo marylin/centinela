@@ -2486,12 +2486,53 @@ span.skeleton-block {
 .seismic-region-chip {
   display: inline-flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 0.1rem;
   padding: 0.3rem 0.6rem;
+  min-height: 44px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
   border-left-width: 3px;
   background-color: rgba(255, 255, 255, 0.02);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.seismic-region-chip:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.seismic-region-chip.active {
+  background-color: rgba(79, 142, 247, 0.12);
+  border-color: var(--primary);
+}
+
+.seismic-region-chip.active .seismic-region-name {
+  color: var(--primary);
+}
+
+.seismic-regions-toggle {
+  justify-content: center;
+  border-left-width: 1px;
+}
+
+.seismic-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.seismic-filter-clear {
+  min-height: 32px;
 }
 
 .seismic-region-name {
