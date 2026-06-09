@@ -16,6 +16,41 @@ from firebase_admin import credentials, messaging
 # Load environment variables
 load_dotenv()
 
+import requests
+import concurrent.futures
+
+MUNICIPALITY_COORDINATES = {
+    "Cali": {"lat": 3.4516, "lng": -76.5320, "basin": "Rio Cauca"},
+    "Yumbo": {"lat": 3.5855, "lng": -76.4952, "basin": "Rio Cauca"},
+    "Jamundí": {"lat": 3.2610, "lng": -76.5394, "basin": "Rio Cauca"},
+    "Neiva": {"lat": 2.9273, "lng": -75.2819, "basin": "Rio Magdalena"},
+    "Girardot": {"lat": 4.3009, "lng": -74.8061, "basin": "Rio Magdalena"},
+    "Honda": {"lat": 5.2045, "lng": -74.7411, "basin": "Rio Magdalena"}
+}
+
+WEATHER_CACHE = {}
+WEATHER_CACHE_EXPIRY = None
+
+def fetch_precipitation_for_muni(muni: str, lat: float, lng: float, api_key: str):
+    url = "https://weather.googleapis.com/v1/currentConditions:lookup"
+    params = {
+        "key": api_key,
+        "location.latitude": lat,
+        "location.longitude": lng,
+        "unitsSystem": "METRIC"
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=2.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            precip = data.get("precipitation", {}).get("amount", {}).get("millimeters", 0.0)
+            return float(precip)
+        else:
+            print(f"Weather API error for {muni}: {resp.status_code} - {resp.text}", flush=True)
+    except Exception as e:
+        print(f"Error fetching weather for {muni}: {e}", flush=True)
+    return None
+
 TESTING = os.environ.get("TESTING", "false").lower() == "true"
 
 # Initialize Firebase Admin SDK using Application Default Credentials (ADC)
@@ -448,6 +483,57 @@ def get_risk(basin: str = "rio_cauca"):
                         "dominant_hazard": "FLOOD"
                     }
                 ]
+    try:
+        # Fetch real weather data from Google Weather API if not testing
+        api_key = os.environ.get("GOOGLE_WEATHER_API_KEY")
+        if api_key:
+            now_utc = datetime.now(timezone.utc)
+            global WEATHER_CACHE_EXPIRY, WEATHER_CACHE
+            if not WEATHER_CACHE_EXPIRY or now_utc >= WEATHER_CACHE_EXPIRY:
+                print("Weather cache expired or empty. Fetching new data from Google Weather API...", flush=True)
+                new_precip = {}
+                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+                    futures = {
+                        executor.submit(fetch_precipitation_for_muni, muni, coord["lat"], coord["lng"], api_key): muni
+                        for muni, coord in MUNICIPALITY_COORDINATES.items()
+                    }
+                    for future in concurrent.futures.as_completed(futures):
+                        muni = futures[future]
+                        try:
+                            val = future.result()
+                            if val is not None:
+                                new_precip[muni] = val
+                        except Exception as e:
+                            print(f"Error in future result for {muni}: {e}", flush=True)
+                
+                if new_precip:
+                    WEATHER_CACHE.update(new_precip)
+                    WEATHER_CACHE_EXPIRY = now_utc + timedelta(minutes=5)
+                    
+                    # Write to BigQuery
+                    try:
+                        bq_client = bigquery.Client(project='centinela-498622')
+                        timestamp_str = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+                        rows_to_insert = []
+                        for muni, precip_val in new_precip.items():
+                            coord = MUNICIPALITY_COORDINATES[muni]
+                            rows_to_insert.append(f"('{timestamp_str}', 'GMP-01', {precip_val}, '{coord['basin']}', '{muni}')")
+                        
+                        if rows_to_insert:
+                            insert_query = f"""
+                            INSERT INTO unified_feeds.rainfall (timestamp, station_id, precipitation_mm, basin, municipality)
+                            VALUES {', '.join(rows_to_insert)}
+                            """
+                            query_job = bq_client.query(insert_query)
+                            query_job.result()
+                            print(f"Successfully inserted {len(rows_to_insert)} weather API records to BigQuery.", flush=True)
+                    except Exception as bq_err:
+                        print(f"Error writing Weather API data to BigQuery: {bq_err}", flush=True)
+        else:
+            print("Warning: GOOGLE_WEATHER_API_KEY environment variable is not set.", flush=True)
+    except Exception as weather_err:
+        print(f"Error in Weather API integration flow: {weather_err}", flush=True)
+
     try:
         # Read the query from the tracked SQL file
         with open("sql/risk_score.sql", "r", encoding="utf-8") as f:
