@@ -67,8 +67,11 @@
             </div>
           </div>
           <div class="card-body map-container" id="risk-map-container">
-            <!-- Dynamic interactive SVG Map will render here via JS -->
-            <div class="map-loading">Loading interactive map data...</div>
+            <div class="map-loading" id="map-loading-overlay">
+              <div class="map-loading-spinner"></div>
+              <span>Loading Google Maps...</span>
+            </div>
+            <div id="google-map" style="width:100%;height:420px;border-radius:8px;"></div>
           </div>
           <!-- Selected Municipality Detail Panel -->
           <div class="detail-drawer" id="muni-detail-drawer">
@@ -175,6 +178,18 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"></script>
   
+  <!-- Google Maps -->
+  <script>
+    window.googleMapsReady = false;
+    function onGoogleMapsLoad() {
+      window.googleMapsReady = true;
+      if (window.onMapsReadyCallback) window.onMapsReadyCallback();
+    }
+  </script>
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCvD5IH8wjYrcBuqr8Alnj5dc3NAoqs4vg&callback=onGoogleMapsLoad">
+  </script>
+
   <script type="module" src="./app.js"></script>
 </body>
 </html>
