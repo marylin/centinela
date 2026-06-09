@@ -59,3 +59,4 @@ fivetran_keys/
 # Local working space (read/write freely, never commit)
 docs/
 .gstack/
+build-log.md
