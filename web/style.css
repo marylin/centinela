@@ -1510,6 +1510,7 @@ h1, h2, h3, h4 {
 }
 
 .tooltip-wrapper:hover .tooltip-content,
+.tooltip-wrapper:focus-within .tooltip-content,
 .tooltip-trigger:focus .tooltip-content {
   opacity: 1;
   pointer-events: auto;
@@ -2389,4 +2390,36 @@ h1, h2, h3, h4 {
 @keyframes risk-line-fade {
   from { opacity: 0.25; }
   to { opacity: 1; }
+}
+
+/* ==========================================================================
+   Map overlay states + tooltip edge handling (additive)
+   ========================================================================== */
+.map-overlay-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 1rem;
+}
+
+/* Arrow follows the JS-computed horizontal offset; falls back to centered. */
+.tooltip-content::after {
+  left: var(--tooltip-arrow-x, 50%);
+}
+
+/* Flipped tooltip (shown below the trigger): arrow sits on top, pointing up. */
+.tooltip-content.tooltip-below::after {
+  top: auto;
+  bottom: 100%;
+  border-color: transparent transparent var(--bg-input) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-loading-spinner {
+    animation: none !important;
+  }
 }

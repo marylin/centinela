@@ -370,6 +370,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupEventHandlers();
   setupNotifications();
   setupSafeRouteControls();
+  setupTooltipPositioning();
 
   appState.mode = "operations";
 
@@ -917,6 +918,58 @@ function setupSafeRouteControls() {
 }
 
 // ==========================================================================
+// Tooltip positioning (escape card overflow clipping)
+// ==========================================================================
+// Cards clip overflow, so a tooltip positioned inside one gets cut off at the
+// card edge. On show, switch the tooltip to fixed positioning computed from
+// the trigger: centered above, clamped to the viewport horizontally, flipped
+// below the trigger when there is no room above. Delegated listeners keep it
+// working for tooltips re-rendered into the detail rail on every poll.
+function positionTooltip(wrapper) {
+  const tip = wrapper.querySelector(".tooltip-content");
+  const trigger = wrapper.querySelector(".tooltip-trigger");
+  if (!tip || !trigger || typeof trigger.getBoundingClientRect !== "function") return;
+
+  const r = trigger.getBoundingClientRect();
+  tip.style.position = "fixed";
+  tip.style.bottom = "auto";
+  tip.style.transform = "none";
+
+  const w = tip.offsetWidth || 220;
+  const h = tip.offsetHeight || 64;
+  const margin = 8;
+
+  let left = r.left + r.width / 2 - w / 2;
+  left = Math.max(margin, Math.min(left, window.innerWidth - w - margin));
+
+  let top = r.top - h - margin;
+  let below = false;
+  if (top < margin) {
+    top = r.bottom + margin;
+    below = true;
+  }
+
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+  if (below) tip.classList.add("tooltip-below");
+  else tip.classList.remove("tooltip-below");
+
+  // Keep the arrow pointing at the trigger even when clamped to the viewport.
+  const arrowX = Math.max(10, Math.min(r.left + r.width / 2 - left, w - 10));
+  tip.style.setProperty("--tooltip-arrow-x", `${arrowX}px`);
+}
+
+function setupTooltipPositioning() {
+  const reposition = (e) => {
+    if (!e.target || typeof e.target.closest !== "function") return;
+    const wrapper = e.target.closest(".tooltip-wrapper");
+    if (wrapper) positionTooltip(wrapper);
+  };
+  document.addEventListener("mouseover", reposition);
+  document.addEventListener("focusin", reposition);
+}
+
+// ==========================================================================
 // Clock & Time Helpers
 // ==========================================================================
 function initClock() {
@@ -963,8 +1016,10 @@ async function fetchTelemetry() {
   // Live seismic feed refreshes on the same poll, but independently: a missing
   // or failing /live-seismic endpoint must never trip the offline banner.
   fetchLiveSeismic();
+  // Captured up front so a basin switch mid-flight can't mismark completion.
+  const requestedBasin = appState.selectedBasin;
   try {
-    const basinParam = `?basin=${appState.selectedBasin}`;
+    const basinParam = `?basin=${requestedBasin}`;
     const [riskRes, statusRes, alertRes, autoHealsRes, incidentsRes] = await Promise.all([
       fetch(`${API_BASE}/risk${basinParam}`),
       fetch(`${API_BASE}/connector-status${basinParam}`),
@@ -982,6 +1037,10 @@ async function fetchTelemetry() {
     const alertData = await alertRes.json();
     const autoHealsData = await autoHealsRes.json();
     const incidentsData = await incidentsRes.json();
+
+    // A fetch for this basin has completed; the map overlay may now resolve
+    // to either markers or an honest "no data" state.
+    appState.lastFetchedBasin = requestedBasin;
 
     // Clear offline state if previously offline
     if (appState.isOffline) {
@@ -1395,10 +1454,39 @@ function renderMapMarkers() {
     }
   }
 
-  // Hide loading overlay once markers are plotted
+  // Resolve the loading overlay: hide once markers are plotted; if a fetch for
+  // this basin already completed with no rows, show an honest no-data state
+  // instead of an indefinite spinner. While the fetch is still in flight the
+  // loading state stays up.
+  if (basinRiskData.length > 0) {
+    setMapLoadingState("hide");
+  } else if (appState.lastFetchedBasin === appState.selectedBasin) {
+    setMapLoadingState("nodata");
+  }
+}
+
+// Map overlay state machine: "loading" (spinner), "nodata", or "hide".
+function setMapLoadingState(mode) {
   const loader = document.getElementById("map-loading-overlay");
-  if (loader && basinRiskData.length > 0) {
+  if (!loader) return;
+  if (mode === "hide") {
     loader.classList.add("hidden");
+    return;
+  }
+  loader.classList.remove("hidden");
+  if (mode === "loading") {
+    loader.innerHTML = `
+      <div class="map-overlay-state" role="status">
+        <div class="map-loading-spinner" aria-hidden="true"></div>
+        <span>Loading basin data&hellip;</span>
+      </div>`;
+    loader.setAttribute("aria-label", "Loading basin data");
+  } else if (mode === "nodata") {
+    loader.innerHTML = `
+      <div class="map-overlay-state" role="status">
+        <span>No data for this area yet.</span>
+      </div>`;
+    loader.setAttribute("aria-label", "No data for this area yet");
   }
 }
 
@@ -1783,12 +1871,9 @@ function setupEventHandlers() {
       // render; reset the fit flag so it re-fits on this basin change (not every poll).
       appState.boundsFitForBasin = null;
 
-      // Show loading overlay
-      const loader = document.getElementById("map-loading-overlay");
-      if (loader) {
-        loader.classList.remove("hidden");
-      }
-      
+      // Show the spinner overlay until the new basin's data renders.
+      setMapLoadingState("loading");
+
       // Clear muni detail drawer/rail
       const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
       if (drawer) {
