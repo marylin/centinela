@@ -2423,3 +2423,157 @@ h1, h2, h3, h4 {
     animation: none !important;
   }
 }
+
+/* ==========================================================================
+   Live Seismic Events feed (clickable rows + active regions + seismic focus)
+   ========================================================================== */
+.seismic-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 0;
+}
+
+.seismic-regions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.seismic-regions:empty {
+  display: none;
+}
+
+.seismic-region-chip {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  border-left-width: 3px;
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.seismic-region-name {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.seismic-region-meta {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+
+/* Feed rows are real buttons now: reset button chrome, keep the row look. */
+button.seismic-event-row {
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+button.seismic-event-row:hover {
+  background-color: rgba(56, 189, 248, 0.06);
+}
+
+button.seismic-event-row.simulated:hover {
+  background-color: rgba(245, 158, 11, 0.08);
+}
+
+button.seismic-event-row:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+/* Transient seismic-focus view in the detail rail */
+.badge-seismic-focus {
+  background-color: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+}
+
+.seismic-focus-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.seismic-focus-close {
+  border: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.03);
+  color: var(--text-main);
+}
+
+.seismic-focus-close:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.seismic-focus-close:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+.seismic-focus-place {
+  margin: 0;
+}
+
+.seismic-focus-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.seismic-focus-mag {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.seismic-focus-mag-num {
+  font-size: 1.8rem;
+  font-weight: 700;
+}
+
+.seismic-focus-mag-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.seismic-focus-narration {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.seismic-focus-narration p {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-main);
+}
+
+.seismic-focus-note {
+  margin: 0;
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button.seismic-event-row {
+    transition: none;
+  }
+}

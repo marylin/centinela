@@ -147,14 +147,19 @@
           </div>
         </section>
 
-        <!-- Live Seismic Activity panel (real USGS events for the selected basin) -->
+        <!-- Live Seismic Events panel: global USGS feed with clickable events and an
+             active-regions summary. Falls back to the legacy basin-scoped feed when
+             the /seismic-events endpoint is not available, so nothing breaks. -->
         <section class="card seismic-panel" aria-labelledby="seismic-title">
           <div class="card-header">
-            <h2 id="seismic-title">Live Seismic Activity</h2>
+            <h2 id="seismic-title">Live Seismic Events</h2>
             <span class="badge badge-live-usgs" title="Real events from the USGS earthquake feed">LIVE &middot; USGS</span>
           </div>
-          <div class="card-body seismic-list" id="seismic-feed-container">
-            <div class="empty-alerts">No recent seismic activity in range.</div>
+          <div class="card-body seismic-panel-body">
+            <div class="seismic-regions" id="seismic-regions-container" aria-label="Active seismic regions"></div>
+            <div class="seismic-list" id="seismic-feed-container" aria-label="Live seismic events, newest first">
+              <div class="empty-alerts">No recent seismic activity in range.</div>
+            </div>
           </div>
         </section>
       </div>

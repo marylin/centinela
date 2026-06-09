@@ -23,6 +23,7 @@ try {
 const database = {
   risk: [],
   liveSeismic: [],
+  seismicEvents: { events: [], active_regions: [] },
   connector: {
     status: "unknown",
     last_sync_time: "never",
@@ -35,6 +36,8 @@ const database = {
 let appState = {
   isOffline: false,
   seismicFeedAvailable: true,
+  seismicEventsAvailable: false,
+  seismicFocus: null,
   simulatedActive: false,
   selectedMuni: null,
   syncProgress: 0,
@@ -49,6 +52,10 @@ let appState = {
 // Map instances & markers
 let map = null;
 let markers = {};
+
+// Seismic-focus map artifacts (transient overlay, separate from basin markers)
+let seismicFocusMarker = null;
+let seismicFocusCircle = null;
 
 // 3. Design System & Icon Set Foundation
 const HAZARD_ICONS = {
@@ -272,15 +279,21 @@ async function loadBasins() {
     if (!Array.isArray(data) || data.length === 0) throw new Error("Empty basins config");
 
     appState.basins = data;
+    // The selector lists compound basins only; seismic-only places are reached
+    // through the Live Seismic Events feed instead. Entries without a "kind"
+    // (older backend without the contract field) keep appearing, so nothing
+    // breaks until the kind-aware backend lands.
+    const selectable = data.filter(b => b && b.kind !== "seismic");
+    const options = selectable.length ? selectable : data;
     if (basinSelect) {
-      basinSelect.innerHTML = data
+      basinSelect.innerHTML = options
         .map(b => `<option value="${b.id}">${b.name} (${b.country})</option>`)
         .join("");
     }
-    // Default to the first basin returned (keeps rio_cauca as today).
-    appState.selectedBasin = data[0].id;
+    // Default to the first selectable basin returned (keeps rio_cauca as today).
+    appState.selectedBasin = options[0].id;
     if (basinSelect) basinSelect.value = appState.selectedBasin;
-    initConsoleLog(`Loaded ${data.length} basins from configuration.`, "telemetry");
+    initConsoleLog(`Loaded ${data.length} basins from configuration (${options.length} selectable).`, "telemetry");
   } catch (err) {
     // Resilience: keep the existing hardcoded options/basins; never crash.
     appState.basins = FALLBACK_BASINS;
@@ -1014,8 +1027,9 @@ function parseISOTime(isoString) {
 // ==========================================================================
 async function fetchTelemetry() {
   // Live seismic feed refreshes on the same poll, but independently: a missing
-  // or failing /live-seismic endpoint must never trip the offline banner.
-  fetchLiveSeismic();
+  // or failing seismic endpoint must never trip the offline banner. Prefers the
+  // global /seismic-events contract; falls back to the legacy /live-seismic.
+  fetchSeismicFeed();
   // Captured up front so a basin switch mid-flight can't mismark completion.
   const requestedBasin = appState.selectedBasin;
   try {
@@ -1281,6 +1295,11 @@ function renderLiveSeismic() {
   const container = document.getElementById("seismic-feed-container");
   if (!container) return;
 
+  // Legacy basin-scoped rendering has no active-regions summary; clear any
+  // strip left behind by the global feed so stale regions never linger.
+  const regionsEl = document.getElementById("seismic-regions-container");
+  if (regionsEl) regionsEl.innerHTML = "";
+
   if (!appState.seismicFeedAvailable) {
     container.innerHTML = `<div class="empty-alerts">Live seismic feed unavailable. Awaiting USGS connector...</div>`;
     return;
@@ -1315,6 +1334,273 @@ function renderLiveSeismic() {
       </div>
     `;
   }).join("");
+}
+
+// ==========================================================================
+// Live Seismic Events feed (global /seismic-events + click-to-focus)
+// ==========================================================================
+// Contract: GET /seismic-events -> { events: [{ id, magnitude, place, time,
+// latitude, longitude, depth_km, simulated }], active_regions: [{ region,
+// count, max_magnitude }] }. Clicking an event calls GET /seismic-focus?id=
+// and opens a transient, clearly-labeled SEISMIC-ONLY focus view on the
+// epicenter. While the endpoint is not deployed, the legacy basin-scoped
+// /live-seismic feed renders instead, so the panel never breaks.
+
+// Escaper for the new feed only: place/region/narration strings come from
+// external feeds and the narration model, so they never land as raw HTML.
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function fetchSeismicFeed() {
+  try {
+    const res = await fetch(`${API_BASE}/seismic-events`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const data = await res.json();
+    if (!data || !Array.isArray(data.events)) throw new Error("Unexpected /seismic-events payload");
+    database.seismicEvents = {
+      events: data.events.filter(ev => ev && typeof ev.magnitude === "number"),
+      active_regions: Array.isArray(data.active_regions) ? data.active_regions : []
+    };
+    appState.seismicEventsAvailable = true;
+    appState.simulatedActive = database.seismicEvents.events.some(ev => ev.simulated === true);
+    renderSeismicEvents();
+  } catch (err) {
+    // Endpoint missing (backend contract not deployed yet) or unreachable:
+    // keep the legacy basin-scoped feed working exactly as before.
+    appState.seismicEventsAvailable = false;
+    fetchLiveSeismic();
+  }
+}
+
+function renderSeismicEvents() {
+  const container = document.getElementById("seismic-feed-container");
+  const regionsEl = document.getElementById("seismic-regions-container");
+  if (!container) return;
+
+  const events = database.seismicEvents.events;
+  const activeRegions = database.seismicEvents.active_regions;
+
+  if (regionsEl) {
+    if (!activeRegions.length) {
+      regionsEl.innerHTML = "";
+    } else {
+      // Strongest regions first; defensive sort in case the backend reorders.
+      const regions = [...activeRegions].sort((a, b) =>
+        ((b.max_magnitude || 0) - (a.max_magnitude || 0)) || ((b.count || 0) - (a.count || 0)));
+      regionsEl.innerHTML = regions.map(r => {
+        const maxMag = typeof r.max_magnitude === "number" ? r.max_magnitude : 0;
+        const sev = getMagnitudeSeverity(maxMag);
+        return `
+          <span class="seismic-region-chip" style="border-left-color: ${sev.colorHex};">
+            <span class="seismic-region-name">${escapeHtml(r.region)}</span>
+            <span class="seismic-region-meta tabular-nums">${Number(r.count) || 0} event${(Number(r.count) || 0) === 1 ? "" : "s"} &middot; max M ${maxMag.toFixed(1)}</span>
+          </span>`;
+      }).join("");
+    }
+  }
+
+  if (events.length === 0) {
+    container.innerHTML = `<div class="empty-alerts">No seismic events in the live feed right now.</div>`;
+    return;
+  }
+
+  // Newest first; equally-recent events rank strongest first.
+  const sorted = [...events].sort((a, b) =>
+    (new Date(b.time) - new Date(a.time)) || (b.magnitude - a.magnitude));
+
+  container.innerHTML = sorted.map(ev => {
+    const sev = getMagnitudeSeverity(ev.magnitude);
+    const simulated = ev.simulated === true;
+    const sourceTag = simulated
+      ? `<span class="badge badge-simulated">SIMULATED</span>`
+      : `<span class="seismic-source-tag">LIVE &middot; USGS</span>`;
+    const depthText = (typeof ev.depth_km === "number") ? `${ev.depth_km.toFixed(0)} km depth` : "depth unknown";
+    const rel = formatRelativeTime(ev.time);
+    const aria = `Focus map on magnitude ${ev.magnitude.toFixed(1)} ${simulated ? "simulated" : "live USGS"} seismic event, ${ev.place || "unknown location"}, ${rel}, ${depthText}`;
+    return `
+      <button type="button"
+              class="seismic-event-row seismic-event-btn ${simulated ? "simulated" : ""}"
+              data-event-id="${escapeHtml(ev.id)}"
+              aria-label="${escapeHtml(aria)}"
+              style="border-left: 3px solid ${sev.colorHex};">
+        <div class="seismic-mag tabular-nums" style="color: ${sev.colorHex};">M ${ev.magnitude.toFixed(1)}</div>
+        <div class="seismic-event-info">
+          <div class="seismic-event-title">
+            <strong>${escapeHtml(ev.place || "Unknown location")}</strong>
+            ${sourceTag}
+          </div>
+          <div class="seismic-event-meta tabular-nums">${rel} &middot; ${depthText}</div>
+        </div>
+      </button>`;
+  }).join("");
+}
+
+// Click-to-focus: fetch the seismic-only assessment for one event and open
+// the transient focus view (map centered on the epicenter + detail rail).
+async function focusSeismicEvent(eventId) {
+  if (!eventId || appState.isOffline) return;
+  initConsoleLog(`Requesting seismic-only focus for event ${eventId}...`, "action");
+  try {
+    const res = await fetch(`${API_BASE}/seismic-focus?id=${encodeURIComponent(eventId)}`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const data = await res.json();
+    if (!data || !data.event) throw new Error("Unexpected /seismic-focus payload");
+    appState.seismicFocus = data;
+    renderSeismicFocusRail();
+    placeSeismicFocusOnMap();
+    const ev = data.event;
+    initConsoleLog(
+      `SEISMIC FOCUS: M ${(Number(ev.magnitude) || 0).toFixed(1)} — ${ev.place || "unknown location"} ` +
+      `${ev.simulated === true ? "(SIMULATED)" : "(LIVE USGS)"}`, "telemetry");
+    // Bring the map into view; instant (no smooth scroll) under reduced motion.
+    const mapPanel = document.getElementById("risk-map-container");
+    if (mapPanel && typeof mapPanel.scrollIntoView === "function") {
+      mapPanel.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "nearest" });
+    }
+  } catch (err) {
+    initConsoleLog(`Seismic focus failed: ${err.message}. The /seismic-focus endpoint may not be deployed yet.`, "error");
+  }
+}
+
+function placeSeismicFocusOnMap() {
+  const focus = appState.seismicFocus;
+  if (!focus || !map || typeof google === "undefined") return;
+  const ev = focus.event;
+  if (typeof ev.latitude !== "number" || typeof ev.longitude !== "number") return;
+
+  const pos = { lat: ev.latitude, lng: ev.longitude };
+  const mag = Number(ev.magnitude) || 0;
+  const sev = getMagnitudeSeverity(mag);
+  const icon = {
+    url: getMarkerIconUrl(sev.colorHex, "SEISMIC"),
+    size: new google.maps.Size(36, 36),
+    scaledSize: new google.maps.Size(52, 52),
+    anchor: new google.maps.Point(26, 50)
+  };
+  const title = `Epicenter: M ${mag.toFixed(1)} ${ev.simulated === true ? "(SIMULATED)" : "(USGS)"}`;
+
+  if (seismicFocusMarker) {
+    seismicFocusMarker.setPosition(pos);
+    seismicFocusMarker.setIcon(icon);
+    seismicFocusMarker.setTitle(title);
+    seismicFocusMarker.setMap(map);
+  } else {
+    seismicFocusMarker = new google.maps.Marker({
+      position: pos, map: map, title: title, icon: icon, zIndex: 3000
+    });
+  }
+
+  if (!seismicFocusCircle) {
+    seismicFocusCircle = new google.maps.Circle({
+      strokeOpacity: 0.55, strokeWeight: 1.5, fillOpacity: 0.1, clickable: false
+    });
+  }
+  seismicFocusCircle.setOptions({ strokeColor: sev.colorHex, fillColor: sev.colorHex });
+  seismicFocusCircle.setCenter(pos);
+  // Rough felt-area cue scaled by magnitude — a visual aid, not a model output.
+  seismicFocusCircle.setRadius(Math.max(1, mag) * 12000);
+  seismicFocusCircle.setMap(map);
+
+  map.setCenter(pos);
+  map.setZoom(7);
+}
+
+function renderSeismicFocusRail() {
+  const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
+  const focus = appState.seismicFocus;
+  if (!drawer || !focus) return;
+
+  const ev = focus.event;
+  const mag = Number(ev.magnitude) || 0;
+  const sevMag = getMagnitudeSeverity(mag);
+  const sevRisk = focus.severity
+    ? getSeverityConfigByLabel(focus.severity)
+    : getSeverityConfig(typeof focus.risk_score === "number" ? focus.risk_score : 0);
+  const simulated = ev.simulated === true;
+  const sourceTag = simulated
+    ? `<span class="badge badge-simulated">SIMULATED</span>`
+    : `<span class="badge badge-live-usgs">LIVE &middot; USGS</span>`;
+  const depthText = (typeof ev.depth_km === "number") ? `${ev.depth_km.toFixed(0)} km` : "unknown";
+  const when = new Date(ev.time);
+  const whenText = isNaN(when.getTime())
+    ? "unknown time"
+    : `${when.toLocaleString()} (${formatRelativeTime(ev.time)})`;
+  const coordsText = (typeof ev.latitude === "number" && typeof ev.longitude === "number")
+    ? `${ev.latitude.toFixed(3)}, ${ev.longitude.toFixed(3)}`
+    : "unknown";
+  const riskPct = (typeof focus.risk_score === "number") ? `${(focus.risk_score * 100).toFixed(0)}%` : "--";
+  const noteText = simulated
+    ? "Seismic-only focus on a clearly-labeled SIMULATED event. Flood and landslide telemetry is not modeled for this location."
+    : "Seismic-only focus on a real event epicenter. Flood and landslide telemetry is not modeled for this location.";
+
+  drawer.innerHTML = `
+    <div class="drawer-grid seismic-focus-rail">
+      <div class="seismic-focus-header">
+        <span class="badge badge-seismic-focus">SEISMIC EVENT FOCUS</span>
+        <button type="button" class="btn btn-sm seismic-focus-close" id="seismic-focus-close"
+                aria-label="Exit seismic focus and return to the basin view">&times; Close</button>
+      </div>
+      <h3 class="drawer-muni-name seismic-focus-place">${escapeHtml(ev.place || "Unknown location")}</h3>
+      <div class="seismic-focus-tags">${sourceTag}</div>
+      <div class="seismic-focus-mag" style="color: ${sevMag.colorHex};">
+        <span class="seismic-focus-mag-num tabular-nums">M ${mag.toFixed(1)}</span>
+        <span class="seismic-focus-mag-label">magnitude</span>
+      </div>
+      <div class="drawer-metric">
+        <span class="drawer-label">Depth</span>
+        <span class="drawer-val tabular-nums">${depthText}</span>
+      </div>
+      <div class="drawer-metric">
+        <span class="drawer-label">Time</span>
+        <span class="drawer-val tabular-nums">${escapeHtml(whenText)}</span>
+      </div>
+      <div class="drawer-metric">
+        <span class="drawer-label">Epicenter</span>
+        <span class="drawer-val tabular-nums">${coordsText}</span>
+      </div>
+      <div class="drawer-divider"></div>
+      <div class="drawer-metric">
+        <span class="drawer-label">Derived Seismic Risk</span>
+        <span class="drawer-val tabular-nums" style="color: ${sevRisk.colorHex};">
+          ${riskPct} <span class="badge ${sevRisk.badgeClass}">${escapeHtml(focus.severity || sevRisk.label)}</span>
+        </span>
+      </div>
+      ${focus.narration ? `
+      <div class="seismic-focus-narration">
+        <span class="drawer-label">Narration</span>
+        <p>${escapeHtml(focus.narration)}</p>
+      </div>` : ""}
+      <p class="seismic-focus-note">${noteText}</p>
+    </div>
+  `;
+
+  const closeBtn = document.getElementById("seismic-focus-close");
+  if (closeBtn) closeBtn.addEventListener("click", () => exitSeismicFocus());
+}
+
+// Leave the transient focus view: drop the epicenter overlay and return the
+// map and detail rail to the selected basin's normal state.
+function exitSeismicFocus(refit = true) {
+  if (!appState.seismicFocus) return;
+  appState.seismicFocus = null;
+  if (seismicFocusMarker) seismicFocusMarker.setMap(null);
+  if (seismicFocusCircle) seismicFocusCircle.setMap(null);
+
+  const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
+  if (drawer) {
+    drawer.innerHTML = `<div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>`;
+  }
+  if (refit) {
+    // Re-fit the map to the basin's markers on the next render.
+    appState.boundsFitForBasin = null;
+    renderMapMarkers();
+  }
+  initConsoleLog("Exited seismic focus; returned to basin view.", "system");
 }
 
 // ==========================================================================
@@ -1421,6 +1707,9 @@ function renderMapMarkers() {
       });
 
       marker.addListener("click", () => {
+        // Selecting a municipality ends any transient seismic focus, but keeps
+        // the map where the user clicked (no bounds re-fit).
+        if (appState.seismicFocus) exitSeismicFocus(false);
         appState.selectedMuni = muni;
         displayMuniDetails(muni);
         renderRiskTimeline();
@@ -1434,14 +1723,17 @@ function renderMapMarkers() {
     hasValidCoords = true;
   });
 
-  // Fit bounds only if we haven't fit bounds for this basin yet
-  if (hasValidCoords && appState.boundsFitForBasin !== appState.selectedBasin) {
+  // Fit bounds only if we haven't fit bounds for this basin yet. While a
+  // seismic focus is active the map stays on the epicenter — never re-fit.
+  if (hasValidCoords && appState.boundsFitForBasin !== appState.selectedBasin && !appState.seismicFocus) {
     map.fitBounds(bounds);
     appState.boundsFitForBasin = appState.selectedBasin;
   }
 
-  // Keep details drawer updated if the selected muni is in the current basin
-  if (appState.selectedMuni) {
+  // Keep details drawer updated if the selected muni is in the current basin.
+  // A live seismic focus owns the rail until it is closed — the poll must not
+  // overwrite it with municipality details.
+  if (appState.selectedMuni && !appState.seismicFocus) {
     const updated = basinRiskData.find(m => m.municipality === appState.selectedMuni.municipality);
     if (updated) {
       displayMuniDetails(updated);
@@ -1864,6 +2156,9 @@ function setupEventHandlers() {
   const basinSelect = document.getElementById("basin-select");
   if (basinSelect) {
     basinSelect.addEventListener("change", (e) => {
+      // A seismic focus belongs to no basin; leave it before switching scope.
+      // No re-fit here: the basin switch below resets the fit flag itself.
+      if (appState.seismicFocus) exitSeismicFocus(false);
       appState.selectedBasin = e.target.value;
       initConsoleLog(`Switched catchment basin scope to: ${appState.selectedBasin}`, "action");
 
@@ -1905,6 +2200,18 @@ function setupEventHandlers() {
       } catch (err) {
         initConsoleLog(`Error clearing reopened incident: ${err.message}`, "error");
       }
+    });
+  }
+
+  // Live seismic events feed: delegate clicks so rows re-rendered on every
+  // poll stay clickable; rows are real buttons, so keyboard activation
+  // (Enter/Space) comes for free.
+  const seismicFeed = document.getElementById("seismic-feed-container");
+  if (seismicFeed) {
+    seismicFeed.addEventListener("click", (e) => {
+      if (!e.target || typeof e.target.closest !== "function") return;
+      const row = e.target.closest(".seismic-event-btn");
+      if (row && row.dataset && row.dataset.eventId) focusSeismicEvent(row.dataset.eventId);
     });
   }
 
