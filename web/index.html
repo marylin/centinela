@@ -126,6 +126,17 @@
             <div class="empty-alerts">No active warnings. System telemetry is within safe operating ranges.</div>
           </div>
         </section>
+
+        <!-- Live Seismic Activity panel (real USGS events for the selected basin) -->
+        <section class="card seismic-panel" aria-labelledby="seismic-title">
+          <div class="card-header">
+            <h2 id="seismic-title">Live Seismic Activity</h2>
+            <span class="badge badge-live-usgs" title="Real events from the USGS earthquake feed">LIVE &middot; USGS</span>
+          </div>
+          <div class="card-body seismic-list" id="seismic-feed-container">
+            <div class="empty-alerts">No recent seismic activity in range.</div>
+          </div>
+        </section>
       </div>
 
       <!-- PUBLIC ALERT VIEW PANELS -->
@@ -263,6 +274,25 @@
           <div class="sync-progress-bar">
             <div class="progress-bar-fill" id="sync-progress"></div>
           </div>
+        </div>
+      </section>
+
+      <!-- Demo Controls (operator-only simulation tool) -->
+      <section class="card demo-controls-panel" aria-labelledby="demo-controls-title">
+        <div class="card-header">
+          <h2 id="demo-controls-title">Demo Controls</h2>
+          <span class="badge badge-simulated">OPERATOR TOOL</span>
+        </div>
+        <div class="card-body">
+          <p class="control-description control-description-compact">
+            Injects a clearly-labeled <strong>SIMULATED</strong> seismic event into the selected basin for
+            demonstrations. Simulated events are always tagged SIMULATED and never presented as real detections.
+          </p>
+          <div class="demo-controls-actions">
+            <button type="button" class="btn btn-danger" id="simulate-event-btn">Simulate event (demo)</button>
+            <button type="button" class="btn btn-success" id="clear-simulation-btn">Clear simulation</button>
+          </div>
+          <p class="demo-controls-status" id="demo-controls-status" role="status" aria-live="polite"></p>
         </div>
       </section>
 

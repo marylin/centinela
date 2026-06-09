@@ -2195,3 +2195,97 @@ h1, h2, h3, h4 {
   .public-map-wrapper { height: 280px; }
   .btn-safe-route { align-self: stretch; }
 }
+
+/* ==========================================================================
+   Live Seismic Activity panel + Demo Controls (additive)
+   ========================================================================== */
+.badge-live-usgs {
+  background-color: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.badge-simulated {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.seismic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.seismic-event-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.01);
+  border-top: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.seismic-event-row.simulated {
+  background-color: rgba(245, 158, 11, 0.04);
+}
+
+.seismic-mag {
+  font-size: 1.05rem;
+  font-weight: 700;
+  min-width: 3.4rem;
+  text-align: center;
+}
+
+.seismic-event-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.seismic-event-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.seismic-source-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #38bdf8;
+}
+
+.seismic-event-place {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seismic-event-meta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.demo-controls-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.demo-controls-status {
+  margin-top: 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-height: 1em;
+}

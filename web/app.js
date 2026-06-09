@@ -22,6 +22,7 @@ try {
 // 1. Data Store
 const database = {
   risk: [],
+  liveSeismic: [],
   connector: {
     status: "unknown",
     last_sync_time: "never",
@@ -33,6 +34,8 @@ const database = {
 // 2. Application State
 let appState = {
   isOffline: false,
+  seismicFeedAvailable: true,
+  simulatedActive: false,
   selectedMuni: null,
   syncProgress: 0,
   syncTimer: null,
@@ -957,6 +960,9 @@ function parseISOTime(isoString) {
 // Backend API Telemetry Retrieval
 // ==========================================================================
 async function fetchTelemetry() {
+  // Live seismic feed refreshes on the same poll, but independently: a missing
+  // or failing /live-seismic endpoint must never trip the offline banner.
+  fetchLiveSeismic();
   try {
     const basinParam = `?basin=${appState.selectedBasin}`;
     const [riskRes, statusRes, alertRes, autoHealsRes, incidentsRes] = await Promise.all([
@@ -1050,6 +1056,145 @@ function setBackendOfflineState(isOffline) {
     }
   } else {
     if (banner) banner.classList.add("hidden");
+  }
+}
+
+// ==========================================================================
+// Live Seismic Activity (real USGS events + clearly-labeled simulated ones)
+// ==========================================================================
+// Contract: GET /live-seismic?basin=<id> -> newest-first list of
+// { municipality, magnitude, place, time, depth_km, latitude, longitude, simulated }.
+// Honesty: events with simulated:true are always badged SIMULATED; real events
+// are labeled as live USGS data. Never blended.
+async function fetchLiveSeismic() {
+  try {
+    const res = await fetch(`${API_BASE}/live-seismic?basin=${appState.selectedBasin}`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const data = await res.json();
+    if (!Array.isArray(data)) throw new Error("Unexpected /live-seismic payload");
+    database.liveSeismic = data;
+    appState.seismicFeedAvailable = true;
+  } catch (err) {
+    // Endpoint missing (backend not yet deployed) or unreachable: show an
+    // honest unavailable state, never stale or fabricated events.
+    database.liveSeismic = [];
+    appState.seismicFeedAvailable = false;
+  }
+  appState.simulatedActive = database.liveSeismic.some(ev => ev && ev.simulated === true);
+  renderLiveSeismic();
+}
+
+// Magnitude buckets reuse the existing severity color scale.
+function getMagnitudeSeverity(mag) {
+  if (mag >= 6.0) return SEVERITY_SCALE.CRITICAL;
+  if (mag >= 5.0) return SEVERITY_SCALE.DANGER;
+  if (mag >= 4.0) return SEVERITY_SCALE.WARNING;
+  return SEVERITY_SCALE.LOW;
+}
+
+function formatRelativeTime(isoString) {
+  if (!isoString) return "unknown time";
+  const t = new Date(isoString).getTime();
+  if (isNaN(t)) return "unknown time";
+  const diffSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const mins = Math.floor(diffSec / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function renderLiveSeismic() {
+  const container = document.getElementById("seismic-feed-container");
+  if (!container) return;
+
+  if (!appState.seismicFeedAvailable) {
+    container.innerHTML = `<div class="empty-alerts">Live seismic feed unavailable. Awaiting USGS connector...</div>`;
+    return;
+  }
+
+  const events = [...database.liveSeismic].filter(ev => ev && typeof ev.magnitude === "number");
+  if (events.length === 0) {
+    container.innerHTML = `<div class="empty-alerts">No recent seismic activity in range.</div>`;
+    return;
+  }
+
+  // Contract is newest-first; sort defensively so ordering never regresses.
+  events.sort((a, b) => new Date(b.time) - new Date(a.time));
+
+  container.innerHTML = events.map(ev => {
+    const sev = getMagnitudeSeverity(ev.magnitude);
+    const sourceTag = ev.simulated === true
+      ? `<span class="badge badge-simulated">SIMULATED</span>`
+      : `<span class="seismic-source-tag">LIVE &middot; USGS</span>`;
+    const depthText = (typeof ev.depth_km === "number") ? `${ev.depth_km.toFixed(0)} km depth` : "depth unknown";
+    return `
+      <div class="seismic-event-row ${ev.simulated === true ? 'simulated' : ''}" style="border-left: 3px solid ${sev.colorHex};">
+        <div class="seismic-mag tabular-nums" style="color: ${sev.colorHex};">M ${ev.magnitude.toFixed(1)}</div>
+        <div class="seismic-event-info">
+          <div class="seismic-event-title">
+            <strong>${ev.municipality || "Unknown area"}</strong>
+            ${sourceTag}
+          </div>
+          <div class="seismic-event-place">${ev.place || ""}</div>
+          <div class="seismic-event-meta tabular-nums">${formatRelativeTime(ev.time)} &middot; ${depthText}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+// ==========================================================================
+// Demo Controls (operator-only simulation tool, lives in Diagnostics)
+// ==========================================================================
+const DEMO_EVENT_MAGNITUDE = 6.4;
+
+function setDemoStatus(message, isError) {
+  const el = document.getElementById("demo-controls-status");
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = isError ? "var(--danger)" : "";
+}
+
+async function simulateDemoEvent() {
+  if (appState.isOffline) return;
+  const munis = getBasinMunis(appState.selectedBasin);
+  const municipality = munis[0] || "";
+  initConsoleLog(`OPERATOR: Injecting SIMULATED seismic event (M ${DEMO_EVENT_MAGNITUDE}, ${municipality}, ${appState.selectedBasin})...`, "action");
+  try {
+    const res = await fetch(`${API_BASE}/demo/inject-event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ basin: appState.selectedBasin, municipality, magnitude: DEMO_EVENT_MAGNITUDE })
+    });
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    setDemoStatus(`SIMULATED event injected for ${municipality}. It will appear on the next poll, labeled SIMULATED.`, false);
+    initConsoleLog("SIMULATED event registered. Refreshing telemetry...", "warn");
+    await fetchTelemetry();
+  } catch (err) {
+    setDemoStatus(`Simulation failed: ${err.message}. Demo endpoint may not be deployed yet.`, true);
+    initConsoleLog(`SIMULATED event injection failed: ${err.message}`, "error");
+  }
+}
+
+async function clearDemoEvent() {
+  if (appState.isOffline) return;
+  initConsoleLog(`OPERATOR: Clearing SIMULATED events for ${appState.selectedBasin}...`, "action");
+  try {
+    const res = await fetch(`${API_BASE}/demo/clear-event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ basin: appState.selectedBasin })
+    });
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    setDemoStatus("Simulation cleared. Panel returns to live USGS data on the next poll.", false);
+    initConsoleLog("SIMULATED events cleared. Refreshing telemetry...", "system");
+    await fetchTelemetry();
+  } catch (err) {
+    setDemoStatus(`Clear failed: ${err.message}. Demo endpoint may not be deployed yet.`, true);
+    initConsoleLog(`SIMULATED event clear failed: ${err.message}`, "error");
   }
 }
 
@@ -1362,6 +1507,7 @@ function renderAlerts() {
     <div class="alert-info">
       <div class="alert-title-row">
         <span class="alert-muni">${alertData.agency_incident.title}</span>
+        ${appState.simulatedActive ? '<span class="badge badge-simulated">SIMULATED EVENT ACTIVE</span>' : ''}
         <span class="alert-type civil-advisory-badge text-${mainSeverity.class}">CIVIL ADVISORY</span>
       </div>
       <p class="alert-desc">${alertData.agency_incident.summary}</p>
@@ -1562,6 +1708,12 @@ function setupEventHandlers() {
       }
     });
   }
+
+  // Demo controls (operator-only simulation tool in Diagnostics)
+  const simulateBtn = document.getElementById("simulate-event-btn");
+  if (simulateBtn) simulateBtn.addEventListener("click", simulateDemoEvent);
+  const clearSimBtn = document.getElementById("clear-simulation-btn");
+  if (clearSimBtn) clearSimBtn.addEventListener("click", clearDemoEvent);
 
   // Initialize diagnostics slideout
   setupDiagnosticsSlideout();
