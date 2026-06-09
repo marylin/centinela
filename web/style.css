@@ -1706,4 +1706,305 @@ h1, h2, h3, h4 {
   margin: 0.5rem 0;
 }
 
+/* ==========================================================================
+   Step 4: Accessibility — Focus Rings, Interactive States, Target Sizes
+   ========================================================================== */
+
+/* Global focus-visible ring */
+:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Ensure base interactive elements meet 44px minimum */
+.btn,
+.mode-switch-btn,
+.slideout-close-btn {
+  min-height: 44px;
+}
+
+.mode-switch-btn {
+  min-width: 44px;
+}
+
+.btn-sm {
+  min-height: 44px;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+/* basin-select and inline select: 44px height */
+.basin-select {
+  min-height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Active tactile feedback */
+.btn:active,
+.mode-switch-btn:active {
+  transform: scale(0.97);
+  filter: brightness(0.9);
+}
+
+/* Disabled state */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* basin-select focus ring */
+.basin-select:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  border-color: var(--primary);
+}
+
+/* Slideout close button */
+.slideout-close-btn {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  font-size: 1.4rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  flex-shrink: 0;
+}
+.slideout-close-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.06); }
+.slideout-close-btn:active { background: rgba(255,255,255,0.12); }
+
+/* Slideout structural styles */
+.slideout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.slideout-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ==========================================================================
+   Step 4: Selector Labels
+   ========================================================================== */
+.selector-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.selector-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dark);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+
+/* ==========================================================================
+   Step 4: Skeleton Loaders
+   ========================================================================== */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+
+.skeleton-block {
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.09) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.map-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 90%;
+  max-width: 400px;
+}
+
+.skeleton-map-bg {
+  width: 100%;
+  height: 200px;
+  border-radius: 8px;
+}
+
+.skeleton-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.skeleton-pill {
+  height: 28px;
+  width: 80px;
+  border-radius: 9999px;
+}
+
+.skeleton-connector-card {
+  padding: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.skeleton-title  { height: 14px; width: 55%; }
+.skeleton-text   { height: 11px; width: 80%; }
+.skeleton-text-short { width: 45%; }
+
+/* ==========================================================================
+   Step 4: Comprehensive prefers-reduced-motion
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration:       0.01ms !important;
+    animation-iteration-count: 1     !important;
+    transition-duration:      0.01ms !important;
+    scroll-behavior:          auto   !important;
+  }
+  .skeleton-block {
+    animation: none;
+    background: rgba(255,255,255,0.06);
+  }
+  .river-path { animation: none; stroke-dashoffset: 0; }
+  .pulse-slow  { animation: none; }
+  .diagnostics-slideout,
+  .diagnostics-overlay { transition: none; }
+  .bullet-gauge-fill,
+  .sub-score-fill { transition: none; }
+  .tooltip-content { transition: none; }
+}
+
+/* ==========================================================================
+   Step 4: Mobile-First Responsive Breakpoints
+   ========================================================================== */
+
+/* ≤ 480px — phones (375 target) */
+@media (max-width: 480px) {
+  .dashboard-wrapper {
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .app-header {
+    gap: 0.75rem 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .brand-text h1 { font-size: 1.1rem; }
+  .sub-brand { display: none; }
+  .logo-icon { width: 1.75rem; height: 1.75rem; }
+
+  .mode-switch-btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.8rem;
+  }
+
+  /* Selectors stack full-width */
+  .basin-selector-wrapper {
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .selector-group { width: 100%; }
+  .basin-select   { width: 100%; }
+
+  /* Public mode: single column always */
+  .dashboard-wrapper.mode-public .public-panels-container {
+    grid-template-columns: 1fr !important;
+  }
+
+  .public-hero-status { font-size: 2.25rem; }
+  .public-hero-desc   { font-size: 0.95rem; }
+  .public-hero-card   { padding: 1.5rem 1rem; }
+  .guidance-card      { padding: 1rem; }
+
+  /* Map & rail */
+  .map-panel-split {
+    flex-direction: column;
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .detail-rail {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border-color);
+    padding-left: 0;
+    padding-top: 1rem;
+  }
+
+  .google-map { height: 260px; }
+
+  /* Full-width diagnostics panel */
+  .diagnostics-slideout {
+    width: 100%;
+    right: -100%;
+  }
+
+  .btn-full-width { padding: 0.9rem 1rem; }
+}
+
+/* 481 – 768px — small tablets */
+@media (min-width: 481px) and (max-width: 768px) {
+  .dashboard-wrapper { padding: 1rem; }
+  .basin-selector-wrapper { margin-left: 0; }
+  .dashboard-wrapper.mode-public .public-panels-container {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ≥ 1440px — wide desktops */
+@media (min-width: 1440px) {
+  .dashboard-wrapper {
+    padding: 2rem 3rem;
+  }
+  .app-header {
+    gap: 1rem 2rem;
+  }
+}
+
+
 

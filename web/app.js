@@ -1234,16 +1234,22 @@ function setupDiagnosticsSlideout() {
   const openSlideout = () => {
     slideout.classList.add("open");
     if (overlay) overlay.classList.add("open");
+    toggleBtn.setAttribute("aria-expanded", "true");
   };
   
   const closeSlideout = () => {
     slideout.classList.remove("open");
     if (overlay) overlay.classList.remove("open");
+    toggleBtn.setAttribute("aria-expanded", "false");
   };
   
   toggleBtn.addEventListener("click", openSlideout);
   if (closeBtn) closeBtn.addEventListener("click", closeSlideout);
   if (overlay) overlay.addEventListener("click", closeSlideout);
+  // Close on Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && slideout.classList.contains("open")) closeSlideout();
+  });
 }
 
 function renderPublicView() {
