@@ -31,7 +31,7 @@ from typing import Any
 from google.adk.agents import LlmAgent
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
-from google.genai.types import Content, Part
+from google.genai.types import Content, GenerateContentConfig, Part
 
 # Tell ADK to use Vertex AI (ADC) rather than the Gemini API key.
 # These are safe to set here; they are project-config, not secrets.
@@ -39,11 +39,15 @@ os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "1")
 os.environ.setdefault("GOOGLE_CLOUD_PROJECT", "centinela-498622")
 os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
 
+
 # ---------------------------------------------------------------------------
-# Narration agent -- no MCP tools, stays fast and bounded
+# Narration agent -- no MCP tools, stays fast and bounded.
+# Uses gemini-2.5-flash on Vertex; response_mime_type anchors JSON output
+# so the model never returns an empty body (which causes ADK to raise
+# "model output must contain either output text or tool calls").
 # ---------------------------------------------------------------------------
 narration_agent = LlmAgent(
-    model="gemini-2.5-pro",
+    model="gemini-2.5-flash",
     name="centinela_narration_agent",
     instruction=(
         "You are a disaster response AI analyst for the Centinela early-warning system. "
@@ -58,6 +62,9 @@ narration_agent = LlmAgent(
         "Output ONLY the JSON object, no markdown fences, no extra text."
     ),
     tools=[],  # no tools -- pure reasoning turn
+    generate_content_config=GenerateContentConfig(
+        response_mime_type="application/json",
+    ),
 )
 
 
