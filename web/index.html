@@ -130,11 +130,62 @@
 
       <!-- PUBLIC ALERT VIEW PANELS -->
       <div class="public-panels-container">
+        <!-- Structured 5-element Emergency Alert Card -->
+        <section class="card public-alert-card" id="public-alert-card" aria-labelledby="public-alert-title">
+          <h2 class="guidance-title" id="public-alert-title">Emergency Alert</h2>
+          <dl class="alert-field-grid" id="public-alert-fields">
+            <!-- Five labeled elements: Hazard, Where, Action, When, Source -->
+          </dl>
+          <p class="alert-context-line" id="public-alert-context">
+            <!-- True, neutral historical context line per area -->
+          </p>
+          <p class="alert-uphill-line" id="public-alert-uphill" hidden>
+            <!-- Elevation-derived uphill direction; hidden when unavailable -->
+          </p>
+        </section>
+
         <!-- Status Hero Card -->
         <section class="card public-hero-card" id="public-status-hero">
           <!-- Dynamic plain-language status hero -->
         </section>
-        
+
+        <!-- "This is your area" map -->
+        <section class="card public-map-card" aria-labelledby="public-map-title">
+          <h2 class="guidance-title" id="public-map-title">This is your area</h2>
+          <div class="public-map-wrapper">
+            <div id="public-map" class="public-map" role="img" aria-label="Map highlighting your at-risk municipality"></div>
+            <div class="public-map-loading" id="public-map-loading">Loading map&hellip;</div>
+          </div>
+        </section>
+
+        <!-- Nearest hospital / safe point + walking route -->
+        <section class="card safe-route-card" id="safe-route-card" aria-labelledby="safe-route-title">
+          <h2 class="guidance-title" id="safe-route-title">Nearest hospital / safe point</h2>
+          <p class="safe-route-disclaimer">
+            The nearest hospital, school, or large public building &mdash; not an official shelter.
+            Always follow instructions from local authorities.
+          </p>
+          <button type="button" class="btn btn-safe-route" id="find-safe-route-btn" aria-controls="safe-route-status">
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M12 21s-6-5.686-6-10a6 6 0 0 1 12 0c0 4.314-6 10-6 10z"></path>
+              <circle cx="12" cy="11" r="2"></circle>
+            </svg>
+            <span>Find walking route to safety</span>
+          </button>
+          <div class="safe-route-result">
+            <p class="safe-route-status" id="safe-route-status" role="status" aria-live="polite" aria-atomic="true">
+              Tap the button to find the nearest hospital or safe point and a walking route.
+            </p>
+            <div class="safe-route-detail" id="safe-route-detail" hidden>
+              <p class="safe-route-dest" id="safe-route-dest"></p>
+              <p class="safe-route-meta" id="safe-route-meta"></p>
+              <nav class="safe-route-directions" aria-label="Walking directions, step by step">
+                <ol class="safe-route-steps" id="safe-route-steps"></ol>
+              </nav>
+            </div>
+          </div>
+        </section>
+
         <!-- Safety Guidance Card -->
         <section class="card guidance-card">
           <h2 class="guidance-title">Guidance & Protective Action</h2>
@@ -261,7 +312,7 @@
     }
   </script>
   <script async defer
-    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCvD5IH8wjYrcBuqr8Alnj5dc3NAoqs4vg&callback=onGoogleMapsLoad&loading=async">
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCvD5IH8wjYrcBuqr8Alnj5dc3NAoqs4vg&libraries=places&callback=onGoogleMapsLoad&loading=async">
   </script>
 
   <script type="module" src="./app.js"></script>

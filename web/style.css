@@ -2008,3 +2008,190 @@ h1, h2, h3, h4 {
 
 
 
+
+/* ==========================================================================
+   Public Alert additions: structured 5-element alert card,
+   "This is your area" map, historical context + uphill directive
+   ========================================================================== */
+.public-alert-card {
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.alert-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1.25rem;
+  margin: 0;
+}
+
+.alert-field { margin: 0; }
+.alert-field-wide { grid-column: 1 / -1; }
+
+.alert-field-label {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.alert-field-value {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--text-main);
+}
+
+.alert-context-line {
+  margin: 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.alert-uphill-line {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.alert-uphill-line[hidden] { display: none; }
+
+.public-map-card {
+  grid-column: 1 / -1;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.public-map-wrapper {
+  position: relative;
+  width: 100%;
+  height: 360px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.public-map { width: 100%; height: 100%; }
+
+.public-map-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.public-map-loading.hidden { display: none; }
+
+/* ==========================================================================
+   Nearest hospital / safe point + walking route
+   ========================================================================== */
+.safe-route-card {
+  grid-column: 1 / -1;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.safe-route-disclaimer {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.btn-safe-route {
+  align-self: flex-start;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.75rem 1.25rem;
+  color: var(--text-main);
+  background-color: var(--primary-glow);
+  border-color: hsla(217, 91%, 60%, 0.35);
+}
+
+.btn-safe-route:hover {
+  background-color: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 15px hsla(217, 91%, 60%, 0.4);
+}
+
+.btn-safe-route:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.btn-safe-route[aria-busy="true"] { opacity: 0.7; cursor: progress; }
+.btn-safe-route:disabled { cursor: not-allowed; }
+
+.safe-route-result { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.safe-route-status {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text-main);
+}
+
+.safe-route-detail[hidden] { display: none; }
+
+.safe-route-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.safe-route-dest {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.safe-route-meta {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.safe-route-directions { margin: 0; }
+
+.safe-route-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.safe-route-step {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text-main);
+}
+
+@media (max-width: 600px) {
+  .alert-field-grid { grid-template-columns: 1fr; }
+  .public-map-wrapper { height: 280px; }
+  .btn-safe-route { align-self: stretch; }
+}

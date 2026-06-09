@@ -188,6 +188,50 @@ const municipalityCoords = {
   "Riverdale": { lat: 3.4200, lng: -76.4900 }
 };
 
+// ==========================================================================
+// Public Alert content (fixed, plain-language, authoritative copy)
+// ==========================================================================
+const HAZARD_LABELS = {
+  FLOOD: "Flood",
+  LANDSLIDE: "Landslide",
+  SEISMIC: "Earthquake / seismic activity"
+};
+
+// Protective actions — used verbatim, no invented specifics.
+const HAZARD_ACTIONS = {
+  FLOOD: "Move to higher ground, away from the river channel and low-lying areas. Do not cross moving water.",
+  LANDSLIDE: "Move away from steep slopes and the base of hillsides; avoid narrow valleys and drainage paths.",
+  SEISMIC: "Drop, cover, and hold on. After shaking stops, move away from damaged structures to open ground."
+};
+
+// Named civil-protection authority (Colombia).
+const ALERT_SOURCE = "Unidad Nacional para la Gestión del Riesgo de Desastres (UNGRD)";
+
+// One TRUE, neutral, basin-level context line per area. No invented dates, tolls, or events.
+const BASIN_HISTORY = {
+  rio_cauca: "The Río Cauca basin has a documented history of rainy-season flooding.",
+  rio_magdalena: "The Río Magdalena basin experiences seasonal flooding during Colombia's rainy seasons."
+};
+
+// 8-point compass labels, clockwise from North, used for the uphill directive.
+const COMPASS_8 = ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest"];
+
+// Public-map state (separate instance from the Operations map; fully additive).
+let publicMap = null;
+let publicMarkers = {};
+let publicZoneCircle = null;
+let youAreHereMarker = null;
+let elevationService = null;
+const elevationDirCache = {}; // municipality -> "north".."northwest" (only SUCCESSFUL results cached)
+const elevationInFlight = new Set(); // municipalities with a query currently outstanding
+
+// Safe-route state (Places + Directions; separate from all existing map state).
+let placesService = null;
+let directionsService = null;
+let directionsRenderer = null;
+let safeRouteBusy = false; // guards against overlapping searches
+const COMPASS_DEGREES = { north: 0, northeast: 45, east: 90, southeast: 135, south: 180, southwest: 225, west: 270, northwest: 315 };
+
 // Google Maps Dark styles
 const darkMapStyles = [
   { elementType: "geometry", stylers: [{ color: "#0d1326" }] },
@@ -268,7 +312,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initClock();
   setupEventHandlers();
   setupNotifications();
-  
+  setupSafeRouteControls();
+
   appState.mode = "operations";
   
   // If Google Maps script finished loading before DOMContentLoaded
@@ -284,6 +329,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
 window.onMapsReadyCallback = () => {
   initMap();
+  // If the user is already in Public Alert mode when Maps finishes loading,
+  // bring up the public map too.
+  if (appState.mode === "public") {
+    initPublicMap();
+    renderPublicView();
+  }
 };
 
 // Initialize Google Maps
@@ -303,6 +354,508 @@ function initMap() {
   });
 
   renderMapMarkers();
+}
+
+// ==========================================================================
+// Public Alert Map ("This is your area")
+// ==========================================================================
+const BASIN_CENTERS = {
+  rio_cauca: { lat: 3.43, lng: -76.51, zoom: 11 },
+  rio_magdalena: { lat: 4.14, lng: -74.94, zoom: 8 }
+};
+
+function initPublicMap() {
+  const el = document.getElementById("public-map");
+  if (!el || typeof google === "undefined" || publicMap) return;
+
+  const c = BASIN_CENTERS[appState.selectedBasin] || BASIN_CENTERS.rio_cauca;
+  publicMap = new google.maps.Map(el, {
+    center: { lat: c.lat, lng: c.lng },
+    zoom: c.zoom,
+    styles: darkMapStyles,
+    disableDefaultUI: true,
+    zoomControl: true
+  });
+
+  const loader = document.getElementById("public-map-loading");
+  if (loader) loader.classList.add("hidden");
+}
+
+// Highlight the at-risk municipality and draw a subtle zone when an alert shows.
+// Centers once per basin — no bounds re-fit on every poll.
+function renderPublicMap(selectedMuni) {
+  if (!publicMap || typeof google === "undefined" || !selectedMuni) return;
+
+  const basinMunis = {
+    "rio_cauca": ["Cali", "Yumbo", "Jamundí"],
+    "rio_magdalena": ["Honda", "Girardot", "Neiva"]
+  };
+  const allowed = basinMunis[appState.selectedBasin] || [];
+
+  // Drop markers no longer in this basin.
+  Object.keys(publicMarkers).forEach(name => {
+    if (!allowed.includes(name)) {
+      publicMarkers[name].setMap(null);
+      delete publicMarkers[name];
+    }
+  });
+
+  const basinRisk = database.risk.filter(m => allowed.includes(m.municipality));
+  basinRisk.forEach(muni => {
+    const coords = municipalityCoords[muni.municipality];
+    if (!coords) return;
+
+    const isSelected = muni.municipality === selectedMuni.municipality;
+    const sev = getSeverityConfig(muni.risk_score);
+    const iconUrl = getMarkerIconUrl(sev.colorHex, muni.dominant_hazard || "FLOOD");
+    // Emphasize the at-risk (selected) municipality with a larger marker.
+    const dim = isSelected ? 52 : 32;
+    const markerIcon = {
+      url: iconUrl,
+      size: new google.maps.Size(36, 36),
+      scaledSize: new google.maps.Size(dim, dim),
+      anchor: new google.maps.Point(dim / 2, dim - 2)
+    };
+
+    if (publicMarkers[muni.municipality]) {
+      publicMarkers[muni.municipality].setPosition(coords);
+      publicMarkers[muni.municipality].setIcon(markerIcon);
+      publicMarkers[muni.municipality].setZIndex(isSelected ? 1000 : 1);
+    } else {
+      publicMarkers[muni.municipality] = new google.maps.Marker({
+        position: coords,
+        map: publicMap,
+        title: muni.municipality,
+        icon: markerIcon,
+        zIndex: isSelected ? 1000 : 1
+      });
+    }
+  });
+
+  // Subtle zone around the at-risk municipality, only when an alert is active.
+  const selCoords = municipalityCoords[selectedMuni.municipality];
+  const sevSel = getSeverityConfig(selectedMuni.risk_score);
+  const alertActive = selectedMuni.risk_score >= 0.4;
+  if (selCoords && alertActive) {
+    if (!publicZoneCircle) {
+      publicZoneCircle = new google.maps.Circle({
+        map: publicMap,
+        strokeColor: sevSel.colorHex,
+        strokeOpacity: 0.6,
+        strokeWeight: 1.5,
+        fillColor: sevSel.colorHex,
+        fillOpacity: 0.12,
+        clickable: false
+      });
+    }
+    publicZoneCircle.setOptions({ strokeColor: sevSel.colorHex, fillColor: sevSel.colorHex });
+    publicZoneCircle.setCenter(selCoords);
+    publicZoneCircle.setRadius(4000); // ~4 km advisory zone
+    publicZoneCircle.setMap(publicMap);
+  } else if (publicZoneCircle) {
+    publicZoneCircle.setMap(null);
+  }
+
+  // Center once per basin; do not re-fit on every poll.
+  if (selCoords && appState.publicCenteredBasin !== appState.selectedBasin) {
+    publicMap.setCenter(selCoords);
+    const c = BASIN_CENTERS[appState.selectedBasin] || BASIN_CENTERS.rio_cauca;
+    publicMap.setZoom(c.zoom);
+    appState.publicCenteredBasin = appState.selectedBasin;
+  }
+
+  requestGeolocationOnce();
+}
+
+// "You are here" point — shown only if geolocation is granted; silent on denial.
+function requestGeolocationOnce() {
+  if (appState.geoRequested || !navigator.geolocation) return;
+  appState.geoRequested = true;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      if (!publicMap || typeof google === "undefined") return;
+      const here = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (youAreHereMarker) {
+        youAreHereMarker.setPosition(here);
+      } else {
+        youAreHereMarker = new google.maps.Marker({
+          position: here,
+          map: publicMap,
+          title: "You are here",
+          zIndex: 2000,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 7,
+            fillColor: "#38bdf8",
+            fillOpacity: 1,
+            strokeColor: "#07090f",
+            strokeWeight: 2
+          }
+        });
+      }
+    },
+    () => { /* denied or unavailable — skip silently */ },
+    { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
+  );
+}
+
+// ==========================================================================
+// Uphill directive — Maps JS Elevation service (client-side)
+// ==========================================================================
+// Samples 8 points in a ring around the municipality, finds the direction
+// rising fastest to higher ground. Hides the line if the service is unavailable
+// or no surrounding point is higher (never fabricates a direction).
+function computeUphillDirection(selectedMuni) {
+  const lineEl = document.getElementById("public-alert-uphill");
+  if (!lineEl) return;
+
+  const coords = selectedMuni && municipalityCoords[selectedMuni.municipality];
+  if (!coords || typeof google === "undefined" || !google.maps || !google.maps.ElevationService) {
+    lineEl.hidden = true;
+    return;
+  }
+
+  const name = selectedMuni.municipality;
+  // Terrain is static, so a SUCCESSFUL direction is cached and reused.
+  if (Object.prototype.hasOwnProperty.call(elevationDirCache, name)) {
+    applyUphill(lineEl, elevationDirCache[name]);
+    return;
+  }
+  // A query is already outstanding for this municipality; wait for its callback
+  // rather than firing duplicates on every 5s poll.
+  if (elevationInFlight.has(name)) return;
+  elevationInFlight.add(name);
+
+  if (!elevationService) elevationService = new google.maps.ElevationService();
+
+  const radiusDeg = 0.025; // ~2.7 km
+  const latRad = coords.lat * Math.PI / 180;
+  const ring = COMPASS_8.map((_, i) => {
+    const ang = (i * 45) * Math.PI / 180; // 0=N, clockwise
+    return {
+      lat: coords.lat + radiusDeg * Math.cos(ang),
+      lng: coords.lng + (radiusDeg * Math.sin(ang)) / Math.cos(latRad)
+    };
+  });
+  const locations = [{ lat: coords.lat, lng: coords.lng }, ...ring];
+
+  elevationService.getElevationForLocations({ locations }, (results, status) => {
+    elevationInFlight.delete(name); // query finished, clear the in-flight marker
+    if (status !== "OK" || !results || results.length < 9) {
+      // Genuine service failure: hide for now, do NOT cache, retry on next poll.
+      applyUphill(lineEl, null);
+      return;
+    }
+    const centerEl = results[0].elevation;
+    let bestIdx = -1;
+    let bestGain = 0;
+    for (let i = 1; i < results.length; i++) {
+      const gain = results[i].elevation - centerEl;
+      if (gain > bestGain) { bestGain = gain; bestIdx = i - 1; }
+    }
+    const dir = bestIdx >= 0 ? COMPASS_8[bestIdx] : null;
+    if (dir) {
+      elevationDirCache[name] = dir; // cache ONLY a successful direction
+      applyUphill(lineEl, dir);
+    } else {
+      // No surrounding point is higher: hide, do NOT cache, allow a later retry.
+      applyUphill(lineEl, null);
+    }
+  });
+}
+
+function applyUphill(lineEl, dir) {
+  if (dir) {
+    lineEl.textContent = `Higher ground is to the ${dir}.`;
+    lineEl.hidden = false;
+  } else {
+    lineEl.hidden = true;
+  }
+}
+
+// ==========================================================================
+// Nearest hospital / safe point + REAL walking route (Places + Directions)
+// ==========================================================================
+// Honest by construction: every label says "Nearest hospital / safe point",
+// never "official shelter". On no result, REQUEST_DENIED, or any failure we
+// show a clear "no route available" state and never draw a fabricated route.
+// Destination choice is biased toward higher ground using live elevation plus
+// the bundle's uphill compass direction.
+
+// Place types treated as genuinely safer destinations.
+const SAFE_PLACE_TYPES = ["hospital", "school", "stadium", "university"];
+const SAFE_TYPE_LABELS = {
+  hospital: "hospital",
+  school: "school",
+  stadium: "stadium",
+  university: "university",
+  city_hall: "public building",
+  local_government_office: "public building"
+};
+
+function safeTypeLabel(types) {
+  if (!Array.isArray(types)) return "safe point";
+  for (const t of types) {
+    if (SAFE_TYPE_LABELS[t]) return SAFE_TYPE_LABELS[t];
+  }
+  return "safe point";
+}
+
+// Haversine distance in metres (no extra Maps library required).
+function haversineMeters(a, b) {
+  const R = 6371000;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const la1 = a.lat * Math.PI / 180;
+  const la2 = b.lat * Math.PI / 180;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Initial bearing in degrees (0 = north, clockwise) from a to b.
+function bearingDegrees(a, b) {
+  const la1 = a.lat * Math.PI / 180;
+  const la2 = b.lat * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const y = Math.sin(dLng) * Math.cos(la2);
+  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(dLng);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// Smallest absolute angular difference between two bearings (0..180).
+function angleDiff(a, b) {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
+
+// Resolve the routing origin: live geolocation if already granted, else the
+// at-risk municipality's coordinates. Never blocks on a fresh permission prompt.
+function resolveRouteOrigin(selectedMuni) {
+  if (youAreHereMarker && typeof youAreHereMarker.getPosition === "function") {
+    const p = youAreHereMarker.getPosition();
+    if (p) return { coords: { lat: p.lat(), lng: p.lng() }, label: "your location" };
+  }
+  const coords = municipalityCoords[selectedMuni.municipality];
+  return coords ? { coords, label: selectedMuni.municipality } : null;
+}
+
+// Promise wrapper around a single nearbySearch by type, ranked by distance.
+function searchPlacesByType(origin, type) {
+  return new Promise((resolve, reject) => {
+    placesService.nearbySearch(
+      { location: origin, rankBy: google.maps.places.RankBy.DISTANCE, type },
+      (results, status) => {
+        const S = google.maps.places.PlacesServiceStatus;
+        if (status === S.OK && results) resolve(results.slice(0, 5));
+        else if (status === S.ZERO_RESULTS) resolve([]);
+        else reject(new Error(status)); // REQUEST_DENIED, OVER_QUERY_LIMIT, etc.
+      }
+    );
+  });
+}
+
+// Gather candidate safe points across all types; dedupe by place_id.
+async function gatherSafeCandidates(origin) {
+  const settled = await Promise.allSettled(SAFE_PLACE_TYPES.map(t => searchPlacesByType(origin, t)));
+  const anyResolved = settled.some(s => s.status === "fulfilled");
+  if (!anyResolved) throw new Error("PLACES_FAILED"); // every type errored (e.g. REQUEST_DENIED)
+
+  const seen = new Set();
+  const candidates = [];
+  settled.forEach(s => {
+    if (s.status !== "fulfilled") return;
+    s.value.forEach(p => {
+      if (!p.place_id || seen.has(p.place_id) || !p.geometry || !p.geometry.location) return;
+      seen.add(p.place_id);
+      candidates.push({
+        name: p.name,
+        types: p.types || [],
+        coords: { lat: p.geometry.location.lat(), lng: p.geometry.location.lng() }
+      });
+    });
+  });
+  return candidates.slice(0, 12); // cap elevation lookups
+}
+
+// Promise wrapper for batch elevation; resolves null on any failure (caller degrades).
+function fetchElevations(points) {
+  return new Promise((resolve) => {
+    if (!google.maps.ElevationService) { resolve(null); return; }
+    if (!elevationService) elevationService = new google.maps.ElevationService();
+    elevationService.getElevationForLocations({ locations: points }, (results, status) => {
+      if (status === "OK" && results && results.length === points.length) {
+        resolve(results.map(r => r.elevation));
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+// Pick the destination: nearest genuinely safer point, biased toward higher
+// ground. We restrict the choice to the nearest cluster of safe points so the
+// route stays walkable, then bias uphill WITHIN that cluster — never trading a
+// nearby refuge for a far one just because it sits higher.
+const NEAR_CLUSTER = 5;
+async function chooseHigherGroundDestination(origin, candidates, muniName) {
+  const elevations = await fetchElevations([origin, ...candidates.map(c => c.coords)]);
+  const enriched = candidates.map((c, i) => ({
+    ...c,
+    dist: haversineMeters(origin, c.coords),
+    elev: elevations ? elevations[i + 1] : null
+  }));
+  const originElev = elevations ? elevations[0] : null;
+
+  enriched.sort((a, b) => a.dist - b.dist);
+  const near = enriched.slice(0, NEAR_CLUSTER); // nearest safe points only
+
+  // Live elevation: among the nearest, choose the highest ground.
+  const withElev = near.filter(c => c.elev !== null);
+  if (originElev !== null && withElev.length) {
+    withElev.sort((a, b) => b.elev - a.elev);
+    const dest = withElev[0];
+    return { dest, higher: dest.elev > originElev + 1 };
+  }
+
+  // Elevation degraded: bias by the bundle's uphill compass direction if known.
+  const uphillDir = elevationDirCache[muniName];
+  if (uphillDir && COMPASS_DEGREES[uphillDir] !== undefined) {
+    const target = COMPASS_DEGREES[uphillDir];
+    const aligned = near.filter(c => angleDiff(bearingDegrees(origin, c.coords), target) <= 90);
+    const pool = aligned.length ? aligned : near;
+    pool.sort((a, b) => a.dist - b.dist);
+    return { dest: pool[0], higher: aligned.length > 0 };
+  }
+
+  return { dest: near[0], higher: false };
+}
+
+// Promise wrapper for a WALKING route.
+function fetchWalkingRoute(origin, destination) {
+  return new Promise((resolve, reject) => {
+    directionsService.route(
+      { origin, destination, travelMode: google.maps.TravelMode.WALKING },
+      (result, status) => {
+        if (status === "OK" && result) resolve(result);
+        else reject(new Error(status));
+      }
+    );
+  });
+}
+
+// Strip Google's HTML step instructions down to plain, readable text.
+function stripHtml(html) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  return (tmp.textContent || tmp.innerText || "").replace(/\s+/g, " ").trim();
+}
+
+function setRouteStatus(message) {
+  const el = document.getElementById("safe-route-status");
+  if (el) el.textContent = message;
+}
+
+function clearSafeRoute() {
+  if (directionsRenderer) directionsRenderer.setMap(null);
+  const detail = document.getElementById("safe-route-detail");
+  if (detail) detail.hidden = true;
+}
+
+// Main entry: find nearest safe point and render a real walking route.
+async function findSafeRoute() {
+  const btn = document.getElementById("find-safe-route-btn");
+  const detail = document.getElementById("safe-route-detail");
+  if (safeRouteBusy) return;
+
+  const selectedMuni = appState.selectedMuni || (database.risk && database.risk.length ? database.risk[0] : null);
+  if (!selectedMuni) { setRouteStatus("No at-risk area is selected yet."); return; }
+
+  // Maps / Places must be loaded for any real result.
+  if (typeof google === "undefined" || !google.maps || !google.maps.places || !publicMap) {
+    clearSafeRoute();
+    setRouteStatus("No route available right now. Mapping service is unavailable.");
+    return;
+  }
+
+  const origin = resolveRouteOrigin(selectedMuni);
+  if (!origin) {
+    clearSafeRoute();
+    setRouteStatus("No route available right now. Your area's location is unknown.");
+    return;
+  }
+
+  safeRouteBusy = true;
+  appState.routeMuni = selectedMuni.municipality;
+  if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
+  if (detail) detail.hidden = true;
+  setRouteStatus("Searching for the nearest hospital or safe point…");
+
+  try {
+    if (!placesService) placesService = new google.maps.places.PlacesService(publicMap);
+    if (!directionsService) directionsService = new google.maps.DirectionsService();
+    if (!directionsRenderer) {
+      directionsRenderer = new google.maps.DirectionsRenderer({
+        suppressMarkers: false,
+        preserveViewport: false,
+        polylineOptions: { strokeColor: "#38bdf8", strokeWeight: 5, strokeOpacity: 0.9 }
+      });
+    }
+
+    const candidates = await gatherSafeCandidates(origin.coords);
+    if (!candidates.length) {
+      clearSafeRoute();
+      setRouteStatus("No route available. No hospital or safe point was found nearby.");
+      return;
+    }
+
+    const { dest, higher } = await chooseHigherGroundDestination(origin.coords, candidates, selectedMuni.municipality);
+    setRouteStatus(`Calculating a walking route to ${dest.name}…`);
+
+    const result = await fetchWalkingRoute(origin.coords, dest.coords);
+    const leg = result.routes[0] && result.routes[0].legs[0];
+    if (!leg) {
+      clearSafeRoute();
+      setRouteStatus("No route available. A walking route could not be calculated.");
+      return;
+    }
+
+    // Draw the real route on the public map.
+    directionsRenderer.setMap(publicMap);
+    directionsRenderer.setDirections(result);
+
+    // Honest destination labeling — never "official shelter".
+    const destEl = document.getElementById("safe-route-dest");
+    const metaEl = document.getElementById("safe-route-meta");
+    const stepsEl = document.getElementById("safe-route-steps");
+    if (destEl) {
+      destEl.textContent = `Nearest hospital / safe point: ${dest.name} (${safeTypeLabel(dest.types)})` +
+        (higher ? " — on higher ground." : "");
+    }
+    if (metaEl) {
+      metaEl.textContent = `Walking distance ${leg.distance.text}, about ${leg.duration.text}, from ${origin.label}.`;
+    }
+    if (stepsEl) {
+      stepsEl.innerHTML = leg.steps.map(s => {
+        const text = stripHtml(s.instructions);
+        const dist = s.distance && s.distance.text ? ` (${s.distance.text})` : "";
+        return `<li class="safe-route-step">${text}${dist}</li>`;
+      }).join("");
+    }
+    if (detail) detail.hidden = false;
+    setRouteStatus(`Route ready: ${leg.distance.text}, about ${leg.duration.text} on foot to ${dest.name}.`);
+  } catch (err) {
+    // Any Places/Directions failure (REQUEST_DENIED, ZERO_RESULTS, network) lands here.
+    clearSafeRoute();
+    setRouteStatus("No route available right now. The mapping service did not return a route.");
+  } finally {
+    safeRouteBusy = false;
+    if (btn) { btn.disabled = false; btn.removeAttribute("aria-busy"); }
+  }
+}
+
+function setupSafeRouteControls() {
+  const btn = document.getElementById("find-safe-route-btn");
+  if (btn) btn.addEventListener("click", findSafeRoute);
 }
 
 // ==========================================================================
@@ -1218,6 +1771,8 @@ function switchMode(newMode) {
       google.maps.event.trigger(map, 'resize');
     }
   } else {
+    initPublicMap();
+    if (publicMap) google.maps.event.trigger(publicMap, 'resize');
     populateMuniDropdown();
     renderPublicView();
   }
@@ -1267,7 +1822,47 @@ function renderPublicView() {
   
   const severityConfig = getSeverityConfig(selectedMuni.risk_score);
   const statusWord = severityConfig.label.toUpperCase();
-  
+
+  // --- Structured 5-element alert card (Hazard, Where, Action, When, Source) ---
+  const dominant = (selectedMuni.dominant_hazard || "FLOOD").toUpperCase();
+  const hazardLabel = HAZARD_LABELS[dominant] || HAZARD_LABELS.FLOOD;
+  const actionText = HAZARD_ACTIONS[dominant] || HAZARD_ACTIONS.FLOOD;
+  const asOf = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const alertCard = document.getElementById("public-alert-card");
+  if (alertCard) {
+    alertCard.style.borderLeft = `4px solid ${severityConfig.colorHex}`;
+  }
+  const fieldsEl = document.getElementById("public-alert-fields");
+  if (fieldsEl) {
+    fieldsEl.innerHTML = `
+      <div class="alert-field">
+        <dt class="alert-field-label">Hazard</dt>
+        <dd class="alert-field-value">${hazardLabel}</dd>
+      </div>
+      <div class="alert-field">
+        <dt class="alert-field-label">Where</dt>
+        <dd class="alert-field-value">${selectedMuni.municipality}</dd>
+      </div>
+      <div class="alert-field alert-field-wide">
+        <dt class="alert-field-label">Action</dt>
+        <dd class="alert-field-value">${actionText}</dd>
+      </div>
+      <div class="alert-field">
+        <dt class="alert-field-label">When</dt>
+        <dd class="alert-field-value">as of ${asOf}</dd>
+      </div>
+      <div class="alert-field alert-field-wide">
+        <dt class="alert-field-label">Source</dt>
+        <dd class="alert-field-value">${ALERT_SOURCE}</dd>
+      </div>
+    `;
+  }
+  const contextEl = document.getElementById("public-alert-context");
+  if (contextEl) {
+    contextEl.textContent = BASIN_HISTORY[appState.selectedBasin] || "";
+  }
+
   let whatThisMeans = "Hydrological conditions are safe and stable.";
   let guidanceItems = [
     "No immediate actions are required.",
@@ -1354,5 +1949,18 @@ function renderPublicView() {
     }
     
     warningsList.innerHTML = warningsHtml;
+  }
+
+  // "This is your area" map emphasis + client-side uphill directive.
+  initPublicMap();
+  renderPublicMap(selectedMuni);
+  computeUphillDirection(selectedMuni);
+
+  // A previously drawn route belongs to a different area now — clear it so a
+  // stale route never lingers over the wrong municipality.
+  if (appState.routeMuni && appState.routeMuni !== selectedMuni.municipality) {
+    clearSafeRoute();
+    appState.routeMuni = null;
+    setRouteStatus("Tap the button to find the nearest hospital or safe point and a walking route.");
   }
 }
