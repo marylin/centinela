@@ -1,4 +1,5 @@
 import os
+import asyncio
 import time
 import json
 import subprocess
@@ -214,6 +215,7 @@ SENT_PUSH_HISTORY = []  # list of dicts for testing
 CACHED_ALERT_RESPONSES = {}  # basin -> response_dict
 CACHED_RISK_DATA_JSONS = {}  # basin -> risk_json
 GENERATING_NARRATIONS = set()  # set of basins currently generating
+FIRESTORE_MOCK_CACHE = {}
 
 LAST_GOOD_NARRATIVES = {
     "rio_cauca": {
@@ -226,8 +228,89 @@ LAST_GOOD_NARRATIVES = {
     }
 }
 
+import hashlib
+
+def get_state_hash(basin: str, risk_data: list):
+    state_repr = get_alert_state_repr(risk_data)
+    full_string = f"{basin}:{state_repr}"
+    return hashlib.sha256(full_string.encode("utf-8")).hexdigest()
+
+def get_cached_narration(basin: str, risk_data: list):
+    state_hash = get_state_hash(basin, risk_data)
+    if db is not None:
+        try:
+            doc_ref = db.collection("basin_narrations").document(state_hash)
+            doc = doc_ref.get()
+            if doc.exists:
+                return doc.to_dict()
+        except Exception as e:
+            print(f"Error reading from Firestore: {e}", flush=True)
+    return FIRESTORE_MOCK_CACHE.get(state_hash)
+
+def set_cached_narration(basin: str, risk_data: list, summary: str, broadcast: str):
+    state_hash = get_state_hash(basin, risk_data)
+    data = {
+        "summary": summary,
+        "broadcast": broadcast,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    if db is not None:
+        try:
+            db.collection("basin_narrations").document(state_hash).set(data)
+            print(f"Successfully wrote narration to Firestore for state_hash: {state_hash}", flush=True)
+        except Exception as e:
+            print(f"Error writing to Firestore: {e}", flush=True)
+    FIRESTORE_MOCK_CACHE[state_hash] = data
+
+def get_last_good_narration(basin: str):
+    if db is not None:
+        try:
+            doc_ref = db.collection("basin_narrations").document(f"last_good_{basin}")
+            doc = doc_ref.get()
+            if doc.exists:
+                return doc.to_dict()
+        except Exception as e:
+            print(f"Error reading last good from Firestore: {e}", flush=True)
+    return LAST_GOOD_NARRATIVES.get(basin)
+
+def update_last_good_narration(basin: str, summary: str, broadcast: str):
+    data = {
+        "summary": summary,
+        "broadcast": broadcast,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    if db is not None:
+        try:
+            db.collection("basin_narrations").document(f"last_good_{basin}").set(data)
+            print(f"Successfully updated last good narration in Firestore for {basin}", flush=True)
+        except Exception as e:
+            print(f"Error writing last good to Firestore: {e}", flush=True)
+    LAST_GOOD_NARRATIVES[basin] = data
+
+def get_fallback_narration(basin: str, risk_data: list):
+    is_high_risk = bool(get_alert_state_repr(risk_data))
+    last_good = get_last_good_narration(basin)
+    
+    is_default_placeholder = False
+    if last_good:
+        broadcast_text = last_good.get("broadcast", "")
+        if "no extreme weather alerts" in broadcast_text.lower() or "no alerts active" in broadcast_text.lower():
+            is_default_placeholder = True
+            
+    if is_high_risk:
+        if not last_good or is_default_placeholder:
+            return {
+                "summary": f"A compound multi-hazard alert is currently active for the {basin.replace('_', ' ').title()} basin. Narrative details are being generated.",
+                "broadcast": "Urgent: Elevated risk detected. Detailed warning message is currently being generated. Please monitor local safety updates."
+            }
+        return last_good
+    else:
+        if last_good:
+            return last_good
+        return LAST_GOOD_NARRATIVES.get(basin)
+
 def generate_narration_in_background(basin: str, risk_data: list):
-    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES, GENERATING_NARRATIONS
+    global GENERATING_NARRATIONS
     try:
         print(f"Background narration generation started for {basin}...", flush=True)
         if TESTING:
@@ -242,50 +325,9 @@ def generate_narration_in_background(basin: str, risk_data: list):
         broadcast = narratives.get("broadcast", "")
         
         if summary and broadcast:
-            LAST_GOOD_NARRATIVES[basin] = {
-                "summary": summary,
-                "broadcast": broadcast
-            }
-            
-            # Construct the full cached alert response
-            graded_alert = []
-            affected_municipalities = []
-            for muni_risk in risk_data:
-                muni = muni_risk["municipality"]
-                score = muni_risk["risk_score"]
-                if score >= 0.8:
-                    severity = "EXTREME"
-                elif score >= 0.6:
-                    severity = "HIGH"
-                elif score >= 0.4:
-                    severity = "MODERATE"
-                else:
-                    severity = "LOW"
-                graded_alert.append({
-                    "municipality": muni,
-                    "risk_score": score,
-                    "severity": severity,
-                    "dominant_hazard": muni_risk.get("dominant_hazard", "FLOOD")
-                })
-                if severity in ["HIGH", "EXTREME"]:
-                    affected_municipalities.append(muni)
-                    
-            title = f"{basin.replace('_', ' ').title()} Basin Compound Multi-Hazard Alert"
-            
-            alert_response = {
-                "graded_alert": graded_alert,
-                "agency_incident": {
-                    "title": title,
-                    "summary": summary,
-                    "affected_municipalities": affected_municipalities
-                },
-                "resident_broadcast": broadcast
-            }
-            
-            risk_json = json.dumps(risk_data, sort_keys=True)
-            CACHED_ALERT_RESPONSES[basin] = alert_response
-            CACHED_RISK_DATA_JSONS[basin] = risk_json
-            print(f"Background narration generation completed successfully for {basin}!", flush=True)
+            set_cached_narration(basin, risk_data, summary, broadcast)
+            update_last_good_narration(basin, summary, broadcast)
+            print(f"Background narration generation completed and saved to Firestore for {basin}!", flush=True)
     except Exception as e:
         print(f"Error in background narration generation: {e}", flush=True)
     finally:
@@ -683,7 +725,7 @@ def get_alert_state_repr(risk_data):
 def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
     print("DEBUG: check_and_trigger_push_sync started", flush=True)
     try:
-        # 1. Get current risk data
+        # 1. Get current risk data state repr
         current_state = get_alert_state_repr(risk_data)
         print(f"DEBUG: current_state={current_state}", flush=True)
         
@@ -695,7 +737,46 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
                 TOKEN_COOLDOWNS[token] = {}
             return
             
-        # 2. Check which tokens need to be notified
+        # 2. Since there is an active alert (risk is HIGH), get/compute the narration and cache it
+        affected_municipalities = []
+        for muni_risk in risk_data:
+            score = muni_risk["risk_score"]
+            if score >= 0.6:
+                affected_municipalities.append(muni_risk["municipality"])
+                
+        if not affected_municipalities:
+            return
+            
+        title = f"{basin.replace('_', ' ').title()} Basin Compound Flood Risk Alert"
+        # Check if we have cached narratives matching this risk data in Firestore
+        cached = get_cached_narration(basin, risk_data)
+        if cached:
+            summary = cached.get("summary", "")
+            resident_broadcast_text = cached.get("broadcast", "")
+        else:
+            if TESTING:
+                narratives = {
+                    "summary": f"Mock technical summary describing {basin} basin compound flood risk.",
+                    "broadcast": f"Mock resident warning broadcast message mentioning affected municipalities in {basin}."
+                }
+            else:
+                # Phase 6: narration produced via ADK LlmAgent Runner
+                narratives = run_narration_turn(basin, risk_data)
+            summary = narratives.get("summary", "")
+            resident_broadcast_text = narratives.get("broadcast", "")
+            
+            if summary and resident_broadcast_text:
+                set_cached_narration(basin, risk_data, summary, resident_broadcast_text)
+                update_last_good_narration(basin, summary, resident_broadcast_text)
+                
+        if not resident_broadcast_text:
+            print("DEBUG: No resident_broadcast_text generated, skipping pushes and logs", flush=True)
+            return
+            
+        # Log active alert incident to Firestore
+        log_alert_or_outage("alert", basin, f"Compound multi-hazard alert active for basin: {summary[:120]}", risk_data)
+
+        # 3. Check which tokens need to be notified
         tokens_to_notify = []
         now = datetime.now(timezone.utc)
         print(f"DEBUG: FCM_TOKENS={list(get_fcm_tokens())}", flush=True)
@@ -722,81 +803,6 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
         print(f"DEBUG: tokens_to_notify={tokens_to_notify}", flush=True)
         if not tokens_to_notify:
             return
-            
-        # 3. Generate narrative using Gemini
-        affected_municipalities = []
-        for muni_risk in risk_data:
-            score = muni_risk["risk_score"]
-            if score >= 0.6:
-                affected_municipalities.append(muni_risk["municipality"])
-                
-        if not affected_municipalities:
-            return
-            
-        # Check if we have cached narratives matching this risk data
-        global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES
-        risk_json = json.dumps(risk_data, sort_keys=True)
-        
-        resident_broadcast_text = ""
-        title = f"{basin.replace('_', ' ').title()} Basin Compound Flood Risk Alert"
-        
-        if CACHED_ALERT_RESPONSES.get(basin) and CACHED_RISK_DATA_JSONS.get(basin) == risk_json:
-            resident_broadcast_text = CACHED_ALERT_RESPONSES[basin].get("resident_broadcast", "")
-            
-        if not resident_broadcast_text:
-            if TESTING:
-                narratives = {
-                    "summary": f"Mock technical summary describing {basin} basin compound flood risk.",
-                    "broadcast": f"Mock resident warning broadcast message mentioning affected municipalities in {basin}."
-                }
-            else:
-                # Phase 6: narration produced via ADK LlmAgent Runner
-                narratives = run_narration_turn(basin, risk_data)
-            summary = narratives.get("summary", "")
-            resident_broadcast_text = narratives.get("broadcast", "")
-            
-            if summary and resident_broadcast_text:
-                LAST_GOOD_NARRATIVES[basin] = {
-                    "summary": summary,
-                    "broadcast": resident_broadcast_text
-                }
-                
-                # Cache the response for GET /alert
-                graded_alert = []
-                for muni_risk in risk_data:
-                    muni = muni_risk["municipality"]
-                    score = muni_risk["risk_score"]
-                    if score >= 0.8:
-                        severity = "EXTREME"
-                    elif score >= 0.6:
-                        severity = "HIGH"
-                    elif score >= 0.4:
-                        severity = "MODERATE"
-                    else:
-                        severity = "LOW"
-                    graded_alert.append({
-                        "municipality": muni,
-                        "risk_score": score,
-                        "severity": severity,
-                        "dominant_hazard": muni_risk.get("dominant_hazard", "FLOOD")
-                    })
-                    
-                CACHED_ALERT_RESPONSES[basin] = {
-                    "graded_alert": graded_alert,
-                    "agency_incident": {
-                        "title": title,
-                        "summary": summary,
-                        "affected_municipalities": affected_municipalities
-                    },
-                    "resident_broadcast": resident_broadcast_text
-                }
-                CACHED_RISK_DATA_JSONS[basin] = risk_json
-                
-        if not resident_broadcast_text:
-            return
-            
-        # Log active alert incident to Firestore
-        log_alert_or_outage("alert", basin, f"Compound multi-hazard alert active for basin: {CACHED_ALERT_RESPONSES[basin]['agency_incident']['summary'][:120]}", risk_data)
 
         # 4. Send pushes
         failed_tokens = []
@@ -886,11 +892,6 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
         # Re-use the risk computation logic
         risk_data = get_risk(basin=basin)
         
-        # Check cache
-        risk_json = json.dumps(risk_data, sort_keys=True)
-        if CACHED_ALERT_RESPONSES.get(basin) and CACHED_RISK_DATA_JSONS.get(basin) == risk_json:
-            return CACHED_ALERT_RESPONSES[basin]
-            
         graded_alert = []
         affected_municipalities = []
         
@@ -918,21 +919,31 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
             if severity in ["HIGH", "EXTREME"]:
                 affected_municipalities.append(muni)
                 
-        # Cache miss: return last good narration or placeholder instantly and run generation in background
-        last_good = LAST_GOOD_NARRATIVES.get(basin, {
-            "summary": f"Monitoring {basin.replace('_', ' ').title()} basin situation.",
-            "broadcast": f"Status check in progress for {basin.replace('_', ' ').title()}."
-        })
-        
         title = f"{basin.replace('_', ' ').title()} Basin Compound Multi-Hazard Alert"
+
+        # Check Firestore cache first
+        cached = get_cached_narration(basin, risk_data)
+        if cached:
+            return {
+                "graded_alert": graded_alert,
+                "agency_incident": {
+                    "title": title,
+                    "summary": cached["summary"],
+                    "affected_municipalities": affected_municipalities
+                },
+                "resident_broadcast": cached["broadcast"]
+            }
+            
+        # Cache miss: return last good narration or generating placeholder instantly and trigger background generation
+        fallback = get_fallback_narration(basin, risk_data)
         alert_response = {
             "graded_alert": graded_alert,
             "agency_incident": {
                 "title": title,
-                "summary": last_good["summary"],
+                "summary": fallback["summary"],
                 "affected_municipalities": affected_municipalities
             },
-            "resident_broadcast": last_good["broadcast"]
+            "resident_broadcast": fallback["broadcast"]
         }
         
         # Trigger background generation task if not already generating
@@ -1218,6 +1229,13 @@ def read_sw():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def run_alerts_and_narration_check(basin: str):
+    try:
+        risk_data = get_risk(basin=basin)
+        check_and_trigger_push_sync(risk_data, basin)
+    except Exception as e:
+        print(f"Error running alerts check for {basin}: {e}", flush=True)
+
 async def run_autonomous_check_and_heal(basin: str = "rio_cauca"):
     print(f"DEBUG: Starting autonomous check-and-heal run for {basin}", flush=True)
     try:
@@ -1251,9 +1269,12 @@ async def run_autonomous_check_and_heal(basin: str = "rio_cauca"):
     except Exception as e:
         print(f"ERROR in run_autonomous_check_and_heal: {e}", flush=True)
     
-    # Finally, trigger the alert & push notification check
-    risk_data = get_risk(basin=basin)
-    check_and_trigger_push_sync(risk_data, basin)
+    # Finally, trigger the alert & push notification check via background executor thread
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, run_alerts_and_narration_check, basin)
+    except Exception as ex:
+        print(f"ERROR: Failed to run check_and_trigger_push_sync in executor: {ex}", flush=True)
 
 @app.post("/check-alerts")
 def check_alerts(background_tasks: BackgroundTasks, basin: str = "rio_cauca"):
