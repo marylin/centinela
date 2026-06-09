@@ -2701,13 +2701,25 @@ function renderPublicView() {
       warningsHtml += `<div class="empty-alerts">No active warnings for this area.</div>`;
     }
     
-    if (alertData && alertData.resident_broadcast && alertData.agency_incident && alertData.agency_incident.affected_municipalities.length > 0) {
+    // Plain-language community advisory templated from the structured alert.
+    // The technical (model-value-quoting) broadcast stays in Operations mode;
+    // residents get severity + hazard + the protective action, nothing else.
+    if (activeAlerts.length > 0 && alertData && alertData.agency_incident && alertData.agency_incident.affected_municipalities.length > 0) {
+      const advisoryLines = activeAlerts.map(alert => {
+        const sevConfig = getSeverityConfig(alert.risk_score);
+        const hazardName = alert.dominant_hazard === 'FLOOD' ? 'flooding' : alert.dominant_hazard === 'LANDSLIDE' ? 'landslide' : 'earthquake';
+        const action = HAZARD_ACTIONS[alert.dominant_hazard] || HAZARD_ACTIONS.FLOOD;
+        return `<p class="advisory-line"><strong>${alert.municipality}:</strong> ${hazardName} risk is ${sevConfig.label}. ${action}</p>`;
+      }).join("");
       warningsHtml += `
         <div class="broadcast-box" style="margin-top: 1rem;">
           <div class="broadcast-header">
             <span class="broadcast-tag">OFFICIAL EMERGENCY ADVISORY</span>
           </div>
-          <pre class="broadcast-text" style="white-space: pre-wrap; font-family: inherit; font-size: 0.8rem; padding: 1rem; color: var(--text-main);">${alertData.resident_broadcast}</pre>
+          <div class="advisory-plain">
+            ${advisoryLines}
+            <p class="advisory-line advisory-source">Issued by ${ALERT_SOURCE}. Follow instructions from local authorities.</p>
+          </div>
         </div>
       `;
     }

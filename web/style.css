@@ -781,6 +781,28 @@ h1, h2, h3, h4 {
   overflow-y: auto;
 }
 
+/* Plain-language public advisory (replaces the technical broadcast in
+   Public Alert mode). */
+.advisory-plain {
+  padding: 1rem;
+}
+
+.advisory-line {
+  font-size: 0.85rem;
+  color: var(--text-main);
+  line-height: 1.5;
+  margin: 0 0 0.6rem 0;
+}
+
+.advisory-line:last-child {
+  margin-bottom: 0;
+}
+
+.advisory-source {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 
 /* Google Maps Loader and UI Additions */
 .map-loading {
