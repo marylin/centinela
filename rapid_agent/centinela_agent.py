@@ -81,6 +81,30 @@ class AlertNarrative(BaseModel):
 # validation that raises "model output must contain either output text or
 # tool calls" when the model emits structured JSON without conversational text.
 # ---------------------------------------------------------------------------
+class EventNarrative(BaseModel):
+    narration: str
+
+
+event_narration_agent = LlmAgent(
+    model=UsVertexGemini(model="gemini-3.5-flash"),
+    name="centinela_event_narration_agent",
+    instruction=(
+        "You are a disaster response AI analyst for the Centinela early-warning system. "
+        "When given one real USGS earthquake detection (magnitude, place, time, depth, "
+        "coordinates) plus a derived risk score and severity grade, produce a JSON object "
+        "with exactly one field:\n"
+        "- 'narration': a concise plain-language analysis (2-4 sentences) of this event: "
+        "where and when it struck, how strong and how deep it was, and what the derived "
+        "severity means for nearby populations.\n"
+        "Never invent or change any numbers. Use only the data provided. If the event is "
+        "flagged as simulated, state clearly that it is a simulated drill event, not a "
+        "real detection."
+    ),
+    tools=[],
+    output_schema=EventNarrative,
+)
+
+
 narration_agent = LlmAgent(
     model=UsVertexGemini(model="gemini-3.5-flash"),
     name="centinela_narration_agent",
@@ -180,6 +204,90 @@ async def _run_agent_turn(basin: str, risk_data: list[dict[str, Any]]) -> dict[s
         }
 
     raise ValueError("ADK narration agent returned no usable output")
+
+
+async def _run_event_agent_turn(event: dict[str, Any]) -> str:
+    """Run one event-narration agent turn and return the narration string."""
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name=_APP_NAME,
+        user_id="centinela_api",
+        session_id=str(uuid.uuid4()),
+    )
+
+    runner = Runner(
+        agent=event_narration_agent,
+        app_name=_APP_NAME,
+        session_service=session_service,
+    )
+
+    prompt_text = (
+        f"Seismic event:\n{json.dumps(event, indent=2, default=str)}\n\n"
+        "Generate the event narration."
+    )
+    user_message = Content(role="user", parts=[Part(text=prompt_text)])
+
+    result_output: dict | None = None
+    result_text: str = ""
+
+    async for agent_event in runner.run_async(
+        user_id="centinela_api",
+        session_id=session.id,
+        new_message=user_message,
+    ):
+        if agent_event.is_final_response():
+            if agent_event.output:
+                result_output = (
+                    agent_event.output
+                    if isinstance(agent_event.output, dict)
+                    else dict(agent_event.output)
+                )
+                break
+            if agent_event.content and agent_event.content.parts:
+                for part in agent_event.content.parts:
+                    if hasattr(part, "text") and part.text:
+                        result_text += part.text
+
+    if result_output:
+        return str(result_output.get("narration", ""))
+
+    if result_text:
+        text = result_text.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            lines = lines[1:] if lines else lines
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        parsed = json.loads(text)
+        return str(parsed.get("narration", ""))
+
+    raise ValueError("ADK event narration agent returned no usable output")
+
+
+def run_event_narration_turn(event: dict[str, Any]) -> str:
+    """Synchronous wrapper for `_run_event_agent_turn`.
+
+    Enforces a 30-second hard timeout. Returns an empty string on failure so
+    callers can fall back to a template narration.
+    """
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(
+                asyncio.wait_for(_run_event_agent_turn(event), timeout=30.0)
+            )
+        finally:
+            loop.close()
+    except asyncio.TimeoutError:
+        print(
+            "ERROR: ADK event narration agent timed out after 30s -- returning empty narration",
+            flush=True,
+        )
+        return ""
+    except Exception as e:
+        print(f"ERROR: ADK event narration agent failed: {e}", flush=True)
+        return ""
 
 
 def run_narration_turn(basin: str, risk_data: list[dict[str, Any]]) -> dict[str, str]:
