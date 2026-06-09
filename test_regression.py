@@ -547,6 +547,62 @@ setTimeout(async () => {
         sys.exit(1)
     print("Success: /incidents responds for guatemala_city.")
 
+    # 14. Verify the portfolio seismic-only basins (Santiago, Mexico City, Port-au-Prince)
+    print("\nStep 13: Verifying seismic-only basins (Santiago, Mexico City, Port-au-Prince)...")
+    new_seismic_basins = {
+        "santiago_chile": {"Santiago", "Puente Alto", "Maipu"},
+        "mexico_city": {"Mexico City", "Ecatepec", "Nezahualcoyotl"},
+        "port_au_prince": {"Port-au-Prince", "Carrefour", "Delmas"}
+    }
+    for basin_id, expected in new_seismic_basins.items():
+        # /basins should expose the basin from config automatically
+        basins_list = requests.get(f"{server_url}/basins").json()
+        if not any(b["id"] == basin_id for b in basins_list):
+            print(f"ERROR: /basins did not include {basin_id} from config: {basins_list}")
+            sys.exit(1)
+
+        # /risk: three real municipalities, seismic-dominant, flood/landslide as no-data
+        basin_risk = requests.get(f"{server_url}/risk", params={"basin": basin_id}).json()
+        returned = {r["municipality"] for r in basin_risk}
+        if returned != expected:
+            print(f"ERROR: {basin_id} risk municipalities mismatch. Expected {expected}, got {returned}")
+            sys.exit(1)
+        for r in basin_risk:
+            if r["dominant_hazard"] != "SEISMIC":
+                print(f"ERROR: {r['municipality']} dominant_hazard is {r['dominant_hazard']}, expected SEISMIC")
+                sys.exit(1)
+            if r["seismic_score"] <= 0.0:
+                print(f"ERROR: {r['municipality']} has no seismic_score: {r['seismic_score']}")
+                sys.exit(1)
+            # Honesty: flood and landslide must read as no-data (0), never fabricated
+            if r["flood_score"] != 0.0 or r["landslide_score"] != 0.0:
+                print(f"ERROR: {r['municipality']} shows fabricated flood/landslide: flood={r['flood_score']}, landslide={r['landslide_score']}")
+                sys.exit(1)
+            if r["rainfall_mm"] != 0.0 or r["river_level_m"] != 0.0 or r["soil_saturation"] != 0.0:
+                print(f"ERROR: {r['municipality']} shows fabricated hydrological data")
+                sys.exit(1)
+
+        # /connector-status: USGS seismic connector only
+        basin_status = requests.get(f"{server_url}/connector-status", params={"basin": basin_id}).json()
+        if not any(c["connector_id"] == "whole_glorify" for c in basin_status.get("connectors", [])):
+            print(f"ERROR: {basin_id} connector-status missing the USGS seismic connector: {basin_status}")
+            sys.exit(1)
+
+        # /alert: graded alerts match risk scores
+        basin_alert = requests.get(f"{server_url}/alert", params={"basin": basin_id}).json()
+        for alert in basin_alert["graded_alert"]:
+            matching = next((x for x in basin_risk if x["municipality"] == alert["municipality"]), None)
+            if not matching or matching["risk_score"] != alert["risk_score"]:
+                print(f"ERROR: {basin_id} alert score mismatch for {alert['municipality']}")
+                sys.exit(1)
+
+        # /incidents must still respond for the basin
+        basin_incidents = requests.get(f"{server_url}/incidents", params={"basin": basin_id})
+        if basin_incidents.status_code != 200:
+            print(f"ERROR: /incidents failed for {basin_id} with status {basin_incidents.status_code}")
+            sys.exit(1)
+        print(f"Success: {basin_id} verified (basins, risk, connector-status, alert, incidents).")
+
 def run_regression():
     print("=====================================================================")
     print("                    STARTING REGRESSION SUITE                        ")

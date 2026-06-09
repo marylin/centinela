@@ -16,7 +16,16 @@ MUNIS = {
     "Chorrillos": (-12.168, -77.022),
     "Guatemala City": (14.6349, -90.5069),
     "Mixco": (14.6333, -90.6064),
-    "Villa Nueva": (14.5269, -90.5969)
+    "Villa Nueva": (14.5269, -90.5969),
+    "Santiago": (-33.4489, -70.6693),
+    "Puente Alto": (-33.6117, -70.5756),
+    "Maipu": (-33.5110, -70.7580),
+    "Mexico City": (19.4326, -99.1332),
+    "Ecatepec": (19.6010, -99.0500),
+    "Nezahualcoyotl": (19.4003, -98.9870),
+    "Port-au-Prince": (18.5944, -72.3074),
+    "Carrefour": (18.5410, -72.3990),
+    "Delmas": (18.5500, -72.3000)
 }
 
 def validate_configuration(configuration: dict):

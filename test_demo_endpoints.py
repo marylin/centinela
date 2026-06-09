@@ -40,8 +40,9 @@ def fail(msg):
 LIVE_EVENT_KEYS = {"municipality", "magnitude", "place", "time", "depth_km", "latitude", "longitude", "simulated"}
 
 def run_tests():
-    print("\nStep 1: /live-seismic returns real rows (or empty) for all four basins...")
-    for basin in ["rio_cauca", "rio_magdalena", "lima_peru", "guatemala_city"]:
+    print("\nStep 1: /live-seismic returns real rows (or empty) for all basins...")
+    for basin in ["rio_cauca", "rio_magdalena", "lima_peru", "guatemala_city",
+                  "santiago_chile", "mexico_city", "port_au_prince"]:
         res = requests.get(f"{SERVER_URL}/live-seismic", params={"basin": basin}, timeout=30)
         if res.status_code != 200:
             fail(f"/live-seismic for {basin} returned {res.status_code}: {res.text}")
@@ -57,7 +58,7 @@ def run_tests():
         if times != sorted(times, reverse=True):
             fail(f"/live-seismic events not newest-first for {basin}: {times}")
         print(f"  {basin}: {len(events)} real events, schema and ordering OK")
-    print("Success: /live-seismic works for all four basins.")
+    print("Success: /live-seismic works for all basins.")
 
     print("\nStep 2: /live-seismic rejects unknown basin...")
     res = requests.get(f"{SERVER_URL}/live-seismic", params={"basin": "atlantis"})
@@ -146,24 +147,33 @@ def run_tests():
         fail(f"Simulated incidents remain after clear: {incidents_after}")
     print("Success: everything back to baseline after clear.")
 
-    print("\nStep 9: inject/clear on a seismic-only basin (lima_peru)...")
-    baseline_lima = requests.get(f"{SERVER_URL}/risk", params={"basin": "lima_peru"}).json()
-    res = requests.post(f"{SERVER_URL}/demo/inject-event",
-                        json={"basin": "lima_peru", "municipality": "Lima", "magnitude": 7.0})
-    if res.status_code != 200:
-        fail(f"inject-event for lima_peru failed: {res.status_code} {res.text}")
-    time.sleep(0.5)
-    lima_risk = requests.get(f"{SERVER_URL}/risk", params={"basin": "lima_peru"}).json()
-    lima = next(r for r in lima_risk if r["municipality"] == "Lima")
-    if lima["seismic_score"] != 1.0 or lima["risk_score"] != 1.0:
-        fail(f"Lima seismic-only spike wrong: {lima}")
-    if lima.get("simulated") is not True or lima["dominant_hazard"] != "SEISMIC":
-        fail(f"Lima merged row wrong: {lima}")
-    requests.post(f"{SERVER_URL}/demo/clear-event", json={"basin": "lima_peru"})
-    time.sleep(0.5)
-    if requests.get(f"{SERVER_URL}/risk", params={"basin": "lima_peru"}).json() != baseline_lima:
-        fail("Lima risk did not reset after clear")
-    print("Success: seismic-only basin spikes to EXTREME and resets.")
+    print("\nStep 9: inject/clear on every seismic-only basin...")
+    seismic_only = [
+        ("lima_peru", "Lima"),
+        ("guatemala_city", "Guatemala City"),
+        ("santiago_chile", "Santiago"),
+        ("mexico_city", "Mexico City"),
+        ("port_au_prince", "Port-au-Prince")
+    ]
+    for basin_id, muni in seismic_only:
+        baseline = requests.get(f"{SERVER_URL}/risk", params={"basin": basin_id}).json()
+        res = requests.post(f"{SERVER_URL}/demo/inject-event",
+                            json={"basin": basin_id, "municipality": muni, "magnitude": 7.0})
+        if res.status_code != 200:
+            fail(f"inject-event for {basin_id} failed: {res.status_code} {res.text}")
+        time.sleep(0.5)
+        basin_risk = requests.get(f"{SERVER_URL}/risk", params={"basin": basin_id}).json()
+        row = next(r for r in basin_risk if r["municipality"] == muni)
+        if row["seismic_score"] != 1.0 or row["risk_score"] != 1.0:
+            fail(f"{basin_id} seismic-only spike wrong: {row}")
+        if row.get("simulated") is not True or row["dominant_hazard"] != "SEISMIC":
+            fail(f"{basin_id} merged row wrong: {row}")
+        requests.post(f"{SERVER_URL}/demo/clear-event", json={"basin": basin_id})
+        time.sleep(0.5)
+        if requests.get(f"{SERVER_URL}/risk", params={"basin": basin_id}).json() != baseline:
+            fail(f"{basin_id} risk did not reset after clear")
+        print(f"  {basin_id}: {muni} spiked to EXTREME and reset")
+    print("Success: every seismic-only basin spikes and resets.")
 
     print("\nStep 10: validation errors...")
     res = requests.post(f"{SERVER_URL}/demo/inject-event",

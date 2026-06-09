@@ -234,6 +234,18 @@ LAST_GOOD_NARRATIVES = {
     "guatemala_city": {
         "summary": "Monitoring Guatemala City for seismic hazard along the Central America (Cocos plate) margin.",
         "broadcast": "System active. No major seismic alerts currently active for Guatemala City."
+    },
+    "santiago_chile": {
+        "summary": "Monitoring Santiago (Chile) for seismic hazard along the Nazca plate subduction margin.",
+        "broadcast": "System active. No major seismic alerts currently active for Santiago."
+    },
+    "mexico_city": {
+        "summary": "Monitoring Mexico City for seismic hazard along the Cocos plate subduction margin.",
+        "broadcast": "System active. No major seismic alerts currently active for Mexico City."
+    },
+    "port_au_prince": {
+        "summary": "Monitoring Port-au-Prince for seismic hazard along the Enriquillo-Plantain Garden fault zone.",
+        "broadcast": "System active. No major seismic alerts currently active for Port-au-Prince."
     }
 }
 
@@ -449,6 +461,64 @@ BASINS = [
                 "type": "connector_sdk"
             }
         ]
+    },
+    {
+        "id": "santiago_chile",
+        "name": "Santiago",
+        "country": "Chile",
+        "municipalities": ["Santiago", "Puente Alto", "Maipu"],
+        # Central Chile bounding box so real Nazca-margin quakes from the global USGS
+        # feed attribute to Santiago's municipalities. Existing basins keep the default box.
+        "seismic_bbox": (
+            "    AND latitude BETWEEN -34.5 AND -32.0\n"
+            "    AND longitude BETWEEN -72.5 AND -69.5"
+        ),
+        "connectors": [
+            {
+                "id": "whole_glorify",
+                "name": "USGS Seismic Feed (Connector SDK)",
+                "type": "connector_sdk"
+            }
+        ]
+    },
+    {
+        "id": "mexico_city",
+        "name": "Mexico City",
+        "country": "Mexico",
+        "municipalities": ["Mexico City", "Ecatepec", "Nezahualcoyotl"],
+        # Central Mexico bounding box so real Cocos-margin quakes from the global USGS
+        # feed attribute to Mexico City's municipalities. Existing basins keep the default box.
+        "seismic_bbox": (
+            "    AND latitude BETWEEN 17.5 AND 20.5\n"
+            "    AND longitude BETWEEN -100.5 AND -97.5"
+        ),
+        "connectors": [
+            {
+                "id": "whole_glorify",
+                "name": "USGS Seismic Feed (Connector SDK)",
+                "type": "connector_sdk"
+            }
+        ]
+    },
+    {
+        "id": "port_au_prince",
+        "name": "Port-au-Prince",
+        "country": "Haiti",
+        "municipalities": ["Port-au-Prince", "Carrefour", "Delmas"],
+        # Caribbean bounding box so real quakes along the Enriquillo fault zone from the
+        # global USGS feed attribute to Port-au-Prince's municipalities. Existing basins
+        # keep the default box.
+        "seismic_bbox": (
+            "    AND latitude BETWEEN 17.5 AND 19.5\n"
+            "    AND longitude BETWEEN -74.0 AND -71.0"
+        ),
+        "connectors": [
+            {
+                "id": "whole_glorify",
+                "name": "USGS Seismic Feed (Connector SDK)",
+                "type": "connector_sdk"
+            }
+        ]
     }
 ]
 
@@ -613,6 +683,156 @@ def compute_base_risk(basin: str = "rio_cauca"):
                         "flood_score": 0.0,
                         "landslide_score": 0.0,
                         "seismic_score": 0.63,
+                        "dominant_hazard": "SEISMIC"
+                    }
+                ]
+            elif basin == "santiago_chile":
+                # Seismic-only basin: flood and landslide read as no-data (0), never
+                # fabricated. risk_score is driven entirely by the seismic_score.
+                return [
+                    {
+                        "municipality": "Santiago",
+                        "risk_score": 0.24,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.7,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.81,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Puente Alto",
+                        "risk_score": 0.21,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.0,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.71,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Maipu",
+                        "risk_score": 0.18,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 4.3,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.61,
+                        "dominant_hazard": "SEISMIC"
+                    }
+                ]
+            elif basin == "mexico_city":
+                # Seismic-only basin: flood and landslide read as no-data (0), never
+                # fabricated. risk_score is driven entirely by the seismic_score.
+                return [
+                    {
+                        "municipality": "Mexico City",
+                        "risk_score": 0.25,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.9,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.84,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Ecatepec",
+                        "risk_score": 0.22,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.2,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.74,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Nezahualcoyotl",
+                        "risk_score": 0.19,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 4.5,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.64,
+                        "dominant_hazard": "SEISMIC"
+                    }
+                ]
+            elif basin == "port_au_prince":
+                # Seismic-only basin: flood and landslide read as no-data (0), never
+                # fabricated. risk_score is driven entirely by the seismic_score.
+                return [
+                    {
+                        "municipality": "Port-au-Prince",
+                        "risk_score": 0.24,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 5.5,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.79,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Carrefour",
+                        "risk_score": 0.21,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 4.8,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.69,
+                        "dominant_hazard": "SEISMIC"
+                    },
+                    {
+                        "municipality": "Delmas",
+                        "risk_score": 0.18,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": 4.1,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": 0.59,
                         "dominant_hazard": "SEISMIC"
                     }
                 ]
@@ -812,6 +1032,29 @@ def compute_base_risk(basin: str = "rio_cauca"):
                         "seismic_score": 0.33,
                         "dominant_hazard": "SEISMIC"
                     }
+                ]
+            elif basin in ("santiago_chile", "mexico_city", "port_au_prince"):
+                # Quiet-state seismic-only basins: low real/baseline seismic values,
+                # flood and landslide as no-data (0), never fabricated.
+                quiet_munis = next(b for b in BASINS if b["id"] == basin)["municipalities"]
+                quiet_values = [(0.15, 3.5, 0.5), (0.13, 3.0, 0.43), (0.1, 2.3, 0.33)]
+                return [
+                    {
+                        "municipality": muni,
+                        "risk_score": risk,
+                        "rainfall_mm": 0.0,
+                        "river_level_m": 0.0,
+                        "soil_saturation": 0.0,
+                        "threshold": 0.0,
+                        "slope_angle_deg": 0.0,
+                        "susceptibility_index": 0.0,
+                        "earthquake_magnitude": mag,
+                        "flood_score": 0.0,
+                        "landslide_score": 0.0,
+                        "seismic_score": seismic,
+                        "dominant_hazard": "SEISMIC"
+                    }
+                    for muni, (risk, mag, seismic) in zip(quiet_munis, quiet_values)
                 ]
             else:
                 return [
@@ -1638,7 +1881,16 @@ LIVE_SEISMIC_COORDINATES = {
     "Chorrillos": (-12.168, -77.022),
     "Guatemala City": (14.6349, -90.5069),
     "Mixco": (14.6333, -90.6064),
-    "Villa Nueva": (14.5269, -90.5969)
+    "Villa Nueva": (14.5269, -90.5969),
+    "Santiago": (-33.4489, -70.6693),
+    "Puente Alto": (-33.6117, -70.5756),
+    "Maipu": (-33.5110, -70.7580),
+    "Mexico City": (19.4326, -99.1332),
+    "Ecatepec": (19.6010, -99.0500),
+    "Nezahualcoyotl": (19.4003, -98.9870),
+    "Port-au-Prince": (18.5944, -72.3074),
+    "Carrefour": (18.5410, -72.3990),
+    "Delmas": (18.5500, -72.3000)
 }
 
 USGS_LIVE_FEED_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
