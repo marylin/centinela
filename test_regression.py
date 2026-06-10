@@ -710,6 +710,10 @@ try {
     if res_audio.headers.get("x-spoken-lang") != "es":
         print(f"ERROR: rio_cauca audio should speak es, got {res_audio.headers.get('x-spoken-lang')}")
         sys.exit(1)
+    res_audio_en = requests.get(f"{server_url}/alert-audio", params={"basin": "rio_cauca", "voice": "en"})
+    if res_audio_en.headers.get("x-spoken-lang") != "en":
+        print(f"ERROR: voice=en override should speak en, got {res_audio_en.headers.get('x-spoken-lang')}")
+        sys.exit(1)
     res_cap = requests.get(f"{server_url}/cap.xml")
     if res_cap.status_code != 200:
         print(f"ERROR: cap.xml failed: {res_cap.status_code}")

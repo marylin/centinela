@@ -215,6 +215,7 @@ export function setupSubscribeButton() {
 }
 
 let alertAudio = null;
+let playingBtn = null;
 
 export function stopAlertAudio() {
   if (alertAudio) {
@@ -222,36 +223,54 @@ export function stopAlertAudio() {
     URL.revokeObjectURL(alertAudio.src);
     alertAudio = null;
   }
-  const btn = document.getElementById("alert-listen-btn");
-  if (btn) { btn.textContent = "Listen"; btn.disabled = false; }
+  if (playingBtn) {
+    playingBtn.dataset.playing = "false";
+    playingBtn.textContent = playingBtn.dataset.idleLabel || "Listen";
+    playingBtn.disabled = false;
+    playingBtn = null;
+  }
 }
 
-export function setupListenButton() {
-  const btn = document.getElementById("alert-listen-btn");
+function wireListen(btn, voice) {
   if (!btn) return;
   btn.addEventListener("click", async () => {
-    // Playing -> the same button stops the narration.
-    if (alertAudio && !alertAudio.paused) {
+    if (playingBtn === btn && alertAudio && !alertAudio.paused) {
       stopAlertAudio();
       return;
     }
     const sel = state.selection;
     if (!sel || sel.kind !== "place") return;
+    stopAlertAudio(); // starting one voice silences the other
     btn.disabled = true;
-    btn.textContent = "Loading audio…";
+    btn.textContent = `${btn.dataset.loadingLabel || "Loading audio"}…`;
     try {
-      const res = await fetch(`${window.location.origin}/alert-audio?basin=${encodeURIComponent(sel.groupId)}`);
+      const url = `${window.location.origin}/alert-audio?basin=${encodeURIComponent(sel.groupId)}${voice ? `&voice=${voice}` : ""}`;
+      const res = await fetch(url);
       if (!res.ok) throw new Error(`audio ${res.status}`);
       const blob = await res.blob();
-      stopAlertAudio();
       alertAudio = new Audio(URL.createObjectURL(blob));
       alertAudio.addEventListener("ended", stopAlertAudio);
+      playingBtn = btn;
+      btn.dataset.playing = "true";
       await alertAudio.play();
-      btn.textContent = "Stop";
+      btn.textContent = btn.dataset.stopLabel || "Stop";
       btn.disabled = false;
     } catch (err) {
       console.error("Alert audio failed:", err);
       stopAlertAudio();
     }
   });
+}
+
+export function setupListenButton() {
+  // Local-language narration: labels arrive translated via the alert card.
+  wireListen(document.getElementById("alert-listen-btn"), null);
+  // Always-English narration for visitors and responders.
+  const en = document.getElementById("alert-listen-en-btn");
+  if (en) {
+    en.dataset.idleLabel = "Listen in English";
+    en.dataset.stopLabel = "Stop";
+    en.dataset.loadingLabel = "Loading audio";
+    wireListen(en, "en");
+  }
 }

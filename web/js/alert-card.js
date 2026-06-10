@@ -79,6 +79,20 @@ export async function renderAlertCard(alertData) {
       <div class="alert-field alert-field-wide"><dt>${escapeHtml(b.ui.source)}</dt><dd>${ALERT_SOURCE}</dd></div>`;
   }
 
+  // Listen buttons: the local one is labeled in the resident language and
+  // speaks that language; the English one only shows for non-English places.
+  const listenBtn = document.getElementById("alert-listen-btn");
+  const listenEnBtn = document.getElementById("alert-listen-en-btn");
+  if (listenBtn && listenBtn.dataset.playing !== "true") {
+    listenBtn.textContent = b.ui.listen;
+  }
+  if (listenBtn) {
+    listenBtn.dataset.idleLabel = b.ui.listen;
+    listenBtn.dataset.stopLabel = b.ui.stop;
+    listenBtn.dataset.loadingLabel = b.ui.loading_audio;
+  }
+  if (listenEnBtn) listenEnBtn.hidden = lang === "en";
+
   const ctx = document.getElementById("alert-context");
   if (ctx) ctx.textContent = BASIN_HISTORY[sel.groupId] || "";
 

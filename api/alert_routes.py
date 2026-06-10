@@ -166,7 +166,7 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
 
 
 @router.get("/alert-audio")
-def get_alert_audio(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None):
+def get_alert_audio(basin: str = "rio_cauca", voice: str = None, background_tasks: BackgroundTasks = None):
     """The resident alert spoken aloud (MP3) in the place's language when the
     voice exists, English otherwise. Built from the same payload residents
     read: status meaning + protective action + live broadcast."""
@@ -184,7 +184,10 @@ def get_alert_audio(basin: str = "rio_cauca", background_tasks: BackgroundTasks 
 
     text_local = compose(bundle, payload.get("broadcast_translated"))
     text_en = compose(bundle_en, payload.get("resident_broadcast"))
-    audio, spoken = synthesize_alert(text_local, text_en, lang)
+    if voice == "en":
+        audio, spoken = synthesize_alert(text_en, text_en, "en")
+    else:
+        audio, spoken = synthesize_alert(text_local, text_en, lang)
     return Response(content=audio, media_type="audio/mpeg",
                     headers={"X-Spoken-Lang": spoken, "Cache-Control": "no-store"})
 
