@@ -51,6 +51,28 @@ def read_css():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/manifest.json")
+def read_manifest():
+    """PWA manifest (installable app surface; iOS web push requires install)."""
+    try:
+        with open("web/manifest.json", "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="application/manifest+json",
+                            headers={"Cache-Control": "no-cache"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+ICON_NAME_RE = re.compile(r"^icon-(192|512)\.png$")
+
+@router.get("/assets/icons/{name}")
+def read_icon(name: str):
+    if not ICON_NAME_RE.match(name):
+        raise HTTPException(status_code=404, detail="Unknown asset")
+    try:
+        with open(f"web/icons/{name}", "rb") as f:
+            return Response(content=f.read(), media_type="image/png")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Unknown asset")
+
 @router.get("/firebase-messaging-sw.js")
 def read_sw():
     """Serves the Firebase Messaging Service Worker."""

@@ -17,6 +17,9 @@ from api.narration import (
 from rapid_agent.centinela_agent import run_narration_turn
 from api.risk_routes import get_risk
 from api.incident_routes import log_alert_or_outage
+from api.config import BASINS
+from api.core import db
+from api.i18n import lang_for_cc, get_bundle, translate_text_cached
 
 router = APIRouter()
 
@@ -31,6 +34,7 @@ class TokenRegistration(BaseModel):
 
 
 def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
+    publish_place_transition(basin, risk_data)
     print("DEBUG: check_and_trigger_push_sync started", flush=True)
     try:
         # 1. Get current risk data state repr
@@ -192,3 +196,117 @@ def clear_sent_pushes():
     SENT_PUSH_HISTORY = []
     return {"status": "Success"}
 
+
+
+# --- Per-place FCM topics (subscribe to YOUR place; one publish fans out) ---
+# Topic per group: place_<basin>. Per-basin last-sent state + cooldown persist
+# in Firestore (in-memory dies across Cloud Run instances); TESTING uses the
+# in-memory mock and records publishes in a separate history so the legacy
+# per-token assertions stay untouched.
+
+TOPIC_COOLDOWN_S = 600
+TOPIC_PUSH_HISTORY = []          # TESTING-visible record of topic publishes
+TOPIC_STATE_MOCK = {}            # basin -> {state, sent_ms} (TESTING fallback)
+
+def _read_topic_state(basin):
+    if db is not None:
+        try:
+            snap = db.collection("topic_push").document(basin).get()
+            return snap.to_dict() or {} if snap.exists else {}
+        except Exception as e:
+            print(f"Topic state read failed ({basin}): {e}", flush=True)
+            return {}
+    return TOPIC_STATE_MOCK.get(basin, {})
+
+def _write_topic_state(basin, state_repr, now_ms):
+    payload = {"state": state_repr, "sent_ms": now_ms}
+    if db is not None:
+        try:
+            db.collection("topic_push").document(basin).set(payload)
+            return
+        except Exception as e:
+            print(f"Topic state write failed ({basin}): {e}", flush=True)
+    TOPIC_STATE_MOCK[basin] = payload
+
+def publish_place_transition(basin, risk_data):
+    """One topic publish per severity-state transition per group, in the
+    place's language, with a deep link to the place page. Steady state and
+    cooldown windows publish nothing."""
+    try:
+        state_repr = get_alert_state_repr(risk_data)
+        now_ms = int(time.time() * 1000)
+        prev = _read_topic_state(basin)
+        if prev.get("state", "") == state_repr:
+            return
+        if now_ms - int(prev.get("sent_ms") or 0) < TOPIC_COOLDOWN_S * 1000:
+            return
+        if not state_repr:
+            # Transition back to calm: remember it, send nothing.
+            _write_topic_state(basin, state_repr, now_ms)
+            return
+
+        worst = max(risk_data, key=lambda r: float(r.get("risk_score") or 0.0))
+        cfg = next((b for b in BASINS if b["id"] == basin), {})
+        lang = lang_for_cc(cfg.get("cc"))
+        bundle = get_bundle(lang)
+        sev_key = "CRITICAL" if worst["risk_score"] >= 0.8 else "DANGER" if worst["risk_score"] >= 0.6 else "WARNING"
+        sev_label = bundle["status_labels"].get(sev_key, sev_key)
+        dominant = (worst.get("dominant_hazard") or "FLOOD").upper()
+        action = bundle["hazard_actions"].get(dominant, bundle["hazard_actions"]["FLOOD"])
+        simulated = any(r.get("simulated") for r in risk_data)
+        title = f"{'[SIMULATED] ' if simulated else ''}{worst['municipality']}: {sev_label}"
+        body = action
+        data = {"basin": basin, "route": f"#/place/{worst.get('place_id', basin)}"}
+
+        if TESTING:
+            TOPIC_PUSH_HISTORY.append({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "topic": f"place_{basin}", "title": title, "body": body, "data": data,
+            })
+        else:
+            messaging.send(messaging.Message(
+                topic=f"place_{basin}",
+                notification=messaging.Notification(title=title, body=body),
+                data=data,
+            ))
+            print(f"Topic publish: place_{basin} -> {title}", flush=True)
+        _write_topic_state(basin, state_repr, now_ms)
+    except Exception as e:
+        print(f"Topic publish failed ({basin}): {e}", flush=True)
+
+class PlaceSubscription(BaseModel):
+    token: str
+    basin: str
+
+@router.post("/subscribe-place")
+def subscribe_place(data: PlaceSubscription):
+    """Subscribe a device token to one place's alert topic."""
+    if not any(b["id"] == data.basin for b in BASINS):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown place: {data.basin}")
+    token = (data.token or "").strip()
+    if not token:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Missing token")
+    topic = f"place_{data.basin}"
+    if not TESTING:
+        messaging.subscribe_to_topic([token], topic)
+    return {"status": "subscribed", "topic": topic}
+
+@router.post("/unsubscribe-place")
+def unsubscribe_place(data: PlaceSubscription):
+    topic = f"place_{data.basin}"
+    token = (data.token or "").strip()
+    if token and not TESTING:
+        messaging.unsubscribe_from_topic([token], topic)
+    return {"status": "unsubscribed", "topic": topic}
+
+@router.get("/test/sent-topic-pushes")
+def get_sent_topic_pushes():
+    return TOPIC_PUSH_HISTORY
+
+@router.post("/test/clear-sent-topic-pushes")
+def clear_sent_topic_pushes():
+    TOPIC_PUSH_HISTORY.clear()
+    TOPIC_STATE_MOCK.clear()
+    return {"status": "Success"}

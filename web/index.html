@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Centinela · All places</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f1419">
+  <link rel="apple-touch-icon" href="/assets/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 <body>
   <div id="api-offline-banner" class="api-offline-banner hidden" role="alert">
@@ -76,6 +80,8 @@
       <div id="detail-main">
         <h2 id="detail-heading" tabindex="-1"></h2>
         <p id="detail-kind" class="detail-kind"></p>
+        <button type="button" id="place-subscribe-btn" class="btn btn-sm" hidden
+                title="On iPhone, first add this page to your home screen (Share > Add to Home Screen)."></button>
 
         <div class="detail-columns">
           <section id="public-alert-card" class="card" aria-labelledby="alert-title" hidden>

@@ -9,7 +9,7 @@ import { refreshRegistry, refreshIndexData, refreshWatchlist, startPolling } fro
 import { setupNotifications } from "./notify.js";
 import { setupDiagnostics } from "./diagnostics.js";
 import { setupRail } from "./rail.js";
-import { setupDetail } from "./detail.js";
+import { setupDetail, setupSubscribeButton } from "./detail.js";
 import { renderMap } from "./map.js";
 import { setupSeismicPanel, setupWorldwideEvents, renderWorldwideEvents, clearSeismicFocus } from "./seismic.js";
 import { onDetailShown } from "./map.js";
@@ -98,6 +98,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupTiles();
   setupRail();
   setupDetail();
+  setupSubscribeButton();
   setupSeismicPanel();
   setupWorldwideEvents();
   setupRouting();

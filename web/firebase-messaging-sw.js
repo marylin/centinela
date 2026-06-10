@@ -20,8 +20,27 @@ messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
   const notificationTitle = payload.notification.title;
   const notificationOptions = {
-    body: payload.notification.body
+    body: payload.notification.body,
+    icon: "/assets/icons/icon-192.png",
+    data: payload.data || {}
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
+});
+
+
+// Tapping the notification opens the place page it points at.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const route = (event.notification.data && event.notification.data.route) || "";
+  const url = self.location.origin + "/" + route;
+  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+    for (const w of wins) {
+      if (w.url.startsWith(self.location.origin) && "focus" in w) {
+        w.navigate(url);
+        return w.focus();
+      }
+    }
+    return clients.openWindow(url);
+  }));
 });

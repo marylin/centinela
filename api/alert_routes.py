@@ -17,7 +17,7 @@ from api.narration import (
 )
 from api.risk_routes import get_risk
 from api.incident_routes import log_alert_or_outage
-from api.push_routes import check_and_trigger_push_sync
+from api.push_routes import check_and_trigger_push_sync, publish_place_transition
 from rapid_agent.centinela_agent import run_narration_turn
 from api.i18n import lang_for_cc, translate_text_cached, get_bundle
 
@@ -83,6 +83,13 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
     try:
         # Re-use the risk computation logic
         risk_data = get_risk(basin=basin)
+
+        # Per-place topic publish on severity transitions (state-keyed +
+        # cooldown inside; steady state publishes nothing).
+        if background_tasks:
+            background_tasks.add_task(publish_place_transition, basin, risk_data)
+        else:
+            publish_place_transition(basin, risk_data)
         
         graded_alert = []
         affected_municipalities = []

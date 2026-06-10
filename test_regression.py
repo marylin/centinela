@@ -675,6 +675,32 @@ try {
         sys.exit(1)
     print("Success: resident copy translates per place language (deterministic TESTING layer).")
 
+    # 19. Per-place topics
+    print("\nStep 18: Verifying place subscriptions + topic transition publishes...")
+    res_sub = requests.post(f"{server_url}/subscribe-place", json={"token": "tok-x", "basin": "rio_cauca"})
+    if res_sub.status_code != 200 or res_sub.json().get("topic") != "place_rio_cauca":
+        print(f"ERROR: subscribe-place failed: {res_sub.status_code} {res_sub.text}")
+        sys.exit(1)
+    if requests.post(f"{server_url}/subscribe-place", json={"token": "tok-x", "basin": "atlantis"}).status_code != 404:
+        print("ERROR: unknown basin should 404")
+        sys.exit(1)
+    requests.post(f"{server_url}/test/clear-sent-topic-pushes")
+    requests.get(f"{server_url}/alert", params={"basin": "rio_cauca"})
+    time.sleep(0.5)
+    topic_pushes = requests.get(f"{server_url}/test/sent-topic-pushes").json()
+    if len(topic_pushes) != 1 or topic_pushes[0]["topic"] != "place_rio_cauca":
+        print(f"ERROR: expected 1 topic publish on first transition, got {topic_pushes}")
+        sys.exit(1)
+    if not topic_pushes[0]["data"].get("route", "").startswith("#/place/"):
+        print(f"ERROR: topic publish missing deep link: {topic_pushes[0]}")
+        sys.exit(1)
+    requests.get(f"{server_url}/alert", params={"basin": "rio_cauca"})
+    time.sleep(0.5)
+    if len(requests.get(f"{server_url}/test/sent-topic-pushes").json()) != 1:
+        print("ERROR: steady state must not publish again")
+        sys.exit(1)
+    print("Success: topic subscribe + one-publish-per-transition verified.")
+
     res_unknown = requests.post(f"{server_url}/places/resolve", params={"place": "atlantis"})
     if res_unknown.status_code != 404:
         print(f"ERROR: unknown place should 404, got {res_unknown.status_code}")

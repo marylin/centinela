@@ -38,6 +38,16 @@ export const postBreak = () => request("/break", { method: "POST" });
 export const postHeal = () => request("/heal", { method: "POST" });
 export const reopenIncident = (id) => request(`/incidents/${encodeURIComponent(id)}/reopen`, { method: "POST" });
 export const clearReopen = () => request("/incidents/clear-reopen", { method: "POST" });
+export const subscribePlace = (token, basin) => request("/subscribe-place", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token, basin }),
+});
+export const unsubscribePlace = (token, basin) => request("/unsubscribe-place", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token, basin }),
+});
 export const registerToken = (token) => request("/register-token", {
   method: "POST",
   headers: { "Content-Type": "application/json" },

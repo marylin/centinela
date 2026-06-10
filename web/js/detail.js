@@ -13,6 +13,7 @@ import { renderAlertCard } from "./alert-card.js";
 import { renderConditions } from "./conditions.js";
 import { renderRiskTimeline, renderTrend } from "./charts.js";
 import { renderSeismicPanel } from "./seismic.js";
+import { subscribeToPlace, unsubscribeFromPlace, getPlaceSubscriptions } from "./notify.js";
 import { CADENCE } from "./poll.js";
 
 let detailTimer = null;
@@ -123,6 +124,7 @@ async function onSelectionChange() {
   renderRail();
 
   const monitored = sel.kind === "place";
+  renderSubscribeButton();
   show("public-alert-card", monitored);
   show("risk-timeline-panel", monitored);
   show("trend-panel", monitored);
@@ -168,6 +170,45 @@ export function setupDetail() {
       show("public-alert-card", monitored && !focused);
       show("risk-timeline-panel", monitored && !focused);
       show("trend-panel", monitored && !focused);
+    }
+  });
+}
+
+// --- Per-place alert subscription button ------------------------------------
+
+function renderSubscribeButton() {
+  const btn = document.getElementById("place-subscribe-btn");
+  const sel = state.selection;
+  if (!btn) return;
+  const monitored = !!(sel && sel.kind === "place");
+  btn.hidden = !monitored;
+  if (!monitored) return;
+  const subscribed = !!getPlaceSubscriptions()[sel.groupId];
+  btn.textContent = subscribed
+    ? `Stop alerts for ${sel.name}`
+    : `Get alerts for ${sel.name}`;
+  btn.dataset.basin = sel.groupId;
+  btn.dataset.subscribed = String(subscribed);
+}
+
+export function setupSubscribeButton() {
+  const btn = document.getElementById("place-subscribe-btn");
+  if (!btn) return;
+  btn.addEventListener("click", async () => {
+    const basin = btn.dataset.basin;
+    if (!basin) return;
+    btn.disabled = true;
+    const wasSubscribed = btn.dataset.subscribed === "true";
+    btn.textContent = wasSubscribed ? "Stopping alerts…" : "Enabling alerts…";
+    try {
+      if (wasSubscribed) await unsubscribeFromPlace(basin);
+      else await subscribeToPlace(basin);
+    } catch (err) {
+      console.error("Subscription change failed:", err);
+      alert(err.message || "Could not change the alert subscription.");
+    } finally {
+      btn.disabled = false;
+      renderSubscribeButton();
     }
   });
 }
