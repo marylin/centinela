@@ -701,6 +701,33 @@ try {
         sys.exit(1)
     print("Success: topic subscribe + one-publish-per-transition verified.")
 
+    # 20. Audio + CAP
+    print("\nStep 19: Verifying alert audio + CAP feed...")
+    res_audio = requests.get(f"{server_url}/alert-audio", params={"basin": "rio_cauca"})
+    if res_audio.status_code != 200 or not res_audio.headers.get("content-type", "").startswith("audio/mpeg"):
+        print(f"ERROR: alert-audio failed: {res_audio.status_code} {res_audio.headers.get('content-type')}")
+        sys.exit(1)
+    if res_audio.headers.get("x-spoken-lang") != "es":
+        print(f"ERROR: rio_cauca audio should speak es, got {res_audio.headers.get('x-spoken-lang')}")
+        sys.exit(1)
+    res_cap = requests.get(f"{server_url}/cap.xml")
+    if res_cap.status_code != 200:
+        print(f"ERROR: cap.xml failed: {res_cap.status_code}")
+        sys.exit(1)
+    import xml.etree.ElementTree as ET
+    root = ET.fromstring(res_cap.text)
+    entries = root.findall("{http://www.w3.org/2005/Atom}entry")
+    if len(entries) < 5:
+        print(f"ERROR: expected CAP entries for elevated fixture places, got {len(entries)}")
+        sys.exit(1)
+    if "<status>Actual</status>" not in res_cap.text:
+        print("ERROR: CAP feed missing Actual alerts")
+        sys.exit(1)
+    if "demonstration system" not in res_cap.text:
+        print("ERROR: CAP feed must declare itself a demonstration system")
+        sys.exit(1)
+    print(f"Success: audio (es) + CAP feed ({len(entries)} entries, honest sender note).")
+
     res_unknown = requests.post(f"{server_url}/places/resolve", params={"place": "atlantis"})
     if res_unknown.status_code != 404:
         print(f"ERROR: unknown place should 404, got {res_unknown.status_code}")

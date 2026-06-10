@@ -212,3 +212,28 @@ export function setupSubscribeButton() {
     }
   });
 }
+
+export function setupListenButton() {
+  const btn = document.getElementById("alert-listen-btn");
+  if (!btn) return;
+  let audio = null;
+  btn.addEventListener("click", async () => {
+    const sel = state.selection;
+    if (!sel || sel.kind !== "place") return;
+    btn.disabled = true;
+    btn.textContent = "Loading audio…";
+    try {
+      const res = await fetch(`${window.location.origin}/alert-audio?basin=${encodeURIComponent(sel.groupId)}`);
+      if (!res.ok) throw new Error(`audio ${res.status}`);
+      const blob = await res.blob();
+      if (audio) { audio.pause(); URL.revokeObjectURL(audio.src); }
+      audio = new Audio(URL.createObjectURL(blob));
+      audio.play();
+    } catch (err) {
+      console.error("Alert audio failed:", err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Listen";
+    }
+  });
+}
