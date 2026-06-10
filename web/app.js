@@ -960,9 +960,17 @@ async function findSafeRoute() {
       });
     }
 
-    const dest = profile === "quake"
+    let dest = profile === "quake"
       ? await chooseQuakeDestination(origin.coords)
       : await chooseFloodDestination(origin.coords, routeKey);
+
+    // Walkable-range sanity: an offshore or remote epicenter must not produce
+    // a 100 km "walking route" to the nearest landmark.
+    if (dest && profile === "quake" && dest.dist > 5000) {
+      clearSafeRoute();
+      setRouteStatus("This event is far from populated areas (offshore or remote), so assembly-area routing does not apply. If you are in the affected region, move to open ground away from buildings.");
+      return;
+    }
 
     if (!dest) {
       clearSafeRoute();
@@ -2258,7 +2266,7 @@ function exitSeismicFocus(refit = true) {
 // ==========================================================================
 // Demo Controls (operator-only simulation tool, lives in Diagnostics)
 // ==========================================================================
-const DEMO_EVENT_MAGNITUDE = 6.4;
+const DEMO_EVENT_MAGNITUDE = 7.2; // strong enough to dominate even a hot flood component
 
 function setDemoStatus(message, isError) {
   const el = document.getElementById("demo-controls-status");
@@ -2544,7 +2552,7 @@ function displayMuniDetails(muni) {
             </button>
             <div id="risk-tooltip" class="tooltip-content" role="tooltip">
               Centinela's own model index, computed from live feeds: river discharge vs this
-              place's 31-day baseline (GloFAS), model soil moisture, observed 24h rainfall, and
+              place's 92-day baseline (GloFAS), model soil moisture, observed 24h rainfall, and
               real USGS earthquakes nearby. Not an official authority warning.
             </div>
           </div>

@@ -555,7 +555,7 @@ CONNECTOR_ID = REAL_CONNECTORS[0]["id"]
 # CENTINELA MODEL HAZARD INDEX (real-data unification)
 # ---------------------------------------------------------------------------
 # Replaces the seeded composite entirely. Every input is a real feed:
-#   flood:   latest GloFAS discharge vs the place's own 31-day P50/P90 baseline
+#   flood:   latest GloFAS discharge vs the place's own 92-day P50/P90 baseline
 #            (global_hydro connector -> BigQuery)
 #   soil:    latest model topsoil moisture (same connector) — the wetness /
 #            landslide-antecedent signal
@@ -635,7 +635,7 @@ def component_scores(discharge_stat, soil_latest, rain_mm_24h, quake_mag):
     component (never a fabricated zero that would dilute the index).
 
     Calibration (documented, OUR model):
-      flood:     discharge vs the place's own 31d baseline; sitting at P90 = 0.6
+      flood:     discharge vs the place's own 92d baseline; sitting at P90 = 0.6
       rain:      50 mm observed in 24h saturates the component
       seismic:   (magnitude - 4.0) / 3.5 -> M4 ambient 0, M7.5+ saturates
       landslide: derived = soil wetness x the strongest water driver
@@ -843,8 +843,11 @@ def compute_base_risk(basin: str = "rio_cauca"):
 
 @app.get("/risk")
 def get_risk(basin: str = "rio_cauca"):
-    """Returns graded risk per municipality, merging any active simulated demo event at read time."""
-    results = merge_demo_event_into_risk(basin, compute_base_risk(basin=basin))
+    """Returns graded index rows per place, merging any active simulated demo
+    event at read time. Rows are copied first: the production index cache must
+    never be polluted by a demo merge."""
+    base = [dict(r) for r in compute_base_risk(basin=basin)]
+    results = merge_demo_event_into_risk(basin, base)
     # Record what users actually see (demo spikes included) so the timeline
     # history matches the lived dashboard.
     record_risk_sample_tick(basin, results)
