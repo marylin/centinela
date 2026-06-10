@@ -645,6 +645,13 @@ try {
     if requests.post(f"{server_url}/places/resolve", params={"place": "honda"}).json() != res_resolve.json():
         print("ERROR: resolve fixture not deterministic")
         sys.exit(1)
+    for nb in ("jakarta", "manaus", "nairobi"):
+        res_nb = requests.get(f"{server_url}/alert", params={"basin": nb})
+        if res_nb.status_code != 200:
+            print(f"ERROR: /alert failed for new basin {nb}: {res_nb.status_code}")
+            sys.exit(1)
+    print("Success: /alert serves every new basin (generic fallback narration works).")
+
     res_unknown = requests.post(f"{server_url}/places/resolve", params={"place": "atlantis"})
     if res_unknown.status_code != 404:
         print(f"ERROR: unknown place should 404, got {res_unknown.status_code}")

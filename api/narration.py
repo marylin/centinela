@@ -97,6 +97,15 @@ def set_cached_narration(basin: str, risk_data: list, summary: str, broadcast: s
             print(f"Error writing to Firestore: {e}", flush=True)
     FIRESTORE_MOCK_CACHE[state_hash] = data
 
+def default_narration(basin: str):
+    """Generic safe fallback for ANY basin: the curated dictionary only covers
+    the original groups, and the registry grows by config row."""
+    pretty = basin.replace("_", " ").title()
+    return {
+        "summary": f"Monitoring {pretty} for natural hazards (flood, landslide, seismic).",
+        "broadcast": f"System active. No alerts active for {pretty}."
+    }
+
 def get_last_good_narration(basin: str):
     if db is not None:
         try:
@@ -106,7 +115,7 @@ def get_last_good_narration(basin: str):
                 return doc.to_dict()
         except Exception as e:
             print(f"Error reading last good from Firestore: {e}", flush=True)
-    return LAST_GOOD_NARRATIVES.get(basin)
+    return LAST_GOOD_NARRATIVES.get(basin) or default_narration(basin)
 
 def update_last_good_narration(basin: str, summary: str, broadcast: str):
     data = {
@@ -142,7 +151,7 @@ def get_fallback_narration(basin: str, risk_data: list):
     else:
         if last_good:
             return last_good
-        return LAST_GOOD_NARRATIVES.get(basin)
+        return LAST_GOOD_NARRATIVES.get(basin) or default_narration(basin)
 
 def generate_narration_in_background(basin: str, risk_data: list):
     global GENERATING_NARRATIONS
