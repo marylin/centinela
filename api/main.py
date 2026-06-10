@@ -21,14 +21,8 @@ import requests
 import concurrent.futures
 import math
 
-MUNICIPALITY_COORDINATES = {
-    "Cali": {"lat": 3.4516, "lng": -76.5320, "basin": "Rio Cauca"},
-    "Yumbo": {"lat": 3.5855, "lng": -76.4952, "basin": "Rio Cauca"},
-    "Jamundí": {"lat": 3.2610, "lng": -76.5394, "basin": "Rio Cauca"},
-    "Neiva": {"lat": 2.9273, "lng": -75.2819, "basin": "Rio Magdalena"},
-    "Girardot": {"lat": 4.3009, "lng": -74.8061, "basin": "Rio Magdalena"},
-    "Honda": {"lat": 5.2045, "lng": -74.7411, "basin": "Rio Magdalena"}
-}
+# MUNICIPALITY_COORDINATES is derived from the PLACES REGISTRY below (all 11
+# monitored places), so the live weather recorder covers every place (D1).
 
 WEATHER_CACHE = {}
 WEATHER_CACHE_EXPIRY = None
@@ -437,161 +431,341 @@ class AlertNarratives(BaseModel):
 class TokenRegistration(BaseModel):
     token: str
 
+# ---------------------------------------------------------------------------
+# PLACES REGISTRY (real-data unification)
+# ---------------------------------------------------------------------------
+# Every monitored place is one registry row with coordinates; adding a place is
+# a config change, nothing else. All data behind the registry is REAL:
+#   - GloFAS river discharge + model soil moisture (global_hydro connector),
+#   - observed rainfall history (live Google Weather, recorded per place),
+#   - the global USGS raw-events feed (usgs_raw_events connector).
+# No seeded sheets/CSVs anywhere; the hazard index is computed from these
+# feeds and is always labeled as a Centinela MODEL INDEX.
+# kind: "flood-watch" (river basin framing) | "seismic-watch" (quake framing).
+# seismic_bbox: numeric bounds used to attribute nearby USGS events.
+
+REAL_CONNECTORS = [
+    {"id": "kung_gleeful", "name": "USGS Raw Events (Connector SDK)", "type": "connector_sdk"},
+    {"id": "rpm_muriate", "name": "Global Hydrology — GloFAS + Soil (Connector SDK)", "type": "connector_sdk"}
+]
+
 BASINS = [
     {
         "id": "rio_cauca",
         "name": "Rio Cauca",
         "country": "Colombia",
-        "kind": "compound",
-        "municipalities": ["Cali", "Yumbo", "Jamundí"],
-        "connectors": [
-            {
-                "id": "plausibly_illustrate",
-                "name": "Cauca River Gauge (Sheets)",
-                "type": "sheets"
-            },
-            {
-                "id": "garment_dealer",
-                "name": "Cauca Soil Saturation (GCS)",
-                "type": "gcs"
-            },
-            {
-                "id": "whole_glorify",
-                "name": "USGS Seismic Feed (Connector SDK)",
-                "type": "connector_sdk"
-            }
-        ]
+        "kind": "flood-watch",
+        "seismic_bbox": {"lat_min": 2.0, "lat_max": 5.0, "lng_min": -78.0, "lng_max": -75.0},
+        "places": [
+            {"id": "cali", "name": "Cali", "lat": 3.4516, "lng": -76.5320},
+            {"id": "yumbo", "name": "Yumbo", "lat": 3.5855, "lng": -76.4952},
+            {"id": "jamundi", "name": "Jamundí", "lat": 3.2610, "lng": -76.5394}
+        ],
+        "connectors": REAL_CONNECTORS
     },
     {
         "id": "rio_magdalena",
         "name": "Rio Magdalena",
         "country": "Colombia",
-        "kind": "compound",
-        # Seeded/demo basin: river and soil values are modeled, not measured.
-        # Surfaced in the UI as a SIMULATED tag so modeled data is never
-        # presented as live (the Cauca pipeline is the real one).
-        "simulated": True,
-        "municipalities": ["Neiva", "Girardot", "Honda"],
-        "connectors": [
-            {
-                "id": "magdalena_gauge",
-                "name": "Magdalena River Gauge (Mock Sheets)",
-                "type": "sheets"
-            },
-            {
-                "id": "magdalena_sat",
-                "name": "Magdalena Soil Saturation (Mock GCS)",
-                "type": "gcs"
-            }
-        ]
+        "kind": "flood-watch",
+        "seismic_bbox": {"lat_min": 2.0, "lat_max": 6.0, "lng_min": -76.5, "lng_max": -73.5},
+        "places": [
+            {"id": "neiva", "name": "Neiva", "lat": 2.9273, "lng": -75.2819},
+            {"id": "girardot", "name": "Girardot", "lat": 4.3009, "lng": -74.8061},
+            {"id": "honda", "name": "Honda", "lat": 5.2045, "lng": -74.7411}
+        ],
+        "connectors": REAL_CONNECTORS
     },
     {
         "id": "lima_peru",
         "name": "Lima",
         "country": "Peru",
-        "kind": "seismic",
-        "municipalities": ["Lima", "Callao", "Chorrillos"],
-        # Peru bounding box so real coastal-Peru quakes from the global USGS feed
-        # attribute to Lima's municipalities. Existing basins keep the default box.
-        "seismic_bbox": (
-            "    AND latitude BETWEEN -13.0 AND -11.0\n"
-            "    AND longitude BETWEEN -78.0 AND -76.0"
-        ),
-        "connectors": [
-            {
-                "id": "whole_glorify",
-                "name": "USGS Seismic Feed (Connector SDK)",
-                "type": "connector_sdk"
-            }
-        ]
+        "kind": "seismic-watch",
+        "seismic_bbox": {"lat_min": -13.0, "lat_max": -11.0, "lng_min": -78.0, "lng_max": -76.0},
+        "places": [
+            {"id": "lima", "name": "Lima", "lat": -12.046, "lng": -77.043}
+        ],
+        "connectors": REAL_CONNECTORS
     },
     {
         "id": "guatemala_city",
         "name": "Guatemala City",
         "country": "Guatemala",
-        "kind": "seismic",
-        "municipalities": ["Guatemala City", "Mixco", "Villa Nueva"],
-        # Central America bounding box so real quakes from the global USGS feed
-        # attribute to Guatemala City's municipalities. Existing basins keep the default box.
-        "seismic_bbox": (
-            "    AND latitude BETWEEN 13.0 AND 16.0\n"
-            "    AND longitude BETWEEN -92.0 AND -89.0"
-        ),
-        "connectors": [
-            {
-                "id": "whole_glorify",
-                "name": "USGS Seismic Feed (Connector SDK)",
-                "type": "connector_sdk"
-            }
-        ]
+        "kind": "seismic-watch",
+        "seismic_bbox": {"lat_min": 13.0, "lat_max": 16.0, "lng_min": -92.0, "lng_max": -89.0},
+        "places": [
+            {"id": "guatemala_city", "name": "Guatemala City", "lat": 14.6349, "lng": -90.5069}
+        ],
+        "connectors": REAL_CONNECTORS
     },
     {
         "id": "santiago_chile",
         "name": "Santiago",
         "country": "Chile",
-        "kind": "seismic",
-        "municipalities": ["Santiago", "Puente Alto", "Maipu"],
-        # Central Chile bounding box so real Nazca-margin quakes from the global USGS
-        # feed attribute to Santiago's municipalities. Existing basins keep the default box.
-        "seismic_bbox": (
-            "    AND latitude BETWEEN -34.5 AND -32.0\n"
-            "    AND longitude BETWEEN -72.5 AND -69.5"
-        ),
-        "connectors": [
-            {
-                "id": "whole_glorify",
-                "name": "USGS Seismic Feed (Connector SDK)",
-                "type": "connector_sdk"
-            }
-        ]
+        "kind": "seismic-watch",
+        "seismic_bbox": {"lat_min": -34.5, "lat_max": -32.0, "lng_min": -72.5, "lng_max": -69.5},
+        "places": [
+            {"id": "santiago", "name": "Santiago", "lat": -33.4489, "lng": -70.6693}
+        ],
+        "connectors": REAL_CONNECTORS
     },
     {
         "id": "mexico_city",
         "name": "Mexico City",
         "country": "Mexico",
-        "kind": "seismic",
-        "municipalities": ["Mexico City", "Ecatepec", "Nezahualcoyotl"],
-        # Central Mexico bounding box so real Cocos-margin quakes from the global USGS
-        # feed attribute to Mexico City's municipalities. Existing basins keep the default box.
-        "seismic_bbox": (
-            "    AND latitude BETWEEN 17.5 AND 20.5\n"
-            "    AND longitude BETWEEN -100.5 AND -97.5"
-        ),
-        "connectors": [
-            {
-                "id": "whole_glorify",
-                "name": "USGS Seismic Feed (Connector SDK)",
-                "type": "connector_sdk"
-            }
-        ]
+        "kind": "seismic-watch",
+        "seismic_bbox": {"lat_min": 17.5, "lat_max": 20.5, "lng_min": -100.5, "lng_max": -97.5},
+        "places": [
+            {"id": "mexico_city", "name": "Mexico City", "lat": 19.4326, "lng": -99.1332}
+        ],
+        "connectors": REAL_CONNECTORS
     },
     {
         "id": "port_au_prince",
         "name": "Port-au-Prince",
         "country": "Haiti",
-        "kind": "seismic",
-        "municipalities": ["Port-au-Prince", "Carrefour", "Delmas"],
-        # Caribbean bounding box so real quakes along the Enriquillo fault zone from the
-        # global USGS feed attribute to Port-au-Prince's municipalities. Existing basins
-        # keep the default box.
-        "seismic_bbox": (
-            "    AND latitude BETWEEN 17.5 AND 19.5\n"
-            "    AND longitude BETWEEN -74.0 AND -71.0"
-        ),
-        "connectors": [
-            {
-                "id": "whole_glorify",
-                "name": "USGS Seismic Feed (Connector SDK)",
-                "type": "connector_sdk"
-            }
-        ]
+        "kind": "seismic-watch",
+        "seismic_bbox": {"lat_min": 17.5, "lat_max": 19.5, "lng_min": -74.0, "lng_max": -71.0},
+        "places": [
+            {"id": "port_au_prince", "name": "Port-au-Prince", "lat": 18.5944, "lng": -72.3074}
+        ],
+        "connectors": REAL_CONNECTORS
     }
 ]
 
-CONNECTOR_ID = "plausibly_illustrate"
+# Derived lookups (kept as module maps so existing call sites stay simple).
+ALL_PLACES = [
+    {**p, "basin_id": b["id"], "basin_name": b["name"], "country": b["country"], "kind": b["kind"]}
+    for b in BASINS for p in b["places"]
+]
+PLACE_BY_NAME = {p["name"]: p for p in ALL_PLACES}
+
+def basin_municipalities(b):
+    return [p["name"] for p in b["places"]]
+
+# Back-compat: several call sites build {name: {lat, lng, basin}} maps.
+MUNICIPALITY_COORDINATES = {
+    p["name"]: {"lat": p["lat"], "lng": p["lng"], "basin": p["basin_name"]}
+    for p in ALL_PLACES
+}
+
+CONNECTOR_ID = REAL_CONNECTORS[0]["id"]
+
+# ---------------------------------------------------------------------------
+# CENTINELA MODEL HAZARD INDEX (real-data unification)
+# ---------------------------------------------------------------------------
+# Replaces the seeded composite entirely. Every input is a real feed:
+#   flood:   latest GloFAS discharge vs the place's own 31-day P50/P90 baseline
+#            (global_hydro connector -> BigQuery)
+#   soil:    latest model topsoil moisture (same connector) — the wetness /
+#            landslide-antecedent signal
+#   rain:    observed rainfall, last 24h (live Google Weather, recorded per
+#            place into BigQuery by refresh_weather_records)
+#   seismic: strongest USGS detection inside the group's bbox, last 48h
+#            (usgs_raw_events connector -> BigQuery)
+# index = weighted blend; weights renormalize over the components that have
+# data (a place with no river cell simply has no flood component). Severity
+# bands stay 40/60/80. This is OUR model index and is surfaced as such — it
+# is never presented as an official authority warning. When the Google Flood
+# Forecasting API access arrives, its calibrated flood status can replace the
+# baseline-anomaly flood component behind the same fields.
+
+INDEX_CACHE = {}          # basin id -> (expiry_epoch_s, rows)
+INDEX_CACHE_TTL_S = 60    # /risk is polled every 5s per client; BQ once a minute
+
+DOMINANT_BY_COMPONENT = {"flood": "FLOOD", "rain": "FLOOD", "soil": "LANDSLIDE", "landslide": "LANDSLIDE", "seismic": "SEISMIC"}
+
+
+def component_scores(discharge_stat, soil_latest, rain_mm_24h, quake_mag):
+    """0-1 component scores from raw real values; absent data -> absent
+    component (never a fabricated zero that would dilute the index).
+
+    Calibration (documented, OUR model):
+      flood:     discharge vs the place's own 31d baseline; sitting at P90 = 0.6
+      rain:      50 mm observed in 24h saturates the component
+      seismic:   (magnitude - 4.0) / 3.5 -> M4 ambient 0, M7.5+ saturates
+      landslide: derived = soil wetness x the strongest water driver
+                 (wet ground is an amplifier, not an alarm by itself)
+    """
+    comps = {}
+    soil_s = None
+    if discharge_stat and discharge_stat.get("latest") is not None             and discharge_stat.get("p50") is not None and discharge_stat.get("p90") is not None:
+        p50 = float(discharge_stat["p50"])
+        p90 = float(discharge_stat["p90"])
+        spread = max(p90 - p50, max(abs(p50) * 0.10, 0.001))
+        ratio = (float(discharge_stat["latest"]) - p50) / spread
+        comps["flood"] = max(0.0, min(1.0, 0.6 * ratio))
+    if rain_mm_24h is not None:
+        comps["rain"] = max(0.0, min(1.0, float(rain_mm_24h) / 50.0))
+    if quake_mag is not None:
+        comps["seismic"] = max(0.0, min(1.0, (float(quake_mag) - 4.0) / 3.5))
+    else:
+        # The events feed always answers; a quiet 48h is a real zero.
+        comps["seismic"] = 0.0
+    if soil_latest is not None:
+        soil_s = max(0.0, min(1.0, (float(soil_latest) - 0.20) / 0.30))
+        water_driver = max(comps.get("flood", 0.0), comps.get("rain", 0.0))
+        comps["landslide"] = round(soil_s * water_driver, 3)
+    return comps
+
+
+def blend_index(comps):
+    """Index = the strongest single hazard, bumped by co-occurrence of the
+    others (a catastrophic single signal must alert on its own; several
+    moderate signals together raise, but never dominate)."""
+    if not comps:
+        return 0.0, "FLOOD"
+    dominant_key = max(comps, key=lambda k: comps[k])
+    m = comps[dominant_key]
+    others = [v for k, v in comps.items() if k != dominant_key]
+    bump = (sum(others) / len(others)) * 0.5 if others else 0.0
+    index = m + (1.0 - m) * bump
+    return round(max(0.0, min(1.0, index)), 2), DOMINANT_BY_COMPONENT[dominant_key]
+
+
+def index_row(place, comps, raw):
+    """One /risk row. Legacy keys (municipality, risk_score, flood_score,
+    landslide_score, seismic_score, dominant_hazard) are kept so downstream
+    consumers migrate gradually; seeded-era fields are gone."""
+    index, dominant = blend_index(comps)
+    return {
+        "municipality": place["name"],
+        "place_id": place["id"],
+        "risk_score": index,
+        "flood_score": round(comps.get("flood", 0.0), 2),
+        "landslide_score": round(comps.get("landslide", 0.0), 2),
+        "rain_score": round(comps.get("rain", 0.0), 2),
+        "seismic_score": round(comps.get("seismic", 0.0), 2),
+        "rainfall_mm": round(float(raw.get("rain_mm") or 0.0), 1),
+        "discharge_m3s": raw.get("discharge_latest"),
+        "discharge_p50": raw.get("discharge_p50"),
+        "discharge_p90": raw.get("discharge_p90"),
+        "soil_moisture": raw.get("soil_latest"),
+        "earthquake_magnitude": raw.get("quake_mag"),
+        "dominant_hazard": dominant,
+        "components_available": sorted(comps.keys()),
+        "provenance": "centinela-model-index"
+    }
+
+
+def compute_hazard_index(basin_config):
+    """Real-feed index rows for every place in the group (one BQ round per
+    signal, all places at once)."""
+    refresh_weather_records()
+
+    places = basin_config["places"]
+    bbox = basin_config.get("seismic_bbox") or {}
+    ids_sql = ", ".join(f"'{p['id']}'" for p in places)
+    names_sql = ", ".join("'" + p["name"].replace("'", "\\'") + "'" for p in places)
+
+    discharge_stats, soil_latest, rain_24h = {}, {}, {}
+    quake_mag = None
+    client = bigquery.Client(project='centinela-498622')
+
+    try:
+        q = f"""
+        SELECT place_id,
+               ARRAY_AGG(discharge_m_3_s ORDER BY date DESC LIMIT 1)[OFFSET(0)] AS latest,
+               APPROX_QUANTILES(discharge_m_3_s, 100)[OFFSET(50)] AS p50,
+               APPROX_QUANTILES(discharge_m_3_s, 100)[OFFSET(90)] AS p90
+        FROM global_hydro.river_discharge
+        WHERE place_id IN ({ids_sql})
+          AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 31 DAY)
+        GROUP BY place_id"""
+        for row in client.query(q).result():
+            d = dict(row)
+            discharge_stats[d["place_id"]] = d
+    except Exception as e:
+        print(f"Index discharge query failed: {e}", flush=True)
+
+    try:
+        q = f"""
+        SELECT place_id,
+               ARRAY_AGG(moisture_m_3_m_3 ORDER BY ts DESC LIMIT 1)[OFFSET(0)] AS latest
+        FROM global_hydro.soil_moisture
+        WHERE place_id IN ({ids_sql})
+        GROUP BY place_id"""
+        for row in client.query(q).result():
+            d = dict(row)
+            soil_latest[d["place_id"]] = d.get("latest")
+    except Exception as e:
+        print(f"Index soil query failed: {e}", flush=True)
+
+    try:
+        q = f"""
+        SELECT municipality, SUM(precipitation_mm) AS total
+        FROM unified_feeds.rainfall
+        WHERE municipality IN ({names_sql})
+          AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+        GROUP BY municipality"""
+        for row in client.query(q).result():
+            d = dict(row)
+            rain_24h[d["municipality"]] = float(d.get("total") or 0.0)
+    except Exception as e:
+        print(f"Index rainfall query failed: {e}", flush=True)
+
+    if all(k in bbox for k in ("lat_min", "lat_max", "lng_min", "lng_max")):
+        try:
+            q = f"""
+            SELECT MAX(magnitude) AS max_mag
+            FROM {RAW_EVENTS_TABLE}
+            WHERE time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 48 HOUR)
+              AND latitude BETWEEN {bbox['lat_min']} AND {bbox['lat_max']}
+              AND longitude BETWEEN {bbox['lng_min']} AND {bbox['lng_max']}"""
+            for row in client.query(q).result():
+                m = dict(row).get("max_mag")
+                quake_mag = round(float(m), 1) if m is not None else None
+        except Exception as e:
+            print(f"Index seismic query failed: {e}", flush=True)
+
+    rows = []
+    for place in places:
+        dstat = discharge_stats.get(place["id"])
+        raw = {
+            "discharge_latest": round(float(dstat["latest"]), 1) if dstat and dstat.get("latest") is not None else None,
+            "discharge_p50": round(float(dstat["p50"]), 1) if dstat and dstat.get("p50") is not None else None,
+            "discharge_p90": round(float(dstat["p90"]), 1) if dstat and dstat.get("p90") is not None else None,
+            "soil_latest": round(float(soil_latest[place["id"]]), 3) if soil_latest.get(place["id"]) is not None else None,
+            "rain_mm": rain_24h.get(place["name"]),
+            "quake_mag": quake_mag
+        }
+        comps = component_scores(dstat, raw["soil_latest"], raw["rain_mm"], raw["quake_mag"])
+        rows.append(index_row(place, comps, raw))
+    return rows
+
+
+def testing_index_rows(basin_config):
+    """Deterministic TESTING fixtures shaped exactly like production index
+    rows; varied per place so severity bands and demo flows are exercised."""
+    populated = MOCK_DB_STATE.get("populated", True)
+    rows = []
+    for i, place in enumerate(basin_config["places"]):
+        if basin_config["kind"] == "flood-watch":
+            dstat = {"latest": 1300.0 + i * 120, "p50": 1000.0, "p90": 1400.0}
+            soil = [0.42, 0.36, 0.47][i % 3]
+            rain = [4.5, 2.0, 9.5][i % 3]
+            quake = [None, None, 3.8][i % 3]
+        else:
+            dstat = {"latest": 60.0, "p50": 55.0, "p90": 90.0}
+            soil = 0.18
+            rain = 0.0
+            quake = 4.9
+        if not populated:
+            dstat = {"latest": dstat["p50"], "p50": dstat["p50"], "p90": dstat["p90"]}
+            soil, rain, quake = 0.21, 0.0, None
+        raw = {
+            "discharge_latest": dstat["latest"], "discharge_p50": dstat["p50"],
+            "discharge_p90": dstat["p90"], "soil_latest": soil,
+            "rain_mm": rain, "quake_mag": quake
+        }
+        comps = component_scores(dstat, soil, rain, quake)
+        rows.append(index_row(place, comps, raw))
+    return rows
+
 
 def compute_base_risk(basin: str = "rio_cauca"):
-    """Runs the tracked risk-score SQL, returns graded risk per municipality."""
+    """Hazard-index rows per place in the scoped group (name kept from the
+    composite era so call sites stay stable)."""
     global REOPENED_INCIDENT_ID
     if REOPENED_INCIDENT_ID:
         incidents = get_incidents_list()
@@ -600,673 +774,18 @@ def compute_base_risk(basin: str = "rio_cauca"):
             return matching["risk_data"]
 
     basin_config = next((b for b in BASINS if b["id"] == basin), BASINS[0])
-    basin_name = basin_config["name"]
 
     if TESTING:
-        if MOCK_DB_STATE.get("populated", True):
-            if basin == "rio_magdalena":
-                return [
-                    {
-                        "municipality": "Neiva",
-                        "risk_score": 0.48,
-                        "rainfall_mm": 5.2,
-                        "river_level_m": 3.8,
-                        "soil_saturation": 0.88,
-                        "threshold": 4.5,
-                        "slope_angle_deg": 15.0,
-                        "susceptibility_index": 0.35,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.62,
-                        "landslide_score": 0.51,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    },
-                    {
-                        "municipality": "Girardot",
-                        "risk_score": 0.65,
-                        "rainfall_mm": 6.8,
-                        "river_level_m": 4.1,
-                        "soil_saturation": 0.90,
-                        "threshold": 4.5,
-                        "slope_angle_deg": 22.0,
-                        "susceptibility_index": 0.55,
-                        "earthquake_magnitude": 3.4,
-                        "flood_score": 0.75,
-                        "landslide_score": 0.65,
-                        "seismic_score": 0.48,
-                        "dominant_hazard": "FLOOD"
-                    },
-                    {
-                        "municipality": "Honda",
-                        "risk_score": 0.82,
-                        "rainfall_mm": 8.0,
-                        "river_level_m": 5.2,
-                        "soil_saturation": 0.95,
-                        "threshold": 5.0,
-                        "slope_angle_deg": 32.0,
-                        "susceptibility_index": 0.78,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.92,
-                        "landslide_score": 0.83,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    }
-                ]
-            elif basin == "lima_peru":
-                # Seismic-only basin: flood and landslide read as no-data (0), never
-                # fabricated. risk_score is driven entirely by the seismic_score.
-                return [
-                    {
-                        "municipality": "Lima",
-                        "risk_score": 0.24,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.6,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.8,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Callao",
-                        "risk_score": 0.21,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 4.9,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.7,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Chorrillos",
-                        "risk_score": 0.18,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 4.2,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.6,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                ]
-            elif basin == "guatemala_city":
-                # Seismic-only basin: flood and landslide read as no-data (0), never
-                # fabricated. risk_score is driven entirely by the seismic_score.
-                return [
-                    {
-                        "municipality": "Guatemala City",
-                        "risk_score": 0.25,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.8,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.83,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Mixco",
-                        "risk_score": 0.22,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.1,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.73,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Villa Nueva",
-                        "risk_score": 0.19,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 4.4,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.63,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                ]
-            elif basin == "santiago_chile":
-                # Seismic-only basin: flood and landslide read as no-data (0), never
-                # fabricated. risk_score is driven entirely by the seismic_score.
-                return [
-                    {
-                        "municipality": "Santiago",
-                        "risk_score": 0.24,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.7,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.81,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Puente Alto",
-                        "risk_score": 0.21,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.0,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.71,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Maipu",
-                        "risk_score": 0.18,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 4.3,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.61,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                ]
-            elif basin == "mexico_city":
-                # Seismic-only basin: flood and landslide read as no-data (0), never
-                # fabricated. risk_score is driven entirely by the seismic_score.
-                return [
-                    {
-                        "municipality": "Mexico City",
-                        "risk_score": 0.25,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.9,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.84,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Ecatepec",
-                        "risk_score": 0.22,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.2,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.74,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Nezahualcoyotl",
-                        "risk_score": 0.19,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 4.5,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.64,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                ]
-            elif basin == "port_au_prince":
-                # Seismic-only basin: flood and landslide read as no-data (0), never
-                # fabricated. risk_score is driven entirely by the seismic_score.
-                return [
-                    {
-                        "municipality": "Port-au-Prince",
-                        "risk_score": 0.24,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 5.5,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.79,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Carrefour",
-                        "risk_score": 0.21,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 4.8,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.69,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Delmas",
-                        "risk_score": 0.18,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 4.1,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.59,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                ]
-            else:
-                return [
-                    {
-                        "municipality": "Cali",
-                        "risk_score": 0.42,
-                        "rainfall_mm": 4.5,
-                        "river_level_m": 4.34,
-                        "soil_saturation": 0.92,
-                        "threshold": 3.5,
-                        "slope_angle_deg": 12.0,
-                        "susceptibility_index": 0.25,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.72,
-                        "landslide_score": 0.45,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    },
-                    {
-                        "municipality": "Yumbo",
-                        "risk_score": 0.58,
-                        "rainfall_mm": 3.0,
-                        "river_level_m": 4.34,
-                        "soil_saturation": 0.85,
-                        "threshold": 3.5,
-                        "slope_angle_deg": 28.0,
-                        "susceptibility_index": 0.65,
-                        "earthquake_magnitude": 2.1,
-                        "flood_score": 0.68,
-                        "landslide_score": 0.71,
-                        "seismic_score": 0.3,
-                        "dominant_hazard": "LANDSLIDE"
-                    },
-                    {
-                        "municipality": "Jamundí",
-                        "risk_score": 0.76,
-                        "rainfall_mm": 5.0,
-                        "river_level_m": 4.34,
-                        "soil_saturation": 0.95,
-                        "threshold": 4.0,
-                        "slope_angle_deg": 38.0,
-                        "susceptibility_index": 0.88,
-                        "earthquake_magnitude": 4.5,
-                        "flood_score": 0.73,
-                        "landslide_score": 0.9,
-                        "seismic_score": 0.64,
-                        "dominant_hazard": "LANDSLIDE"
-                    }
-                ]
-        else:
-            if basin == "rio_magdalena":
-                return [
-                    {
-                        "municipality": "Neiva",
-                        "risk_score": 0.05,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 1.2,
-                        "soil_saturation": 0.1,
-                        "threshold": 4.5,
-                        "slope_angle_deg": 15.0,
-                        "susceptibility_index": 0.35,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.05,
-                        "landslide_score": 0.05,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    },
-                    {
-                        "municipality": "Girardot",
-                        "risk_score": 0.02,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 1.0,
-                        "soil_saturation": 0.1,
-                        "threshold": 4.5,
-                        "slope_angle_deg": 22.0,
-                        "susceptibility_index": 0.55,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.02,
-                        "landslide_score": 0.02,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    },
-                    {
-                        "municipality": "Honda",
-                        "risk_score": 0.08,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 1.5,
-                        "soil_saturation": 0.12,
-                        "threshold": 5.0,
-                        "slope_angle_deg": 32.0,
-                        "susceptibility_index": 0.78,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.08,
-                        "landslide_score": 0.08,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    }
-                ]
-            elif basin == "lima_peru":
-                # Quiet-state seismic-only basin: low real/baseline seismic values,
-                # flood and landslide as no-data (0), never fabricated.
-                return [
-                    {
-                        "municipality": "Lima",
-                        "risk_score": 0.15,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 3.5,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.5,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Callao",
-                        "risk_score": 0.13,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 3.0,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.43,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Chorrillos",
-                        "risk_score": 0.1,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 2.3,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.33,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                ]
-            elif basin == "guatemala_city":
-                # Quiet-state seismic-only basin: low real/baseline seismic values,
-                # flood and landslide as no-data (0), never fabricated.
-                return [
-                    {
-                        "municipality": "Guatemala City",
-                        "risk_score": 0.15,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 3.5,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.5,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Mixco",
-                        "risk_score": 0.13,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 3.0,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.43,
-                        "dominant_hazard": "SEISMIC"
-                    },
-                    {
-                        "municipality": "Villa Nueva",
-                        "risk_score": 0.1,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": 2.3,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": 0.33,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                ]
-            elif basin in ("santiago_chile", "mexico_city", "port_au_prince"):
-                # Quiet-state seismic-only basins: low real/baseline seismic values,
-                # flood and landslide as no-data (0), never fabricated.
-                quiet_munis = next(b for b in BASINS if b["id"] == basin)["municipalities"]
-                quiet_values = [(0.15, 3.5, 0.5), (0.13, 3.0, 0.43), (0.1, 2.3, 0.33)]
-                return [
-                    {
-                        "municipality": muni,
-                        "risk_score": risk,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.0,
-                        "soil_saturation": 0.0,
-                        "threshold": 0.0,
-                        "slope_angle_deg": 0.0,
-                        "susceptibility_index": 0.0,
-                        "earthquake_magnitude": mag,
-                        "flood_score": 0.0,
-                        "landslide_score": 0.0,
-                        "seismic_score": seismic,
-                        "dominant_hazard": "SEISMIC"
-                    }
-                    for muni, (risk, mag, seismic) in zip(quiet_munis, quiet_values)
-                ]
-            else:
-                return [
-                    {
-                        "municipality": "Cali",
-                        "risk_score": 0.05,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 1.0,
-                        "soil_saturation": 0.1,
-                        "threshold": 3.5,
-                        "slope_angle_deg": 12.0,
-                        "susceptibility_index": 0.25,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.05,
-                        "landslide_score": 0.05,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    },
-                    {
-                        "municipality": "Yumbo",
-                        "risk_score": 0.02,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 0.8,
-                        "soil_saturation": 0.1,
-                        "threshold": 3.5,
-                        "slope_angle_deg": 28.0,
-                        "susceptibility_index": 0.65,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.02,
-                        "landslide_score": 0.02,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    },
-                    {
-                        "municipality": "Jamundí",
-                        "risk_score": 0.08,
-                        "rainfall_mm": 0.0,
-                        "river_level_m": 1.2,
-                        "soil_saturation": 0.12,
-                        "threshold": 4.0,
-                        "slope_angle_deg": 38.0,
-                        "susceptibility_index": 0.88,
-                        "earthquake_magnitude": None,
-                        "flood_score": 0.08,
-                        "landslide_score": 0.08,
-                        "seismic_score": 0.0,
-                        "dominant_hazard": "FLOOD"
-                    }
-                ]
-    try:
-        # Fetch real weather data from Google Weather API if not testing
-        api_key = os.environ.get("GOOGLE_WEATHER_API_KEY")
-        if api_key:
-            now_utc = datetime.now(timezone.utc)
-            global WEATHER_CACHE_EXPIRY, WEATHER_CACHE
-            if not WEATHER_CACHE_EXPIRY or now_utc >= WEATHER_CACHE_EXPIRY:
-                print("Weather cache expired or empty. Fetching new data from Google Weather API...", flush=True)
-                new_precip = {}
-                with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
-                    futures = {
-                        executor.submit(fetch_precipitation_for_muni, muni, coord["lat"], coord["lng"], api_key): muni
-                        for muni, coord in MUNICIPALITY_COORDINATES.items()
-                    }
-                    for future in concurrent.futures.as_completed(futures):
-                        muni = futures[future]
-                        try:
-                            val = future.result()
-                            if val is not None:
-                                new_precip[muni] = val
-                        except Exception as e:
-                            print(f"Error in future result for {muni}: {e}", flush=True)
-                
-                if new_precip:
-                    WEATHER_CACHE.update(new_precip)
-                    WEATHER_CACHE_EXPIRY = now_utc + timedelta(minutes=5)
-                    
-                    # Write to BigQuery
-                    try:
-                        bq_client = bigquery.Client(project='centinela-498622')
-                        timestamp_str = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
-                        rows_to_insert = []
-                        for muni, precip_val in new_precip.items():
-                            coord = MUNICIPALITY_COORDINATES[muni]
-                            rows_to_insert.append(f"('{timestamp_str}', 'GMP-01', {precip_val}, '{coord['basin']}', '{muni}')")
-                        
-                        if rows_to_insert:
-                            insert_query = f"""
-                            INSERT INTO unified_feeds.rainfall (timestamp, station_id, precipitation_mm, basin, municipality)
-                            VALUES {', '.join(rows_to_insert)}
-                            """
-                            query_job = bq_client.query(insert_query)
-                            query_job.result()
-                            print(f"Successfully inserted {len(rows_to_insert)} weather API records to BigQuery.", flush=True)
-                    except Exception as bq_err:
-                        print(f"Error writing Weather API data to BigQuery: {bq_err}", flush=True)
-        else:
-            print("Warning: GOOGLE_WEATHER_API_KEY environment variable is not set.", flush=True)
-    except Exception as weather_err:
-        print(f"Error in Weather API integration flow: {weather_err}", flush=True)
+        return testing_index_rows(basin_config)
 
-    try:
-        # Read the query from the tracked SQL file
-        with open("sql/risk_score.sql", "r", encoding="utf-8") as f:
-            query = f.read()
+    now_s = time.time()
+    cached = INDEX_CACHE.get(basin)
+    if cached and cached[0] > now_s:
+        return cached[1]
+    rows = compute_hazard_index(basin_config)
+    INDEX_CACHE[basin] = (now_s + INDEX_CACHE_TTL_S, rows)
+    return rows
 
-        # Dynamically target the requested basin
-        query = query.replace("'Rio Cauca'", f"'{basin_name}'")
-
-        # Swap the seismic bounding box per basin. The default is the Rio Cauca/Colombia
-        # box, so existing basins are unchanged (replaced with themselves). Lima supplies
-        # its own Peru box so real coastal-Peru quakes attribute to its municipalities.
-        default_seismic_bbox = (
-            "    AND latitude BETWEEN 2.0 AND 5.0\n"
-            "    AND longitude BETWEEN -78.0 AND -75.0"
-        )
-        query = query.replace(default_seismic_bbox, basin_config.get("seismic_bbox", default_seismic_bbox))
-
-        client = bigquery.Client(project='centinela-498622')
-        query_job = client.query(query)
-        rows = query_job.result()
-
-        # Map fields to the frontend UI contract
-        results = []
-        for row in rows:
-            row_dict = dict(row)
-            muni = row_dict.get("municipality", "")
-            if muni.startswith("Jamund"):
-                muni = "Jamundí"
-            results.append({
-                "municipality": muni,
-                "risk_score": float(row_dict.get("compound_score", 0.0) or 0.0),
-                "rainfall_mm": float(row_dict.get("precipitation_mm", 0.0) or 0.0),
-                "river_level_m": float(row_dict.get("river_level_m", 0.0) or 0.0),
-                "soil_saturation": float(row_dict.get("saturation_index", 0.0) or 0.0),
-                "threshold": float(row_dict.get("alert_threshold_m", 0.0) or 0.0),
-                "slope_angle_deg": float(row_dict.get("slope_angle_deg", 0.0) or 0.0),
-                "susceptibility_index": float(row_dict.get("susceptibility_index", 0.0) or 0.0),
-                "earthquake_magnitude": float(row_dict.get("earthquake_magnitude", 0.0)) if row_dict.get("earthquake_magnitude") is not None else None,
-                "flood_score": float(row_dict.get("flood_score", 0.0) or 0.0),
-                "landslide_score": float(row_dict.get("landslide_score", 0.0) or 0.0),
-                "seismic_score": float(row_dict.get("seismic_score", 0.0) or 0.0),
-                "dominant_hazard": row_dict.get("dominant_hazard", "FLOOD")
-            })
-        return results
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/risk")
 def get_risk(basin: str = "rio_cauca"):
@@ -1299,83 +818,106 @@ def get_risk_history(basin: str = "rio_cauca"):
         return {"basin": basin, "ticks": ticks}
     return {"basin": basin, "ticks": get_risk_sample_ticks(basin)}
 
+TELEMETRY_PROVENANCE = {"rainfall": "live", "discharge": "model-glofas", "soil": "model-ecmwf"}
+
 @app.get("/telemetry-history")
-def get_telemetry_history(basin: str = "rio_cauca"):
-    """River-level (7d) and hourly rainfall (48h) series for the trend chart.
-    Honesty contract: rainfall rows are genuinely real (live Google Weather
-    readings recorded on each refresh); river-level rows come through the real
-    sheet -> Fivetran -> BigQuery pipeline but carry seeded values."""
+def get_telemetry_history(basin: str = "rio_cauca", place: str = None):
+    """Real telemetry series for the trend panel: observed rainfall (48h,
+    hourly), GloFAS discharge (31d, daily) and model soil moisture (72h,
+    hourly). Scoped to one place id when `place` is given, otherwise averaged
+    across the group. No seeded series exist anymore."""
     basin_config = next((b for b in BASINS if b["id"] == basin), None)
     if basin_config is None:
         raise HTTPException(status_code=404, detail=f"Unknown basin: {basin}")
-    basin_name = basin_config["name"]
+    scoped_places = basin_config["places"]
+    if place:
+        scoped_places = [p for p in basin_config["places"] if p["id"] == place]
+        if not scoped_places:
+            raise HTTPException(status_code=404, detail=f"Unknown place {place} in {basin}")
 
     if TESTING:
         now = datetime.now(timezone.utc)
-        river = [
-            {
-                "time": (now - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "river_level_m": round(4.1 + 0.65 * math.sin((48 - h) / 7.0) + (48 - h) * 0.012, 2),
-                "threshold_m": 4.0
-            }
-            for h in range(48, -1, -6)
-        ]
         rainfall = [
-            {
-                "time": (now - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "precipitation_mm": round(max(0.0, 2.2 * math.sin((48 - h) / 5.0)) , 2)
-            }
+            {"time": (now - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+             "precipitation_mm": round(max(0.0, 2.2 * math.sin((48 - h) / 5.0)), 2)}
             for h in range(48, -1, -2)
         ]
         discharge = [
-            {
-                "date": (now - timedelta(days=d)).strftime("%Y-%m-%d"),
-                "discharge_m3s": round(1100.0 + 180.0 * math.sin((31 - d) / 6.0), 1)
-            }
+            {"date": (now - timedelta(days=d)).strftime("%Y-%m-%d"),
+             "discharge_m3s": round(1100.0 + 180.0 * math.sin((31 - d) / 6.0), 1)}
             for d in range(31, -1, -1)
         ]
-        return {"basin": basin, "river": river, "rainfall": rainfall, "discharge": discharge,
-                "provenance": {"rainfall": "live", "river": "pipeline-seeded", "discharge": "model-glofas"}}
+        soil = [
+            {"time": (now - timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+             "moisture_m3m3": round(0.32 + 0.05 * math.sin((72 - h) / 9.0), 3)}
+            for h in range(72, -1, -3)
+        ]
+        return {"basin": basin, "place": place, "rainfall": rainfall, "discharge": discharge,
+                "soil": soil, "provenance": TELEMETRY_PROVENANCE}
 
-    river, rainfall, discharge = [], [], []
+    place_ids = [p["id"] for p in scoped_places]
+    place_names = [p["name"] for p in scoped_places]
+    rainfall, discharge, soil = [], [], []
+    client = bigquery.Client(project='centinela-498622')
+
+    def q_param_list(values):
+        return bigquery.ArrayQueryParameter("vals", "STRING", values)
+
     try:
-        client = bigquery.Client(project='centinela-498622')
-        river_sql = load_sql("telemetry_river_history.sql").replace("'Rio Cauca'", f"'{basin_name}'")
-        for row in client.query(river_sql).result():
-            rd = dict(row)
-            t = rd.get("reading_time")
-            river.append({
-                "time": t.strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(t, datetime) else str(t),
-                "river_level_m": float(rd.get("river_level_m") or 0.0),
-                "threshold_m": float(rd.get("alert_threshold_m") or 0.0)
-            })
-        rain_sql = load_sql("telemetry_rainfall_history.sql").replace("'Rio Cauca'", f"'{basin_name}'")
-        for row in client.query(rain_sql).result():
+        job = client.query(
+            """SELECT TIMESTAMP_TRUNC(timestamp, HOUR) AS hour,
+                      ROUND(AVG(precipitation_mm), 2) AS precipitation_mm
+               FROM unified_feeds.rainfall
+               WHERE municipality IN UNNEST(@vals)
+                 AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 48 HOUR)
+               GROUP BY hour ORDER BY hour LIMIT 60""",
+            job_config=bigquery.QueryJobConfig(query_parameters=[q_param_list(place_names)]))
+        for row in job.result():
             rd = dict(row)
             t = rd.get("hour")
             rainfall.append({
                 "time": t.strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(t, datetime) else str(t),
-                "precipitation_mm": float(rd.get("precipitation_mm") or 0.0)
-            })
+                "precipitation_mm": float(rd.get("precipitation_mm") or 0.0)})
     except Exception as e:
-        # Degrade to empty (well-formed) series; the chart shows its empty state.
-        print(f"Error querying telemetry history for {basin}: {e}", flush=True)
+        print(f"Telemetry rainfall query failed for {basin}/{place}: {e}", flush=True)
+
     try:
-        # Separate try: the global_hydro dataset only exists once the second
-        # connector has synced; rainfall/river must not degrade with it.
-        client = bigquery.Client(project='centinela-498622')
-        discharge_sql = load_sql("telemetry_discharge_history.sql").replace("'rio_cauca'", f"'{basin}'")
-        for row in client.query(discharge_sql).result():
+        job = client.query(
+            """SELECT date, ROUND(AVG(discharge_m_3_s), 1) AS discharge_m3s
+               FROM global_hydro.river_discharge
+               WHERE place_id IN UNNEST(@vals)
+                 AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 31 DAY)
+               GROUP BY date ORDER BY date LIMIT 60""",
+            job_config=bigquery.QueryJobConfig(query_parameters=[q_param_list(place_ids)]))
+        for row in job.result():
             rd = dict(row)
             d = rd.get("date")
             discharge.append({
                 "date": d.isoformat() if hasattr(d, "isoformat") else str(d),
-                "discharge_m3s": float(rd.get("discharge_m3s") or 0.0)
-            })
+                "discharge_m3s": float(rd.get("discharge_m3s") or 0.0)})
     except Exception as e:
-        print(f"Error querying discharge history for {basin}: {e}", flush=True)
-    return {"basin": basin, "river": river, "rainfall": rainfall, "discharge": discharge,
-            "provenance": {"rainfall": "live", "river": "pipeline-seeded", "discharge": "model-glofas"}}
+        print(f"Telemetry discharge query failed for {basin}/{place}: {e}", flush=True)
+
+    try:
+        job = client.query(
+            """SELECT TIMESTAMP_TRUNC(ts, HOUR) AS hour,
+                      ROUND(AVG(moisture_m_3_m_3), 3) AS moisture_m3m3
+               FROM global_hydro.soil_moisture
+               WHERE place_id IN UNNEST(@vals)
+                 AND ts >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 72 HOUR)
+               GROUP BY hour ORDER BY hour LIMIT 96""",
+            job_config=bigquery.QueryJobConfig(query_parameters=[q_param_list(place_ids)]))
+        for row in job.result():
+            rd = dict(row)
+            t = rd.get("hour")
+            soil.append({
+                "time": t.strftime("%Y-%m-%dT%H:%M:%SZ") if isinstance(t, datetime) else str(t),
+                "moisture_m3m3": float(rd.get("moisture_m3m3") or 0.0)})
+    except Exception as e:
+        print(f"Telemetry soil query failed for {basin}/{place}: {e}", flush=True)
+
+    return {"basin": basin, "place": place, "rainfall": rainfall, "discharge": discharge,
+            "soil": soil, "provenance": TELEMETRY_PROVENANCE}
 
 # --- Conditions at ANY location (real, multi-source, honestly labeled) -------
 # Sources: Google Weather hourly history (observed rainfall, 24h), Open-Meteo
@@ -1805,18 +1347,6 @@ async def get_connector_status(basin: str = "rio_cauca"):
         connector_results = []
         for conn in basin_connectors:
             conn_id = conn["id"]
-            
-            # For mock connectors (Magdalena basin), return simulated status
-            if conn_id in ["magdalena_gauge", "magdalena_sat"]:
-                is_paused = LOCAL_PAUSED_STATES.get(conn_id, False)
-                connector_results.append({
-                    "connector_id": conn_id,
-                    "name": conn["name"],
-                    "status": "paused" if is_paused else "active",
-                    "last_sync_time": datetime.now(timezone.utc).isoformat(),
-                    "freshness": "FRESH"
-                })
-                continue
 
             toolset = get_mcp_toolset()
             try:
@@ -1913,7 +1443,7 @@ async def get_connector_status(basin: str = "rio_cauca"):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/heal")
-async def heal(background_tasks: BackgroundTasks, connector_id: str = "plausibly_illustrate", basin: str = "rio_cauca"):
+async def heal(background_tasks: BackgroundTasks, connector_id: str = CONNECTOR_ID, basin: str = "rio_cauca"):
     """Runs the existing detect-to-heal flow for a specific connector."""
     LOCAL_PAUSED_STATES[connector_id] = False
     
@@ -1958,7 +1488,7 @@ async def heal(background_tasks: BackgroundTasks, connector_id: str = "plausibly
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/break")
-async def break_conn(background_tasks: BackgroundTasks, connector_id: str = "plausibly_illustrate", basin: str = "rio_cauca"):
+async def break_conn(background_tasks: BackgroundTasks, connector_id: str = CONNECTOR_ID, basin: str = "rio_cauca"):
     """Pauses a specific connector to simulate an outage."""
     LOCAL_PAUSED_STATES[connector_id] = True
     
@@ -2104,12 +1634,18 @@ def get_basins():
             "id": b["id"],
             "name": b["name"],
             "country": b["country"],
-            "kind": b.get("kind", "compound"),
-            "simulated": b.get("simulated", False),
-            "municipalities": b["municipalities"]
+            "kind": b.get("kind", "flood-watch"),
+            "places": b["places"],
+            "municipalities": basin_municipalities(b)
         }
         for b in BASINS
     ]
+
+@app.get("/places")
+def get_places():
+    """The monitored-places registry: groups with coordinates and kind.
+    Same payload as /basins (kept as an alias for the frontend migration)."""
+    return get_basins()
 
 @app.get("/incidents")
 def get_incidents():
@@ -2227,7 +1763,7 @@ def get_live_seismic(basin: str = "rio_cauca"):
         raise HTTPException(status_code=404, detail=f"Unknown basin: {basin}")
     munis = {
         m: LIVE_SEISMIC_COORDINATES[m]
-        for m in basin_config["municipalities"]
+        for m in basin_municipalities(basin_config)
         if m in LIVE_SEISMIC_COORDINATES
     }
     feed = fetch_usgs_live_feed()
@@ -2294,12 +1830,11 @@ def delete_demo_event(basin: str):
     DEMO_EVENTS_MOCK.pop(basin, None)
 
 def merge_demo_event_into_risk(basin: str, results):
-    """Read-time merge of an active simulated demo event into the risk rows.
-    Uses the same weights as sql/risk_score.sql (seismic = magnitude/7.0,
-    compound = 0.40 flood + 0.30 landslide + 0.30 seismic). For seismic-only
-    basins (flood and landslide read as no-data), the seismic score carries
-    the full compound weight so the injected event is visible. The merged row
-    is tagged simulated so it is never presented as a real USGS detection."""
+    """Read-time merge of an active simulated demo event into the index rows.
+    The injected quake replaces the seismic component (magnitude/7 so a strong
+    demo event lands visibly above the live-feed scaling) and the index is
+    re-blended with the standard component weights. The merged row is tagged
+    simulated so it is never presented as a real USGS detection."""
     if not isinstance(results, list):
         return results
     event = get_demo_event(basin)
@@ -2313,23 +1848,21 @@ def merge_demo_event_into_risk(basin: str, results):
     for row in results:
         if not isinstance(row, dict) or row.get("municipality") != muni:
             continue
-        seismic_score = round(min(1.0, max(0.0, magnitude / 7.0)), 2)
-        flood = float(row.get("flood_score") or 0.0)
-        landslide = float(row.get("landslide_score") or 0.0)
-        if flood == 0.0 and landslide == 0.0:
-            risk_score = seismic_score
-        else:
-            risk_score = round((0.40 * flood) + (0.30 * landslide) + (0.30 * seismic_score), 2)
-        if flood >= landslide and flood >= seismic_score:
-            dominant = "FLOOD"
-        elif landslide >= flood and landslide >= seismic_score:
-            dominant = "LANDSLIDE"
-        else:
-            dominant = "SEISMIC"
+        comps = {}
+        available = row.get("components_available") or []
+        if "flood" in available:
+            comps["flood"] = float(row.get("flood_score") or 0.0)
+        if "landslide" in available:
+            comps["landslide"] = float(row.get("landslide_score") or 0.0)
+        if "rain" in available:
+            comps["rain"] = float(row.get("rain_score") or 0.0)
+        comps["seismic"] = round(min(1.0, max(0.0, (magnitude - 4.0) / 3.5)), 2)
+        index, dominant = blend_index(comps)
         row["earthquake_magnitude"] = magnitude
-        row["seismic_score"] = seismic_score
-        row["risk_score"] = risk_score
+        row["seismic_score"] = comps["seismic"]
+        row["risk_score"] = index
         row["dominant_hazard"] = dominant
+        row["components_available"] = sorted(comps.keys())
         row["simulated"] = True
     return results
 
@@ -2372,7 +1905,7 @@ def demo_inject_event(data: DemoEventRequest, background_tasks: BackgroundTasks)
     basin_config = next((b for b in BASINS if b["id"] == data.basin), None)
     if basin_config is None:
         raise HTTPException(status_code=404, detail=f"Unknown basin: {data.basin}")
-    if data.municipality not in basin_config["municipalities"]:
+    if data.municipality not in basin_municipalities(basin_config):
         raise HTTPException(
             status_code=400,
             detail=f"Municipality {data.municipality} is not part of basin {data.basin}"

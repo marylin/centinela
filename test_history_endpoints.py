@@ -12,7 +12,7 @@ import requests
 PORT = 8004
 SERVER_URL = f"http://127.0.0.1:{PORT}"
 
-RIVER_KEYS = {"time", "river_level_m", "threshold_m"}
+SOIL_KEYS = {"time", "moisture_m3m3"}
 RAIN_KEYS = {"time", "precipitation_mm"}
 
 
@@ -49,18 +49,26 @@ def fail(msg):
 
 
 def run_tests():
-    # 1. /basins simulated flag
-    print("\nStep 1: /basins carries the simulated flag...")
-    res = requests.get(f"{SERVER_URL}/basins")
+    # 1. /places registry (and the /basins alias)
+    print("\nStep 1: /places serves the registry with coordinates...")
+    res = requests.get(f"{SERVER_URL}/places")
     if res.status_code != 200:
-        fail(f"GET /basins returned {res.status_code}")
-    basins = {b["id"]: b for b in res.json()}
-    if basins.get("rio_magdalena", {}).get("simulated") is not True:
-        fail(f"rio_magdalena should be simulated=true: {basins.get('rio_magdalena')}")
-    for basin_id, b in basins.items():
-        if basin_id != "rio_magdalena" and b.get("simulated") is not False:
-            fail(f"{basin_id} should be simulated=false: {b}")
-    print("Success: only rio_magdalena is flagged simulated.")
+        fail(f"GET /places returned {res.status_code}")
+    groups = {b["id"]: b for b in res.json()}
+    if len(groups) != 7:
+        fail(f"Expected 7 groups, got {sorted(groups.keys())}")
+    for gid, g in groups.items():
+        if "simulated" in g:
+            fail(f"{gid} still carries a simulated flag: {g}")
+        places = g.get("places") or []
+        if not places or any(not (p.get("id") and isinstance(p.get("lat"), float)) for p in places):
+            fail(f"{gid} places malformed: {places}")
+    if groups["rio_cauca"].get("kind") != "flood-watch" or groups["lima_peru"].get("kind") != "seismic-watch":
+        fail("kind values wrong on the registry")
+    alias = requests.get(f"{SERVER_URL}/basins")
+    if alias.status_code != 200 or alias.json() != res.json():
+        fail("/basins alias does not mirror /places")
+    print("Success: registry served with places + coordinates; no simulated flags.")
 
     # 2. /risk-history seeded series for the default basin
     print("\nStep 2: /risk-history returns a seeded series...")
@@ -98,32 +106,36 @@ def run_tests():
         fail(f"Magdalena history missing its municipalities: {ticks[-1] if ticks else 'no ticks'}")
     print("Success: Magdalena history carries Magdalena municipalities.")
 
-    # 4. /telemetry-history seeded series + provenance contract
-    print("\nStep 4: /telemetry-history returns river + rainfall series...")
+    # 4. /telemetry-history real-series contract (rain + discharge + soil)
+    print("\nStep 4: /telemetry-history returns rainfall + discharge + soil series...")
     res = requests.get(f"{SERVER_URL}/telemetry-history", params={"basin": "rio_cauca"})
     if res.status_code != 200:
         fail(f"GET /telemetry-history returned {res.status_code}")
     body = res.json()
-    river = body.get("river")
     rain = body.get("rainfall")
-    if not isinstance(river, list) or len(river) < 2:
-        fail(f"River series missing/too short: {river}")
+    discharge = body.get("discharge")
+    soil = body.get("soil")
+    if "river" in body:
+        fail("Seeded river series still present in telemetry history")
     if not isinstance(rain, list) or len(rain) < 2:
         fail(f"Rainfall series missing/too short: {rain}")
-    for r in river:
-        if set(r.keys()) != RIVER_KEYS:
-            fail(f"River row keys mismatch: {sorted(r.keys())}")
+    if not isinstance(discharge, list) or len(discharge) < 2:
+        fail(f"Discharge series missing/too short: {discharge}")
+    if not isinstance(soil, list) or len(soil) < 2:
+        fail(f"Soil series missing/too short: {soil}")
     for r in rain:
         if set(r.keys()) != RAIN_KEYS:
             fail(f"Rainfall row keys mismatch: {sorted(r.keys())}")
-    if [r["time"] for r in river] != sorted(r["time"] for r in river):
-        fail("River series not in ascending time order")
-    if [r["time"] for r in rain] != sorted(r["time"] for r in rain):
-        fail("Rainfall series not in ascending time order")
+    for r in soil:
+        if set(r.keys()) != SOIL_KEYS:
+            fail(f"Soil row keys mismatch: {sorted(r.keys())}")
     prov = body.get("provenance") or {}
-    if prov.get("rainfall") != "live" or prov.get("river") != "pipeline-seeded":
+    if prov.get("rainfall") != "live" or prov.get("discharge") != "model-glofas" or prov.get("soil") != "model-ecmwf":
         fail(f"Provenance contract wrong: {prov}")
-    print(f"Success: {len(river)} river rows + {len(rain)} rainfall rows with honest provenance.")
+    scoped = requests.get(f"{SERVER_URL}/telemetry-history", params={"basin": "rio_cauca", "place": "cali"})
+    if scoped.status_code != 200 or scoped.json().get("place") != "cali":
+        fail(f"Place-scoped telemetry failed: {scoped.status_code}")
+    print(f"Success: {len(rain)} rain + {len(discharge)} discharge + {len(soil)} soil rows, honest provenance, place scoping works.")
 
     # 5. Unknown basin is a 404
     print("\nStep 5: /telemetry-history rejects unknown basins...")

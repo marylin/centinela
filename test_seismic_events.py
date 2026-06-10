@@ -57,13 +57,13 @@ def run_tests():
         fail(f"GET /basins returned {res.status_code}")
     basins = {b["id"]: b for b in res.json()}
     expected_kinds = {
-        "rio_cauca": "compound",
-        "rio_magdalena": "compound",
-        "lima_peru": "seismic",
-        "guatemala_city": "seismic",
-        "santiago_chile": "seismic",
-        "mexico_city": "seismic",
-        "port_au_prince": "seismic"
+        "rio_cauca": "flood-watch",
+        "rio_magdalena": "flood-watch",
+        "lima_peru": "seismic-watch",
+        "guatemala_city": "seismic-watch",
+        "santiago_chile": "seismic-watch",
+        "mexico_city": "seismic-watch",
+        "port_au_prince": "seismic-watch"
     }
     for basin_id, kind in expected_kinds.items():
         if basin_id not in basins:

@@ -50,7 +50,7 @@ def run_test_logic(server_url):
     risk_data = res_risk.json()
     print(f"Success: GET /risk returned {len(risk_data)} municipalities:")
     for r in risk_data:
-        print(f"  - {r['municipality']}: score={r['risk_score']}, rain={r['rainfall_mm']}mm, river={r['river_level_m']}m, saturation={r['soil_saturation']}")
+        print(f"  - {r['municipality']}: index={r['risk_score']}, rain={r['rainfall_mm']}mm, discharge={r.get('discharge_m3s')}m3/s, soil={r.get('soil_moisture')}")
 
     # 4. Alert: Query GET /alert
     print("\nStep 3: Checking GET /alert (Gemini-narrated/mocked)...")
@@ -368,7 +368,7 @@ setTimeout(async () => {
     if len(heals) != 1:
         print(f"ERROR: Expected exactly 1 autonomous heal log, got {len(heals)}")
         sys.exit(1)
-    if heals[0]["connector_id"] != "plausibly_illustrate":
+    if heals[0]["connector_id"] != "kung_gleeful":
         print(f"ERROR: Unexpected autonomous heal entry: {heals[0]}")
         sys.exit(1)
     if "autonomous, no human action" not in heals[0]["message"]:
@@ -443,34 +443,35 @@ setTimeout(async () => {
         sys.exit(1)
     print("Success: /basins exposes lima_peru from config.")
 
-    # /risk for Lima: three real municipalities, seismic-dominant, flood/landslide as no-data
+    # /risk for Lima: the registry anchor place, real model-index rows
     lima_risk = requests.get(f"{server_url}/risk", params={"basin": "lima_peru"}).json()
-    expected_munis = {"Lima", "Callao", "Chorrillos"}
+    expected_munis = {"Lima"}
     returned_munis = {r["municipality"] for r in lima_risk}
     if returned_munis != expected_munis:
         print(f"ERROR: Lima risk municipalities mismatch. Expected {expected_munis}, got {returned_munis}")
         sys.exit(1)
     for r in lima_risk:
-        if r["dominant_hazard"] != "SEISMIC":
-            print(f"ERROR: {r['municipality']} dominant_hazard is {r['dominant_hazard']}, expected SEISMIC")
+        if r.get("provenance") != "centinela-model-index":
+            print(f"ERROR: {r['municipality']} missing model-index provenance: {r}")
             sys.exit(1)
-        if r["seismic_score"] <= 0.0:
-            print(f"ERROR: {r['municipality']} has no seismic_score: {r['seismic_score']}")
+        if r["dominant_hazard"] not in ("FLOOD", "LANDSLIDE", "SEISMIC"):
+            print(f"ERROR: {r['municipality']} dominant_hazard invalid: {r['dominant_hazard']}")
             sys.exit(1)
-        # Honesty: flood and landslide must read as no-data (0), never fabricated
-        if r["flood_score"] != 0.0 or r["landslide_score"] != 0.0:
-            print(f"ERROR: {r['municipality']} shows fabricated flood/landslide: flood={r['flood_score']}, landslide={r['landslide_score']}")
+        # Seeded-era fields must be gone entirely.
+        for dead in ("river_level_m", "threshold", "soil_saturation", "slope_angle_deg", "susceptibility_index"):
+            if dead in r:
+                print(f"ERROR: seeded-era field {dead} still present: {r}")
+                sys.exit(1)
+        if not (0.0 <= r["risk_score"] <= 1.0):
+            print(f"ERROR: {r['municipality']} index out of range: {r['risk_score']}")
             sys.exit(1)
-        if r["rainfall_mm"] != 0.0 or r["river_level_m"] != 0.0 or r["soil_saturation"] != 0.0:
-            print(f"ERROR: {r['municipality']} shows fabricated hydrological data")
-            sys.exit(1)
-    print("Success: Lima shows three areas, seismic-dominant, flood/landslide as no-data.")
+    print("Success: Lima serves real model-index rows with no seeded-era fields.")
 
     # /connector-status for Lima: USGS seismic connector only
     lima_status = requests.get(f"{server_url}/connector-status", params={"basin": "lima_peru"}).json()
     lima_connectors = lima_status.get("connectors", [])
-    if not any(c["connector_id"] == "whole_glorify" for c in lima_connectors):
-        print(f"ERROR: Lima connector-status missing the USGS seismic connector: {lima_connectors}")
+    if not any(c["connector_id"] == "kung_gleeful" for c in lima_connectors):
+        print(f"ERROR: Lima connector-status missing the USGS raw events connector: {lima_connectors}")
         sys.exit(1)
     print("Success: Lima connector-status returns the USGS seismic feed.")
 
@@ -500,34 +501,28 @@ setTimeout(async () => {
         sys.exit(1)
     print("Success: /basins exposes guatemala_city from config.")
 
-    # /risk for Guatemala City: three real municipalities, seismic-dominant, flood/landslide as no-data
+    # /risk for Guatemala City: the registry anchor place, real model-index rows
     gt_risk = requests.get(f"{server_url}/risk", params={"basin": "guatemala_city"}).json()
-    expected_gt = {"Guatemala City", "Mixco", "Villa Nueva"}
+    expected_gt = {"Guatemala City"}
     returned_gt = {r["municipality"] for r in gt_risk}
     if returned_gt != expected_gt:
         print(f"ERROR: Guatemala City risk municipalities mismatch. Expected {expected_gt}, got {returned_gt}")
         sys.exit(1)
     for r in gt_risk:
-        if r["dominant_hazard"] != "SEISMIC":
-            print(f"ERROR: {r['municipality']} dominant_hazard is {r['dominant_hazard']}, expected SEISMIC")
+        if r.get("provenance") != "centinela-model-index":
+            print(f"ERROR: {r['municipality']} missing model-index provenance: {r}")
             sys.exit(1)
-        if r["seismic_score"] <= 0.0:
-            print(f"ERROR: {r['municipality']} has no seismic_score: {r['seismic_score']}")
-            sys.exit(1)
-        # Honesty: flood and landslide must read as no-data (0), never fabricated
-        if r["flood_score"] != 0.0 or r["landslide_score"] != 0.0:
-            print(f"ERROR: {r['municipality']} shows fabricated flood/landslide: flood={r['flood_score']}, landslide={r['landslide_score']}")
-            sys.exit(1)
-        if r["rainfall_mm"] != 0.0 or r["river_level_m"] != 0.0 or r["soil_saturation"] != 0.0:
-            print(f"ERROR: {r['municipality']} shows fabricated hydrological data")
-            sys.exit(1)
-    print("Success: Guatemala City shows three areas, seismic-dominant, flood/landslide as no-data.")
+        for dead in ("river_level_m", "threshold", "soil_saturation"):
+            if dead in r:
+                print(f"ERROR: seeded-era field {dead} still present: {r}")
+                sys.exit(1)
+    print("Success: Guatemala City serves real model-index rows with no seeded-era fields.")
 
     # /connector-status for Guatemala City: USGS seismic connector only
     gt_status = requests.get(f"{server_url}/connector-status", params={"basin": "guatemala_city"}).json()
     gt_connectors = gt_status.get("connectors", [])
-    if not any(c["connector_id"] == "whole_glorify" for c in gt_connectors):
-        print(f"ERROR: Guatemala City connector-status missing the USGS seismic connector: {gt_connectors}")
+    if not any(c["connector_id"] == "kung_gleeful" for c in gt_connectors):
+        print(f"ERROR: Guatemala City connector-status missing the USGS raw events connector: {gt_connectors}")
         sys.exit(1)
     print("Success: Guatemala City connector-status returns the USGS seismic feed.")
 
@@ -550,9 +545,9 @@ setTimeout(async () => {
     # 14. Verify the portfolio seismic-only basins (Santiago, Mexico City, Port-au-Prince)
     print("\nStep 13: Verifying seismic-only basins (Santiago, Mexico City, Port-au-Prince)...")
     new_seismic_basins = {
-        "santiago_chile": {"Santiago", "Puente Alto", "Maipu"},
-        "mexico_city": {"Mexico City", "Ecatepec", "Nezahualcoyotl"},
-        "port_au_prince": {"Port-au-Prince", "Carrefour", "Delmas"}
+        "santiago_chile": {"Santiago"},
+        "mexico_city": {"Mexico City"},
+        "port_au_prince": {"Port-au-Prince"}
     }
     for basin_id, expected in new_seismic_basins.items():
         # /basins should expose the basin from config automatically
@@ -568,23 +563,16 @@ setTimeout(async () => {
             print(f"ERROR: {basin_id} risk municipalities mismatch. Expected {expected}, got {returned}")
             sys.exit(1)
         for r in basin_risk:
-            if r["dominant_hazard"] != "SEISMIC":
-                print(f"ERROR: {r['municipality']} dominant_hazard is {r['dominant_hazard']}, expected SEISMIC")
+            if r.get("provenance") != "centinela-model-index":
+                print(f"ERROR: {r['municipality']} missing model-index provenance: {r}")
                 sys.exit(1)
-            if r["seismic_score"] <= 0.0:
-                print(f"ERROR: {r['municipality']} has no seismic_score: {r['seismic_score']}")
-                sys.exit(1)
-            # Honesty: flood and landslide must read as no-data (0), never fabricated
-            if r["flood_score"] != 0.0 or r["landslide_score"] != 0.0:
-                print(f"ERROR: {r['municipality']} shows fabricated flood/landslide: flood={r['flood_score']}, landslide={r['landslide_score']}")
-                sys.exit(1)
-            if r["rainfall_mm"] != 0.0 or r["river_level_m"] != 0.0 or r["soil_saturation"] != 0.0:
-                print(f"ERROR: {r['municipality']} shows fabricated hydrological data")
+            if "river_level_m" in r or "soil_saturation" in r:
+                print(f"ERROR: seeded-era fields still present: {r}")
                 sys.exit(1)
 
         # /connector-status: USGS seismic connector only
         basin_status = requests.get(f"{server_url}/connector-status", params={"basin": basin_id}).json()
-        if not any(c["connector_id"] == "whole_glorify" for c in basin_status.get("connectors", [])):
+        if not any(c["connector_id"] == "kung_gleeful" for c in basin_status.get("connectors", [])):
             print(f"ERROR: {basin_id} connector-status missing the USGS seismic connector: {basin_status}")
             sys.exit(1)
 

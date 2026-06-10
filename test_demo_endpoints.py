@@ -88,10 +88,10 @@ def run_tests():
         fail("Cali missing from risk data after inject")
     if cali["earthquake_magnitude"] != 6.5:
         fail(f"Cali earthquake_magnitude is {cali['earthquake_magnitude']}, expected 6.5")
-    if cali["seismic_score"] != 0.93:
-        fail(f"Cali seismic_score is {cali['seismic_score']}, expected 0.93")
-    if cali["risk_score"] != 0.7:
-        fail(f"Cali risk_score is {cali['risk_score']}, expected 0.7")
+    if cali["seismic_score"] != 0.71:
+        fail(f"Cali seismic_score is {cali['seismic_score']}, expected 0.71")
+    if cali["risk_score"] != 0.75:
+        fail(f"Cali risk_score is {cali['risk_score']}, expected 0.75")
     if cali["dominant_hazard"] != "SEISMIC":
         fail(f"Cali dominant_hazard is {cali['dominant_hazard']}, expected SEISMIC")
     if cali.get("simulated") is not True:
@@ -105,12 +105,12 @@ def run_tests():
         baseline_row = next(b for b in baseline_risk if b["municipality"] == r["municipality"])
         if r != baseline_row:
             fail(f"Non-injected municipality changed: {r} vs {baseline_row}")
-    print("Success: Cali spiked (0.42 -> 0.7, SEISMIC, simulated), other rows unchanged.")
+    print("Success: Cali index spiked (0.49 -> 0.75, SEISMIC, simulated), other rows unchanged.")
 
     print("\nStep 5: /alert reflects the simulated event...")
     alert = requests.get(f"{SERVER_URL}/alert", params={"basin": "rio_cauca"}).json()
     cali_alert = next((a for a in alert["graded_alert"] if a["municipality"] == "Cali"), None)
-    if cali_alert is None or cali_alert["risk_score"] != 0.7 or cali_alert["severity"] != "HIGH":
+    if cali_alert is None or cali_alert["risk_score"] != 0.75 or cali_alert["severity"] != "HIGH":
         fail(f"Cali alert grading wrong: {cali_alert}")
     if "Cali" not in alert["agency_incident"]["affected_municipalities"]:
         fail(f"Cali missing from affected municipalities: {alert['agency_incident']}")
@@ -164,7 +164,7 @@ def run_tests():
         time.sleep(0.5)
         basin_risk = requests.get(f"{SERVER_URL}/risk", params={"basin": basin_id}).json()
         row = next(r for r in basin_risk if r["municipality"] == muni)
-        if row["seismic_score"] != 1.0 or row["risk_score"] != 1.0:
+        if row["seismic_score"] != 0.86 or row["risk_score"] != 0.86:
             fail(f"{basin_id} seismic-only spike wrong: {row}")
         if row.get("simulated") is not True or row["dominant_hazard"] != "SEISMIC":
             fail(f"{basin_id} merged row wrong: {row}")
@@ -172,7 +172,7 @@ def run_tests():
         time.sleep(0.5)
         if requests.get(f"{SERVER_URL}/risk", params={"basin": basin_id}).json() != baseline:
             fail(f"{basin_id} risk did not reset after clear")
-        print(f"  {basin_id}: {muni} spiked to EXTREME and reset")
+        print(f"  {basin_id}: {muni} spiked to {row['risk_score']} and reset")
     print("Success: every seismic-only basin spikes and resets.")
 
     print("\nStep 10: validation errors...")
