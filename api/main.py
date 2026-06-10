@@ -1,21 +1,20 @@
+# core must be imported FIRST: it runs load_dotenv() before any module-level
+# os.environ reads here or in any other api module.
+import api.core as core
+from api.core import TESTING, db, MOCK_DB_STATE
+
 import os
 import asyncio
 import time
 import json
 import subprocess
 from datetime import datetime, timezone, timedelta
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Response, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
-from google import genai
 from google.cloud import bigquery
 from pydantic import BaseModel
-import firebase_admin
-from firebase_admin import credentials, messaging
-
-# Load environment variables
-load_dotenv()
+from firebase_admin import messaging
 
 import requests
 import concurrent.futures
@@ -71,32 +70,10 @@ def fetch_precipitation_for_muni(muni: str, lat: float, lng: float, api_key: str
             
     return None
 
-TESTING = os.environ.get("TESTING", "false").lower() == "true"
-
-# Initialize Firebase Admin SDK using Application Default Credentials (ADC)
-try:
-    firebase_admin.initialize_app()
-    print("Firebase Admin SDK initialized successfully using ADC.")
-except ValueError:
-    pass
-except Exception as e:
-    print(f"Warning: Firebase Admin SDK failed to initialize: {e}")
-
-# Initialize Firestore client with a fallback for local testing
-db = None
-try:
-    if not TESTING:
-        from firebase_admin import firestore
-        db = firestore.client()
-        print("Firestore client initialized successfully.")
-except Exception as e:
-    print(f"Warning: Failed to initialize Firestore client: {e}")
-
 # In-memory fallbacks/stores
 FCM_TOKENS = set()
 AUTONOMOUS_HEALS = []
 INCIDENTS = []
-REOPENED_INCIDENT_ID = None
 
 def get_fcm_tokens():
     if db is not None:
@@ -111,7 +88,7 @@ def add_fcm_token(token):
         try:
             db.collection("fcm_tokens").document(token).set({
                 "token": token,
-                "registered_at": firestore.SERVER_TIMESTAMP
+                "registered_at": core.firestore.SERVER_TIMESTAMP
             })
             return
         except Exception as e:
@@ -416,7 +393,7 @@ def generate_narration_in_background(basin: str, risk_data: list):
 
 # Local simulation state in case Fivetran API is rate-limited (429)
 LOCAL_PAUSED_STATES = {}  # connector_id -> bool
-MOCK_DB_STATE = {"populated": True}
+# MOCK_DB_STATE lives in api.core (from-imported above; mutated in place only).
 
 # Import the existing agent logic
 from rapid_agent.agent import check_and_heal_connector, get_mcp_toolset, call_with_retry
@@ -945,10 +922,9 @@ def testing_index_rows(basin_config):
 def compute_base_risk(basin: str = "rio_cauca"):
     """Hazard-index rows per place in the scoped group (name kept from the
     composite era so call sites stay stable)."""
-    global REOPENED_INCIDENT_ID
-    if REOPENED_INCIDENT_ID:
+    if core.REOPENED_INCIDENT_ID:
         incidents = get_incidents_list()
-        matching = next((inc for inc in incidents if inc["id"] == REOPENED_INCIDENT_ID), None)
+        matching = next((inc for inc in incidents if inc["id"] == core.REOPENED_INCIDENT_ID), None)
         if matching and "risk_data" in matching:
             return matching["risk_data"]
 
@@ -1381,11 +1357,11 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
 @app.get("/alert")
 def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None):
     """Turns the current risk scores into graded alerts, incident report, and resident warning."""
-    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES, GENERATING_NARRATIONS, REOPENED_INCIDENT_ID
-    
-    if REOPENED_INCIDENT_ID:
+    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES, GENERATING_NARRATIONS
+
+    if core.REOPENED_INCIDENT_ID:
         incidents = get_incidents_list()
-        matching = next((inc for inc in incidents if inc["id"] == REOPENED_INCIDENT_ID), None)
+        matching = next((inc for inc in incidents if inc["id"] == core.REOPENED_INCIDENT_ID), None)
         if matching:
             risk_data = matching.get("risk_data", [])
             graded = []
@@ -2069,21 +2045,21 @@ def get_incidents():
 @app.post("/incidents/{incident_id}/reopen")
 def reopen_incident(incident_id: str):
     """Reopens a past incident override to display on the dashboard."""
-    global REOPENED_INCIDENT_ID, CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
+    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
     incidents = get_incidents_list()
     matching = next((inc for inc in incidents if inc["id"] == incident_id), None)
     if not matching:
         raise HTTPException(status_code=404, detail="Incident not found")
-    REOPENED_INCIDENT_ID = incident_id
+    core.REOPENED_INCIDENT_ID = incident_id
     CACHED_ALERT_RESPONSES.clear()
     CACHED_RISK_DATA_JSONS.clear()
-    return {"status": "Success", "reopened_incident_id": REOPENED_INCIDENT_ID}
+    return {"status": "Success", "reopened_incident_id": core.REOPENED_INCIDENT_ID}
 
 @app.post("/incidents/clear-reopen")
 def clear_reopen():
     """Clears reopened incident override and resumes live data view."""
-    global REOPENED_INCIDENT_ID, CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
-    REOPENED_INCIDENT_ID = None
+    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
+    core.REOPENED_INCIDENT_ID = None
     CACHED_ALERT_RESPONSES.clear()
     CACHED_RISK_DATA_JSONS.clear()
     return {"status": "Success"}
