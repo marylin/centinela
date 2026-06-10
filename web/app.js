@@ -767,18 +767,43 @@ function searchPlacesByType(origin, type) {
   });
 }
 
-// Gather candidate safe points across all types; dedupe by place_id.
-async function gatherSafeCandidates(origin) {
-  const settled = await Promise.allSettled(SAFE_PLACE_TYPES.map(t => searchPlacesByType(origin, t)));
-  const anyResolved = settled.some(s => s.status === "fulfilled");
-  if (!anyResolved) throw new Error("PLACES_FAILED"); // every type errored (e.g. REQUEST_DENIED)
+// Project a point dist metres from origin along a compass bearing.
+function offsetPoint(origin, bearingDeg, distM) {
+  const R = 6371000;
+  const br = bearingDeg * Math.PI / 180;
+  const la1 = origin.lat * Math.PI / 180;
+  const lo1 = origin.lng * Math.PI / 180;
+  const dr = distM / R;
+  const la2 = Math.asin(Math.sin(la1) * Math.cos(dr) + Math.cos(la1) * Math.sin(dr) * Math.cos(br));
+  const lo2 = lo1 + Math.atan2(Math.sin(br) * Math.sin(dr) * Math.cos(la1),
+    Math.cos(dr) - Math.sin(la1) * Math.sin(la2));
+  return { lat: la2 * 180 / Math.PI, lng: lo2 * 180 / Math.PI };
+}
 
+// Route semantics (R3): a destination must EARN the word "safety".
+// Flood profile: ≥10 m elevation gain over the origin, ≥400 m away, searched
+// outward along the computed uphill direction, with a name-quality filter.
+// Quake profile: the NEAREST open assembly area (park/stadium) — proximity is
+// the correct criterion after shaking; elevation is irrelevant.
+const FLOOD_MIN_GAIN_M = 10;
+const FLOOD_MIN_DIST_M = 400;
+const ROUTE_NAME_BLOCKLIST = /jard[ií]n|kinder|preescolar|guarder|consultorio|dental|farmacia|veterinar/i;
+const QUAKE_PLACE_TYPES = ["park", "stadium"];
+
+// Gather candidate places of the given types around one or more points.
+async function gatherCandidatesAt(points, types) {
+  const searches = [];
+  points.forEach(pt => types.forEach(t => searches.push(searchPlacesByType(pt, t))));
+  const settled = await Promise.allSettled(searches);
+  const anyResolved = settled.some(s => s.status === "fulfilled");
+  if (!anyResolved) throw new Error("PLACES_FAILED");
   const seen = new Set();
   const candidates = [];
   settled.forEach(s => {
     if (s.status !== "fulfilled") return;
     s.value.forEach(p => {
       if (!p.place_id || seen.has(p.place_id) || !p.geometry || !p.geometry.location) return;
+      if (ROUTE_NAME_BLOCKLIST.test(p.name || "")) return;
       seen.add(p.place_id);
       candidates.push({
         name: p.name,
@@ -787,7 +812,37 @@ async function gatherSafeCandidates(origin) {
       });
     });
   });
-  return candidates.slice(0, 12); // cap elevation lookups
+  return candidates.slice(0, 14); // cap elevation lookups
+}
+
+// Flood destination: closest place that is genuinely on higher ground.
+async function chooseFloodDestination(origin, muniName) {
+  const searchPoints = [origin];
+  const uphillDir = elevationDirCache[muniName];
+  if (uphillDir && COMPASS_DEGREES[uphillDir] !== undefined) {
+    searchPoints.push(offsetPoint(origin, COMPASS_DEGREES[uphillDir], 1300));
+    searchPoints.push(offsetPoint(origin, COMPASS_DEGREES[uphillDir], 2600));
+  }
+  const candidates = (await gatherCandidatesAt(searchPoints, SAFE_PLACE_TYPES))
+    .map(c => ({ ...c, dist: haversineMeters(origin, c.coords) }))
+    .filter(c => c.dist >= FLOOD_MIN_DIST_M);
+  if (!candidates.length) return null;
+  const elevations = await fetchElevations([origin, ...candidates.map(c => c.coords)]);
+  if (!elevations) return null; // cannot verify gain -> no honest route
+  const originElev = elevations[0];
+  const qualified = candidates
+    .map((c, i) => ({ ...c, gain: elevations[i + 1] - originElev }))
+    .filter(c => c.gain >= FLOOD_MIN_GAIN_M)
+    .sort((a, b) => a.dist - b.dist);
+  return qualified[0] || null;
+}
+
+// Quake destination: nearest open assembly area.
+async function chooseQuakeDestination(origin) {
+  const candidates = (await gatherCandidatesAt([origin], QUAKE_PLACE_TYPES))
+    .map(c => ({ ...c, dist: haversineMeters(origin, c.coords) }))
+    .sort((a, b) => a.dist - b.dist);
+  return candidates[0] || null;
 }
 
 // Promise wrapper for batch elevation; resolves null on any failure (caller degrades).
@@ -809,40 +864,6 @@ function fetchElevations(points) {
 // ground. We restrict the choice to the nearest cluster of safe points so the
 // route stays walkable, then bias uphill WITHIN that cluster — never trading a
 // nearby refuge for a far one just because it sits higher.
-const NEAR_CLUSTER = 5;
-async function chooseHigherGroundDestination(origin, candidates, muniName) {
-  const elevations = await fetchElevations([origin, ...candidates.map(c => c.coords)]);
-  const enriched = candidates.map((c, i) => ({
-    ...c,
-    dist: haversineMeters(origin, c.coords),
-    elev: elevations ? elevations[i + 1] : null
-  }));
-  const originElev = elevations ? elevations[0] : null;
-
-  enriched.sort((a, b) => a.dist - b.dist);
-  const near = enriched.slice(0, NEAR_CLUSTER); // nearest safe points only
-
-  // Live elevation: among the nearest, choose the highest ground.
-  const withElev = near.filter(c => c.elev !== null);
-  if (originElev !== null && withElev.length) {
-    withElev.sort((a, b) => b.elev - a.elev);
-    const dest = withElev[0];
-    return { dest, higher: dest.elev > originElev + 1 };
-  }
-
-  // Elevation degraded: bias by the bundle's uphill compass direction if known.
-  const uphillDir = elevationDirCache[muniName];
-  if (uphillDir && COMPASS_DEGREES[uphillDir] !== undefined) {
-    const target = COMPASS_DEGREES[uphillDir];
-    const aligned = near.filter(c => angleDiff(bearingDegrees(origin, c.coords), target) <= 90);
-    const pool = aligned.length ? aligned : near;
-    pool.sort((a, b) => a.dist - b.dist);
-    return { dest: pool[0], higher: aligned.length > 0 };
-  }
-
-  return { dest: near[0], higher: false };
-}
-
 // Promise wrapper for a WALKING route.
 function fetchWalkingRoute(origin, destination) {
   return new Promise((resolve, reject) => {
@@ -880,28 +901,53 @@ async function findSafeRoute() {
   const detail = document.getElementById("safe-route-detail");
   if (safeRouteBusy) return;
 
-  const selectedMuni = appState.selectedMuni || (database.risk && database.risk.length ? database.risk[0] : null);
-  if (!selectedMuni) { setRouteStatus("No at-risk area is selected yet."); return; }
+  // Profile + origin per scope: quake semantics for seismic-watch places and
+  // for the cross-mode event view (epicenter origin); flood semantics with
+  // earn-the-gain criteria for flood-watch places.
+  const eventMode = !!(appState.seismicFocus && appState.seismicFocus.event &&
+    typeof appState.seismicFocus.event.latitude === "number");
+  let profile, origin, routeKey, scopeLabel;
+  if (eventMode) {
+    const ev = appState.seismicFocus.event;
+    profile = "quake";
+    routeKey = `event:${ev.id}`;
+    scopeLabel = ev.place || "the event area";
+    const epicenter = { lat: ev.latitude, lng: ev.longitude };
+    origin = { coords: epicenter, label: "the epicenter (demo origin)" };
+    if (youAreHereMarker && typeof youAreHereMarker.getPosition === "function") {
+      const p = youAreHereMarker.getPosition();
+      if (p && haversineMeters({ lat: p.lat(), lng: p.lng() }, epicenter) <= 40000) {
+        origin = { coords: { lat: p.lat(), lng: p.lng() }, label: "your location" };
+      }
+    }
+  } else {
+    const selectedMuni = appState.selectedMuni || (database.risk && database.risk.length ? database.risk[0] : null);
+    if (!selectedMuni) { setRouteStatus("No monitored place is selected yet."); return; }
+    const group = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
+    profile = group && group.kind === "seismic-watch" ? "quake" : "flood";
+    routeKey = selectedMuni.municipality;
+    scopeLabel = selectedMuni.municipality;
+    origin = resolveRouteOrigin(selectedMuni);
+  }
 
-  // Maps / Places must be loaded for any real result.
   if (typeof google === "undefined" || !google.maps || !google.maps.places || !publicMap) {
     clearSafeRoute();
     setRouteStatus("No route available right now. Mapping service is unavailable.");
     return;
   }
-
-  const origin = resolveRouteOrigin(selectedMuni);
   if (!origin) {
     clearSafeRoute();
-    setRouteStatus("No route available right now. Your area's location is unknown.");
+    setRouteStatus("No route available right now. The location is unknown.");
     return;
   }
 
   safeRouteBusy = true;
-  appState.routeMuni = selectedMuni.municipality;
+  appState.routeMuni = routeKey;
   if (btn) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
   if (detail) detail.hidden = true;
-  setRouteStatus("Searching for the nearest hospital or safe point…");
+  setRouteStatus(profile === "quake"
+    ? "Searching for the nearest open assembly area…"
+    : "Searching for a safe point on verified higher ground…");
 
   try {
     if (!placesService) placesService = new google.maps.places.PlacesService(publicMap);
@@ -914,16 +960,24 @@ async function findSafeRoute() {
       });
     }
 
-    const candidates = await gatherSafeCandidates(origin.coords);
-    if (!candidates.length) {
+    const dest = profile === "quake"
+      ? await chooseQuakeDestination(origin.coords)
+      : await chooseFloodDestination(origin.coords, routeKey);
+
+    if (!dest) {
       clearSafeRoute();
-      setRouteStatus("No route available. No hospital or safe point was found nearby.");
+      if (profile === "flood") {
+        const dir = elevationDirCache[routeKey];
+        setRouteStatus(dir
+          ? `No verifiable higher-ground safe point within walking range. Move uphill toward the ${dir} and follow local authority instructions.`
+          : "No verifiable higher-ground safe point within walking range. Move away from the river toward higher ground and follow local authority instructions.");
+      } else {
+        setRouteStatus("No open assembly area was found nearby. Move to open ground away from buildings.");
+      }
       return;
     }
 
-    const { dest, higher } = await chooseHigherGroundDestination(origin.coords, candidates, selectedMuni.municipality);
     setRouteStatus(`Calculating a walking route to ${dest.name}…`);
-
     const result = await fetchWalkingRoute(origin.coords, dest.coords);
     const leg = result.routes[0] && result.routes[0].legs[0];
     if (!leg) {
@@ -932,24 +986,24 @@ async function findSafeRoute() {
       return;
     }
 
-    // Draw the real route on the public map. Very short routes otherwise
-    // fit-zoom past the styled tiles into a featureless canvas, so clamp.
+    // Draw the real route on the public map; clamp the fit-zoom for very
+    // short routes (featureless beige canvas past the styled tiles).
     directionsRenderer.setMap(publicMap);
     directionsRenderer.setDirections(result);
     google.maps.event.addListenerOnce(publicMap, "idle", () => {
       if (publicMap.getZoom() > 16) publicMap.setZoom(16);
     });
 
-    // Honest destination labeling — never "official shelter".
     const destEl = document.getElementById("safe-route-dest");
     const metaEl = document.getElementById("safe-route-meta");
     const stepsEl = document.getElementById("safe-route-steps");
     if (destEl) {
-      destEl.textContent = `Nearest hospital / safe point: ${dest.name} (${safeTypeLabel(dest.types)})` +
-        (higher ? " — on higher ground." : "");
+      destEl.textContent = profile === "quake"
+        ? `Nearest open assembly area: ${dest.name} (${safeTypeLabel(dest.types)})`
+        : `Safe point on higher ground: ${dest.name} (${safeTypeLabel(dest.types)}) — about ${Math.round(dest.gain)} m above your starting point.`;
     }
     if (metaEl) {
-      metaEl.textContent = `Walking distance ${leg.distance.text}, about ${leg.duration.text}, from ${origin.label}.`;
+      metaEl.textContent = `Walking distance ${leg.distance.text}, about ${leg.duration.text}, from ${origin.label} near ${scopeLabel}.`;
     }
     if (stepsEl) {
       stepsEl.innerHTML = leg.steps.map(s => {
@@ -961,7 +1015,6 @@ async function findSafeRoute() {
     if (detail) detail.hidden = false;
     setRouteStatus(`Route ready: ${leg.distance.text}, about ${leg.duration.text} on foot to ${dest.name}.`);
   } catch (err) {
-    // Any Places/Directions failure (REQUEST_DENIED, ZERO_RESULTS, network) lands here.
     clearSafeRoute();
     setRouteStatus("No route available right now. The mapping service did not return a route.");
   } finally {
@@ -3033,7 +3086,13 @@ window.reopenIncident = async (id) => {
 function populateMuniDropdown() {
   const munis = getBasinMunis(appState.selectedBasin);
 
-  if (!appState.selectedMuni || !munis.includes(appState.selectedMuni.municipality)) {
+  if (appState.pendingPublicMuni && munis.includes(appState.pendingPublicMuni)) {
+    const picked = database.risk.find(r => r.municipality === appState.pendingPublicMuni);
+    if (picked) {
+      appState.selectedMuni = picked;
+      appState.pendingPublicMuni = null;
+    }
+  } else if (!appState.selectedMuni || !munis.includes(appState.selectedMuni.municipality)) {
     const updated = database.risk.find(r => r.municipality === munis[0]);
     appState.selectedMuni = updated || { municipality: munis[0], risk_score: 0, dominant_hazard: "FLOOD" };
   } else {
@@ -3043,27 +3102,36 @@ function populateMuniDropdown() {
     }
   }
 
-  renderPublicAreaStrip(munis);
+  renderPublicAreaStrip();
 }
 
-function renderPublicAreaStrip(munis) {
+// Public area selection (cards or map markers): the route, hero, alert card,
+// and timeline all follow it.
+function renderPublicAreaStrip() {
   const strip = document.getElementById("public-area-strip");
   if (!strip) return;
-  const list = munis || [];
 
-  // Same stable-node treatment as the scope strip (tap race fix).
-  const desiredKeys = list.join("|");
+  // Every monitored place in the registry is selectable (E1); the scoped
+  // group's places show live severity, others show their watch kind.
+  const items = [];
+  (appState.basins || []).forEach(g => (g.places || []).forEach(p => items.push({
+    name: p.name, group: g, kindLabel: g.kind === "seismic-watch" ? "Seismic watch" : "Flood watch"
+  })));
+
+  const desiredKeys = items.map(i => i.name).join("|");
   if (strip.dataset.keys !== desiredKeys) {
-    strip.innerHTML = list.map(name => `
-      <button type="button" class="scope-item public-area-item" data-public-area="${escapeHtml(name)}">
-        <span class="scope-item-name">${escapeHtml(name)}</span>
+    strip.innerHTML = items.map(i => `
+      <button type="button" class="scope-item public-area-item" data-public-area="${escapeHtml(i.name)}">
+        <span class="scope-item-name">${escapeHtml(i.name)}</span>
         <span class="scope-item-meta"></span>
       </button>`).join("");
     strip.dataset.keys = desiredKeys;
   }
 
-  Array.from(strip.children).forEach(el => {
-    const name = el.dataset.publicArea;
+  Array.from(strip.children).forEach((el, idx) => {
+    const item = items[idx];
+    if (!item) return;
+    const name = item.name;
     const risk = database.risk.find(r => r.municipality === name);
     const sev = risk ? getSeverityConfig(risk.risk_score) : null;
     const active = !!(appState.selectedMuni && appState.selectedMuni.municipality === name);
@@ -3071,17 +3139,25 @@ function renderPublicAreaStrip(munis) {
     el.setAttribute("aria-pressed", String(active));
     el.style.borderLeftColor = sev ? sev.colorHex : "var(--border-color)";
     const metaEl = el.querySelector(".scope-item-meta");
-    const txt = sev ? `${sev.label} · ${(risk.risk_score * 100).toFixed(0)}%` : "—";
+    const txt = sev
+      ? `${sev.label} · ${(risk.risk_score * 100).toFixed(0)}%`
+      : `${item.kindLabel} · ${item.group.country}`;
     if (metaEl && metaEl.textContent !== txt) metaEl.textContent = txt;
   });
 }
 
-// Public area selection (cards or map markers): the route, hero, alert card,
-// and timeline all follow it.
+
 function selectPublicArea(muniName) {
+  const owner = (appState.basins || []).find(g => (g.places || []).some(p => p && p.name === muniName));
+  if (owner && owner.id !== appState.selectedBasin) {
+    appState.pendingPublicMuni = muniName;
+    selectGroupScope(owner.id);
+    return;
+  }
   const muniObj = database.risk.find(r => r.municipality === muniName);
   if (!muniObj) return;
   appState.selectedMuni = muniObj;
+  appState.publicCenteredBasin = null; // recenter the public map on the pick
   renderRiskTimeline();
   renderPublicView();
 }
@@ -3188,7 +3264,7 @@ function renderPublicSeismicList() {
 // Show/hide the basin-specific public sections (irrelevant when the page is
 // aligned to a remote seismic event).
 function setPublicBasinSectionsVisible(visible) {
-  ["safe-route-card", "public-advisories-card", "public-area-section"].forEach(id => {
+  ["public-advisories-card", "public-area-section"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.hidden = !visible;
   });
@@ -3207,6 +3283,14 @@ function renderPublicEventView(focus) {
   if (!heroContainer || !ev) return;
 
   setPublicBasinSectionsVisible(false);
+
+  // The route card stays available in the event view (epicenter routing).
+  const evRouteKey = `event:${ev.id}`;
+  if (appState.routeMuni && appState.routeMuni !== evRouteKey) {
+    clearSafeRoute();
+    appState.routeMuni = null;
+    setRouteStatus("Tap the button to find the nearest open assembly area near the epicenter.");
+  }
 
   const mag = Number(ev.magnitude) || 0;
   const simulated = ev.simulated === true;
@@ -3359,13 +3443,38 @@ function renderPublicView() {
     contextEl.textContent = BASIN_HISTORY[appState.selectedBasin] || "";
   }
 
-  let whatThisMeans = "Hydrological conditions are safe and stable.";
-  let guidanceItems = [
+  const scopedGroupKind = ((appState.basins || []).find(b => b && b.id === appState.selectedBasin) || {}).kind || "flood-watch";
+  const quakeWatch = scopedGroupKind === "seismic-watch";
+
+  let whatThisMeans = quakeWatch
+    ? "No elevated hazard signals right now. This area is monitored for earthquake activity."
+    : "Hydrological conditions are safe and stable.";
+
+  let guidanceItems = quakeWatch ? [
+    "Know your nearest open assembly area (park, plaza, stadium).",
+    "Secure heavy furniture and keep an emergency kit reachable.",
+    "Stay informed via local safety advisories and public announcements."
+  ] : [
     "No immediate actions are required.",
     "Stay informed via local safety advisories and public announcements."
   ];
   
-  if (statusWord === "CRITICAL") {
+  if (quakeWatch && (statusWord === "CRITICAL" || statusWord === "DANGER")) {
+    whatThisMeans = "Strong seismic activity has been detected nearby. Expect aftershocks.";
+    guidanceItems = [
+      HAZARD_ACTIONS.SEISMIC,
+      "Move to open ground away from buildings and power lines.",
+      "Expect aftershocks; do not re-enter damaged structures.",
+      "Follow instructions from civil protection authorities."
+    ];
+  } else if (quakeWatch && statusWord === "WARNING") {
+    whatThisMeans = "Elevated hazard signals for this area. Stay alert.";
+    guidanceItems = [
+      "Review your earthquake plan and identify the nearest open assembly area.",
+      "Keep emergency supplies and documents reachable.",
+      "Follow official channels for updates."
+    ];
+  } else if (statusWord === "CRITICAL") {
     whatThisMeans = "Severe risk of flood, landslide, or seismic activity. Immediate threat to life and property.";
     guidanceItems = [
       "EVACUATE IMMEDIATELY to higher ground.",

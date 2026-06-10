@@ -97,7 +97,7 @@ def update(configuration: dict, state: dict):
         try:
             flood = _get_json(FLOOD_URL, {
                 "latitude": place["lat"], "longitude": place["lng"],
-                "daily": "river_discharge", "past_days": 31, "forecast_days": 1
+                "daily": "river_discharge", "past_days": 92, "forecast_days": 1
             })
             daily = flood.get("daily") or {}
             for date_str, value in zip(daily.get("time") or [], daily.get("river_discharge") or []):

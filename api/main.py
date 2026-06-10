@@ -724,7 +724,7 @@ def compute_hazard_index(basin_config):
                APPROX_QUANTILES(discharge_m_3_s, 100)[OFFSET(90)] AS p90
         FROM global_hydro.river_discharge
         WHERE place_id IN ({ids_sql})
-          AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 31 DAY)
+          AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 92 DAY)
         GROUP BY place_id"""
         for row in client.query(q).result():
             d = dict(row)
