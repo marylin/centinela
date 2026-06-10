@@ -60,6 +60,11 @@ def geocode_place(name, cc=None):
     if cc:
         results = [r for r in results
                    if (r.get("country_code") or "").upper() == cc.upper()]
+    # Prefer populated places (PPL*): without this, "Santo Domingo" matches
+    # the Dominican Republic COUNTRY entity (PCLI) on raw population.
+    ppl = [r for r in results if (r.get("feature_code") or "").startswith("PPL")]
+    if ppl:
+        results = ppl
     if not results:
         return None
     best = max(results, key=lambda r: r.get("population") or 0)
