@@ -31,6 +31,10 @@ TESTING_RESOLUTION = {
     "santiago":        {"anchor": {"lat": -33.4489, "lng": -70.6693}, "p50": 2.5},
     "mexico_city":     {"anchor": {"lat": 19.4326, "lng": -99.1332}, "p50": 13.0},
     "port_au_prince":  {"anchor": {"lat": 18.5944, "lng": -72.3074}, "p50": 9.7},
+    # Promoted candidates (fixture values = the verified 2026-06-10 resolutions).
+    "manaus":          {"anchor": {"lat": -3.10194, "lng": -60.025},  "p50": 177010.0},
+    "bogota":          {"anchor": {"lat": 4.60971, "lng": -74.08175}, "p50": 55.6},
+    "managua":         {"anchor": {"lat": 12.13282, "lng": -86.2504}, "p50": 26.2},
 }
 
 def testing_resolution():

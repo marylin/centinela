@@ -21,22 +21,26 @@ ATTRIBUTION = "USGS FDSN catalog + GloFAS reanalysis (Open-Meteo)"
 
 # The candidate pool: names only, NOTHING coordinate-shaped. Coordinates and
 # cell metadata are DERIVED at refresh time through the shared resolver
-# (geocoded anchor + strongest-discharge GloFAS cell; the probe finds the Rio
-# Negro at Manaus on its own). aqi_covered marks Google AQI availability
-# (probed 2026-06-10).
+# (geocoded anchor + strongest-discharge GloFAS cell). aqi_covered marks
+# VERIFIED Google AQI availability (probed 2026-06-10; unprobed = False, the
+# badge simply does not show). Bogotá / Managua / Manaus were promoted into
+# the monitored registry 2026-06-10; the pool is global, not LatAm-only.
 CANDIDATES = [
-    {"name": "Bogotá", "country": "Colombia", "cc": "CO", "aqi_covered": True},
     {"name": "Medellín", "country": "Colombia", "cc": "CO", "aqi_covered": True},
     {"name": "Quito", "country": "Ecuador", "cc": "EC", "aqi_covered": True},
     {"name": "Guayaquil", "country": "Ecuador", "cc": "EC", "aqi_covered": True},
     {"name": "La Paz", "country": "Bolivia", "cc": "BO", "aqi_covered": False},
     {"name": "San Salvador", "country": "El Salvador", "cc": "SV", "aqi_covered": False},
-    {"name": "Managua", "country": "Nicaragua", "cc": "NI", "aqi_covered": False},
     {"name": "Tegucigalpa", "country": "Honduras", "cc": "HN", "aqi_covered": False},
     {"name": "Santo Domingo", "country": "Dominican Republic", "cc": "DO", "aqi_covered": False},
     {"name": "Kingston", "country": "Jamaica", "cc": "JM", "aqi_covered": False},
     {"name": "Buenos Aires", "country": "Argentina", "cc": "AR", "aqi_covered": True},
-    {"name": "Manaus", "country": "Brazil", "cc": "BR", "aqi_covered": True},
+    {"name": "Jakarta", "country": "Indonesia", "cc": "ID", "aqi_covered": False},
+    {"name": "Manila", "country": "Philippines", "cc": "PH", "aqi_covered": False},
+    {"name": "Dhaka", "country": "Bangladesh", "cc": "BD", "aqi_covered": False},
+    {"name": "Kathmandu", "country": "Nepal", "cc": "NP", "aqi_covered": False},
+    {"name": "Istanbul", "country": "Türkiye", "cc": "TR", "aqi_covered": False},
+    {"name": "Tokyo", "country": "Japan", "cc": "JP", "aqi_covered": False},
 ]
 
 

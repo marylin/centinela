@@ -65,6 +65,28 @@ BASINS = [
         "kind": "seismic-watch",
         "places": [{"id": "port_au_prince", "name": "Port-au-Prince"}],
         "connectors": REAL_CONNECTORS
+    },
+    # Promoted from the watchlist 2026-06-10 (evidence in
+    # docs/02-Requirements/centinela-activity-scoring.md): Manaus rides the
+    # Amazon's June peak, Bogotá is flood-active, Managua anchors the active
+    # Cocos margin. Coordinates derive like everywhere else.
+    {
+        "id": "manaus", "name": "Manaus", "country": "Brazil", "cc": "BR",
+        "kind": "flood-watch",
+        "places": [{"id": "manaus", "name": "Manaus"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "bogota", "name": "Bogotá", "country": "Colombia", "cc": "CO",
+        "kind": "flood-watch",
+        "places": [{"id": "bogota", "name": "Bogotá"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "managua", "name": "Managua", "country": "Nicaragua", "cc": "NI",
+        "kind": "seismic-watch",
+        "places": [{"id": "managua", "name": "Managua"}],
+        "connectors": REAL_CONNECTORS
     }
 ]
 

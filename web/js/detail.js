@@ -109,10 +109,18 @@ function stopDetailPoll() {
   if (detailTimer) { clearInterval(detailTimer); detailTimer = null; }
 }
 
+let lastAlertGroup = null;
+
 async function onSelectionChange() {
   stopDetailPoll();
   const sel = state.selection;
   if (!sel) return;
+  // Alert payloads are per group: never let another group's narration or
+  // advisories linger across a selection change.
+  if (sel.groupId !== lastAlertGroup) {
+    lastAlert = null;
+    lastAlertGroup = sel.groupId;
+  }
   renderRail();
 
   const monitored = sel.kind === "place";

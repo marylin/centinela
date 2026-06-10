@@ -35,12 +35,12 @@ export function renderRail() {
     if (item.kind === "place") {
       const row = (state.riskByGroup[item.groupId] || []).find(r => r.municipality === item.name);
       score = row ? Number(row.risk_score) || 0 : null;
-      const s = summaries[item.groupId];
-      el.style.order = String((s ? s.rank : 50) * 10 + (idx % 10));
+      // Severity ordering: worst first; monitored block stays above candidates.
+      el.style.order = String(score === null ? 1500 : 1000 - Math.round(score * 1000));
     } else {
       const r = (((state.watchlist || {}).results) || []).find(x => x.name === item.name);
       score = r ? Number(r.activity_score) || 0 : null;
-      el.style.order = String(1000 + idx);
+      el.style.order = String(score === null ? 4500 : 4000 - Math.round(score * 1000));
     }
     const sev = score === null ? null : getSeverityConfig(score);
     el.style.borderLeftColor = sev ? sev.colorHex : "var(--border-color)";

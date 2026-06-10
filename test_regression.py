@@ -542,8 +542,8 @@ try {
         print(f"ERROR: watchlist computed_at missing: {watch.get('computed_at')}")
         sys.exit(1)
     rows = watch.get("results", [])
-    if len(rows) != 12:
-        print(f"ERROR: watchlist expected 12 candidates, got {len(rows)}")
+    if len(rows) != 15:
+        print(f"ERROR: watchlist expected 15 candidates, got {len(rows)}")
         sys.exit(1)
     scores = [r["activity_score"] for r in rows]
     if scores != sorted(scores, reverse=True):
@@ -557,13 +557,18 @@ try {
         if missing:
             print(f"ERROR: watchlist row {r.get('name')} missing fields: {missing}")
             sys.exit(1)
-    if sum(1 for r in rows if r["aqi_covered"]) != 6:
-        print(f"ERROR: watchlist expected exactly 6 AQI-covered candidates")
+    if sum(1 for r in rows if r["aqi_covered"]) != 4:
+        print(f"ERROR: watchlist expected exactly 4 AQI-covered candidates")
         sys.exit(1)
-    manaus = next((r for r in rows if r["name"] == "Manaus"), None)
-    if not manaus or manaus["lat"] != -3.18 or manaus["lng"] != -60.03:
-        print(f"ERROR: Manaus must use the river cell (-3.18, -60.03), got {manaus}")
-        sys.exit(1)
+    names = {r["name"] for r in rows}
+    for must in ("Jakarta", "Tokyo", "Dhaka"):
+        if must not in names:
+            print(f"ERROR: global candidate {must} missing from the watchlist pool")
+            sys.exit(1)
+    for promoted in ("Manaus", "Bogotá", "Managua"):
+        if promoted in names:
+            print(f"ERROR: {promoted} was promoted to monitored and must not be a candidate")
+            sys.exit(1)
     months = watch.get("season_months", [])
     if len(months) != 3 or _date.today().month not in months:
         print(f"ERROR: season_months invalid or missing current month: {months}")
@@ -572,7 +577,7 @@ try {
     if res_watch2.json().get("results") != rows:
         print("ERROR: watchlist TESTING fixture is not deterministic across calls")
         sys.exit(1)
-    print(f"Success: /watchlist returned 12 ranked candidates (top: {rows[0]['name']}), deterministic fixture verified.")
+    print(f"Success: /watchlist returned 15 ranked candidates (top: {rows[0]['name']}), deterministic fixture verified.")
 
     # 16. Per-group summaries (strip ordering by criticality)
     print("\nStep 15: Verifying GET /group-summaries...")
@@ -581,8 +586,8 @@ try {
         print(f"ERROR: GET /group-summaries failed with status {res_sum.status_code}")
         sys.exit(1)
     groups = res_sum.json().get("groups", [])
-    if len(groups) != 7:
-        print(f"ERROR: expected 7 group summaries, got {len(groups)}")
+    if len(groups) != 10:
+        print(f"ERROR: expected 10 group summaries, got {len(groups)}")
         sys.exit(1)
     worst = [g["worst_score"] for g in groups]
     if worst != sorted(worst, reverse=True):
@@ -600,7 +605,7 @@ try {
         print(f"ERROR: summary worst_score for {scoped['worst_place']} ({scoped['worst_score']}) "
               f"does not match /risk ({risk_now[scoped['worst_place']]})")
         sys.exit(1)
-    print(f"Success: /group-summaries returned 7 groups sorted by criticality (top: {groups[0]['name']}).")
+    print(f"Success: /group-summaries returned 10 groups sorted by criticality (top: {groups[0]['name']}).")
 
     # 17. Derived coordinates: resolved registry + resolve endpoint
     print("\nStep 16: Verifying resolved registry (derived coordinates)...")
@@ -626,8 +631,8 @@ try {
             if hydro.get("cell_scale") not in ("river", "mid", "creek"):
                 print(f"ERROR: place {p['id']} hydro cell_scale invalid: {hydro}")
                 sys.exit(1)
-    if n_places != 11:
-        print(f"ERROR: expected 11 resolved places, got {n_places}")
+    if n_places != 14:
+        print(f"ERROR: expected 14 resolved places, got {n_places}")
         sys.exit(1)
     res_resolve = requests.post(f"{server_url}/places/resolve", params={"place": "honda"})
     if res_resolve.status_code != 200:
@@ -644,7 +649,7 @@ try {
     if res_unknown.status_code != 404:
         print(f"ERROR: unknown place should 404, got {res_unknown.status_code}")
         sys.exit(1)
-    print(f"Success: 11 places resolved with anchors + hydro points; resolve endpoint deterministic.")
+    print(f"Success: 14 places resolved with anchors + hydro points; resolve endpoint deterministic.")
 
 def run_regression():
     print("=====================================================================")

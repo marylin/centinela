@@ -86,9 +86,8 @@ export function renderTiles() {
     }
     if (row && row.simulated) meta += " · SIMULATED";
     el.querySelector(".tile-meta").textContent = meta;
-    // Order: group rank from the summaries, place order inside the group.
-    const s = summaries[p.groupId];
-    el.style.order = String((s ? s.rank : 50) * 10 + (idx % 10));
+    // Severity ordering: worst index first; unscored places sink to the end.
+    el.style.order = String(score === null ? 1500 : 1000 - Math.round(score * 1000));
     el.setAttribute("aria-label",
       `${p.name}, ${p.country} — monitored, ${sev ? sev.label : "loading"}${score !== null ? `, index ${(score * 100).toFixed(0)} percent` : ""}, dominant hazard ${dominant.toLowerCase()}`);
   });
@@ -117,7 +116,7 @@ export function renderTiles() {
     if (r.cell_scale === "creek") badges.push("creek cell");
     el.querySelector(".tile-meta").textContent =
       `${r.country || ""} · seis ${(Number(r.seismic_score) || 0).toFixed(2)} · flood ${(Number(r.flood_score) || 0).toFixed(2)}${badges.length ? " · " + badges.join(" · ") : ""}`;
-    el.style.order = String(idx);
+    el.style.order = String(1000 - Math.round(act * 1000));
     el.setAttribute("aria-label",
       `${r.name}, ${r.country || ""} — watchlist candidate, not monitored, activity ${act.toFixed(2)}`);
   });

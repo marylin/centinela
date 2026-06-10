@@ -106,21 +106,24 @@ def refresh_watchlist_in_background():
     finally:
         WATCHLIST_REFRESH_LOCK.release()
 
-# Deterministic candidate resolution fixture (TESTING only): anchors are the
-# pre-derivation city coordinates; Manaus carries the Rio Negro river cell.
+# Deterministic candidate resolution fixture (TESTING only): anchors are
+# fixed city coordinates so the suite never resolves over the network.
 TESTING_CANDIDATE_FIXTURE = {
-    "Bogotá":        {"lat": 4.7110, "lng": -74.0721, "p50": 0.7},
     "Medellín":      {"lat": 6.2442, "lng": -75.5812, "p50": 1.8},
     "Quito":         {"lat": -0.1807, "lng": -78.4678, "p50": 46.6},
     "Guayaquil":     {"lat": -2.1700, "lng": -79.9224, "p50": 3071.6},
     "La Paz":        {"lat": -16.4897, "lng": -68.1193, "p50": 1.0},
     "San Salvador":  {"lat": 13.6929, "lng": -89.2182, "p50": 7.0},
-    "Managua":       {"lat": 12.1150, "lng": -86.2362, "p50": 12.3},
     "Tegucigalpa":   {"lat": 14.0723, "lng": -87.1921, "p50": 0.1},
     "Santo Domingo": {"lat": 18.4861, "lng": -69.9312, "p50": 64.3},
     "Kingston":      {"lat": 17.9712, "lng": -76.7936, "p50": 0.5},
     "Buenos Aires":  {"lat": -34.6037, "lng": -58.3816, "p50": 20.0},
-    "Manaus":        {"lat": -3.1800, "lng": -60.0300, "p50": 54826.7},
+    "Jakarta":       {"lat": -6.2146, "lng": 106.8451, "p50": 250.0},
+    "Manila":        {"lat": 14.5995, "lng": 120.9842, "p50": 80.0},
+    "Dhaka":         {"lat": 23.8103, "lng": 90.4125, "p50": 35000.0},
+    "Kathmandu":     {"lat": 27.7172, "lng": 85.3240, "p50": 120.0},
+    "Istanbul":      {"lat": 41.0082, "lng": 28.9784, "p50": 5.0},
+    "Tokyo":         {"lat": 35.6762, "lng": 139.6503, "p50": 60.0},
 }
 
 def testing_watchlist_rows():

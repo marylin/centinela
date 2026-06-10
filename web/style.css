@@ -3152,3 +3152,5 @@ button.seismic-event-row:focus-visible {
 .focus-note { color: var(--text-muted); font-size: 0.72rem; margin: 0.3rem 0 0; }
 .route-steps { font-size: 0.82rem; padding-left: 1.2rem; }
 .route-steps li { margin-bottom: 3px; }
+/* The hidden attribute always wins, no matter what display a class sets. */
+[hidden] { display: none !important; }
