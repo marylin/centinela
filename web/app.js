@@ -39,6 +39,7 @@ let appState = {
   seismicEventsAvailable: false,
   seismicFocus: null,
   regionFilter: null,
+  feedScope: "near",
   regionsExpanded: false,
   choroplethOn: true,
   simulatedActive: false,
@@ -1930,11 +1931,40 @@ function renderSeismicEvents() {
   const sorted = [...events].sort((a, b) =>
     (new Date(b.time) - new Date(a.time)) || (b.magnitude - a.magnitude));
 
-  // Region filter: same parse as the active-regions SQL (text after the last
-  // comma of the USGS place string).
-  const filtered = appState.regionFilter
-    ? sorted.filter(ev => eventRegion(ev) === appState.regionFilter)
-    : sorted;
+  // Relevance: the feed defaults to events near the scoped group (within
+  // ~800 km of its anchor place); a region pick or the Worldwide toggle widens
+  // it. The strip's region chips stay global by design (navigation).
+  const NEAR_RADIUS_M = 800000;
+  const scopedGroup = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
+  const anchor = scopedGroup && scopedGroup.places && scopedGroup.places[0]
+    ? { lat: scopedGroup.places[0].lat, lng: scopedGroup.places[0].lng } : null;
+  const nearScoped = ev => anchor && typeof ev.latitude === "number" &&
+    haversineMeters(anchor, { lat: ev.latitude, lng: ev.longitude }) <= NEAR_RADIUS_M;
+
+  let filtered = sorted;
+  let scopeBar = "";
+  if (appState.regionFilter) {
+    filtered = sorted.filter(ev => eventRegion(ev) === appState.regionFilter);
+  } else if (appState.feedScope === "near" && anchor) {
+    filtered = sorted.filter(nearScoped);
+    const groupName = scopedGroup ? scopedGroup.name : "the scoped area";
+    scopeBar = `
+      <div class="seismic-filter-bar">
+        <span>Events within ~800 km of <strong>${escapeHtml(groupName)}</strong> (48h)</span>
+        <button type="button" class="btn btn-sm seismic-filter-clear" data-feed-scope="world">Show worldwide</button>
+      </div>`;
+    if (!filtered.length) {
+      container.innerHTML = scopeBar + `
+        <div class="empty-alerts">No magnitude 4.5+ earthquakes within ~800 km of ${escapeHtml(groupName)} in the last 48 hours. That is good news; use "Show worldwide" for global activity.</div>`;
+      return;
+    }
+  } else if (anchor) {
+    scopeBar = `
+      <div class="seismic-filter-bar">
+        <span>Worldwide events (48h)</span>
+        <button type="button" class="btn btn-sm seismic-filter-clear" data-feed-scope="near">Show near ${escapeHtml(scopedGroup ? scopedGroup.name : "scope")}</button>
+      </div>`;
+  }
 
   let filterBar = "";
   if (appState.regionFilter) {
@@ -1953,7 +1983,7 @@ function renderSeismicEvents() {
     return;
   }
 
-  container.innerHTML = filterBar + filtered.map(ev => {
+  container.innerHTML = (filterBar || scopeBar) + filtered.map(ev => {
     const sev = getMagnitudeSeverity(ev.magnitude);
     const simulated = ev.simulated === true;
     const sourceTag = simulated
@@ -2435,7 +2465,13 @@ function renderMapMarkers() {
   const mapContainer = document.getElementById("risk-map-container");
   const mapVisible = !!(mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0);
   if (hasValidCoords && mapVisible && appState.boundsFitForBasin !== appState.selectedBasin && !appState.seismicFocus) {
-    map.fitBounds(bounds);
+    if (basinRiskData.length === 1) {
+      // A single place must not fit-zoom to street level.
+      const only = municipalityCoords[basinRiskData[0].municipality];
+      if (only) { map.setCenter(only); map.setZoom(10); }
+    } else {
+      map.fitBounds(bounds);
+    }
     appState.boundsFitForBasin = appState.selectedBasin;
   }
 
@@ -2845,6 +2881,8 @@ function setupEventHandlers() {
       if (!e.target || typeof e.target.closest !== "function") return;
       const clearBtn = e.target.closest("[data-clear-region-filter]");
       if (clearBtn) { toggleRegionFilter(appState.regionFilter); return; }
+      const scopeBtn = e.target.closest("[data-feed-scope]");
+      if (scopeBtn) { appState.feedScope = scopeBtn.dataset.feedScope; renderSeismicEvents(); return; }
       const row = e.target.closest(".seismic-event-btn");
       if (row && row.dataset && row.dataset.eventId) focusSeismicEvent(row.dataset.eventId);
     });
@@ -3251,9 +3289,18 @@ function magnitudeWord(mag) {
 function renderPublicSeismicList() {
   const listEl = document.getElementById("public-seismic-list");
   if (!listEl) return;
-  const events = (database.seismicEvents.events || []).slice(0, 8);
+  // Residents see earthquakes near THEIR area, not the other hemisphere.
+  const muniName = appState.selectedMuni && appState.selectedMuni.municipality;
+  const coords = muniName ? municipalityCoords[muniName] : null;
+  const headingEl = document.getElementById("public-seismic-heading");
+  if (headingEl && muniName) headingEl.textContent = `Earthquakes near ${muniName}`;
+  const all = database.seismicEvents.events || [];
+  const events = (coords
+    ? all.filter(ev => typeof ev.latitude === "number" &&
+        haversineMeters(coords, { lat: ev.latitude, lng: ev.longitude }) <= 800000)
+    : all).slice(0, 8);
   if (!events.length) {
-    listEl.innerHTML = `<div class="empty-alerts">No magnitude 4.5+ earthquakes detected in the last 48 hours.</div>`;
+    listEl.innerHTML = `<div class="empty-alerts">No magnitude 4.5+ earthquakes within ~800 km of ${escapeHtml(muniName || "your area")} in the last 48 hours.</div>`;
     return;
   }
   listEl.innerHTML = events.map(ev => {
