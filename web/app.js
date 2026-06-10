@@ -2104,7 +2104,11 @@ function renderMapMarkers() {
 
   // Fit bounds only if we haven't fit bounds for this basin yet. While a
   // seismic focus is active the map stays on the epicenter — never re-fit.
-  if (hasValidCoords && appState.boundsFitForBasin !== appState.selectedBasin && !appState.seismicFocus) {
+  // Never fit while the map container is hidden (public mode): fitBounds on a
+  // zero-size map collapses to a world view that survives the mode switch.
+  const mapContainer = document.getElementById("risk-map-container");
+  const mapVisible = !!(mapContainer && mapContainer.offsetWidth > 0 && mapContainer.offsetHeight > 0);
+  if (hasValidCoords && mapVisible && appState.boundsFitForBasin !== appState.selectedBasin && !appState.seismicFocus) {
     map.fitBounds(bounds);
     appState.boundsFitForBasin = appState.selectedBasin;
   }
@@ -2910,6 +2914,14 @@ function switchMode(newMode) {
   if (newMode === "operations") {
     if (map) {
       google.maps.event.trigger(map, 'resize');
+      // Any fit attempted while the map was hidden was suppressed (or, before
+      // the guard, broken); restore the right view now that it has size.
+      if (appState.seismicFocus) {
+        placeSeismicFocusOnMap();
+      } else {
+        appState.boundsFitForBasin = null;
+        renderMapMarkers();
+      }
     }
   } else {
     initPublicMap();
