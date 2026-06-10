@@ -428,6 +428,11 @@ document.addEventListener("DOMContentLoaded", async () => {
   fetchTelemetry().then(() => {
     startSyncCycle();
   });
+
+  // Candidate watchlist: backend-scored, slow-moving. Fetched once now and
+  // on its own 10-minute interval, deliberately NOT part of the 5s poll.
+  fetchWatchlist();
+  setInterval(fetchWatchlist, 600000);
 });
 
 window.onMapsReadyCallback = () => {
@@ -3635,4 +3640,73 @@ function renderPublicView() {
     appState.routeMuni = null;
     setRouteStatus("Tap the button to find the nearest hospital or safe point and a walking route.");
   }
+}
+
+// ==========================================================================
+// Candidate watchlist (read-only): activity-scored expansion candidates from
+// the USGS catalog + GloFAS reanalysis, served pre-ranked by the backend.
+// Slow-moving by design: fetched on load + a 10-minute interval, never the
+// 5s telemetry poll. Promotion into the registry stays a manual config step.
+// ==========================================================================
+
+async function fetchWatchlist() {
+  try {
+    const res = await fetch(`${API_BASE}/watchlist`);
+    if (!res.ok) throw new Error(`watchlist ${res.status}`);
+    renderWatchlist(await res.json());
+  } catch (err) {
+    // Read-only resilience: keep the last render (or the warming state).
+    console.error("Watchlist fetch failed:", err);
+  }
+}
+
+function renderWatchlist(data) {
+  const container = document.getElementById("watchlist-container");
+  if (!container || !data) return;
+
+  const statusChip = document.getElementById("watchlist-status-chip");
+  if (statusChip) {
+    statusChip.hidden = data.status === "ok";
+    statusChip.textContent = data.status === "warming" ? "FIRST SCAN…" : "REFRESHING…";
+  }
+  const computedEl = document.getElementById("watchlist-computed-at");
+  if (computedEl) {
+    computedEl.textContent = data.computed_at
+      ? `scored ${formatRelativeTime(data.computed_at)}`
+      : "";
+  }
+
+  const rows = data.results || [];
+  if (!rows.length) {
+    container.innerHTML = `<div class="empty-alerts">Warming up: the first candidate scan is in progress.</div>`;
+    return;
+  }
+  container.innerHTML = rows.map(r => {
+    const act = Number(r.activity_score) || 0;
+    const sev = getSeverityConfig(act);
+    const quakes = (typeof r.quake_90d_count === "number")
+      ? `${r.quake_90d_count} quakes 90d${r.quake_90d_maxmag ? ` (max M ${Number(r.quake_90d_maxmag).toFixed(1)})` : ""}`
+      : "seismic n/a";
+    const flood = (typeof r.days_above_seasonal_p90_last60 === "number")
+      ? `${r.days_above_seasonal_p90_last60}d > seasonal p90`
+      : "discharge n/a";
+    const badges = [
+      r.aqi_covered ? `<span class="badge watchlist-badge">AQI</span>` : "",
+      r.cell_scale === "creek" ? `<span class="badge watchlist-badge watchlist-badge-warn" title="The GloFAS cell at this coordinate is a small stream; relative anomalies overstate the river story.">CREEK CELL</span>` : ""
+    ].join("");
+    return `
+      <div class="watchlist-row" style="border-left: 3px solid ${sev.colorHex};">
+        <div class="watchlist-row-main">
+          <span class="watchlist-name">${escapeHtml(r.name)}</span>
+          <span class="watchlist-country">${escapeHtml(r.country || "")}</span>
+          ${badges}
+        </div>
+        <div class="watchlist-row-meta tabular-nums">
+          <span class="watchlist-bar"><i style="width:${Math.round(act * 100)}%; background:${sev.colorHex}"></i></span>
+          <span class="watchlist-score">${act.toFixed(2)}</span>
+          <span class="watchlist-detail">seis ${(Number(r.seismic_score) || 0).toFixed(2)} · flood ${(Number(r.flood_score) || 0).toFixed(2)}</span>
+          <span class="watchlist-detail">${quakes} · ${flood}</span>
+        </div>
+      </div>`;
+  }).join("");
 }

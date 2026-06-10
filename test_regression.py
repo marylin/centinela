@@ -591,6 +591,53 @@ setTimeout(async () => {
             sys.exit(1)
         print(f"Success: {basin_id} verified (basins, risk, connector-status, alert, incidents).")
 
+    # 15. Candidate watchlist (read-only, deterministic fixture under TESTING)
+    print("\nStep 14: Verifying GET /watchlist (candidate watchlist)...")
+    from datetime import date as _date
+    res_watch = requests.get(f"{server_url}/watchlist")
+    if res_watch.status_code != 200:
+        print(f"ERROR: GET /watchlist failed with status {res_watch.status_code}")
+        sys.exit(1)
+    watch = res_watch.json()
+    if watch.get("status") != "ok":
+        print(f"ERROR: watchlist status is {watch.get('status')}, expected 'ok' under TESTING")
+        sys.exit(1)
+    if not watch.get("computed_at"):
+        print(f"ERROR: watchlist computed_at missing: {watch.get('computed_at')}")
+        sys.exit(1)
+    rows = watch.get("results", [])
+    if len(rows) != 12:
+        print(f"ERROR: watchlist expected 12 candidates, got {len(rows)}")
+        sys.exit(1)
+    scores = [r["activity_score"] for r in rows]
+    if scores != sorted(scores, reverse=True):
+        print(f"ERROR: watchlist not sorted by activity_score desc: {scores}")
+        sys.exit(1)
+    required = ["name", "country", "lat", "lng", "aqi_covered", "cell_scale",
+                "activity_score", "seismic_score", "flood_score",
+                "quake_90d_count", "days_above_seasonal_p90_last60"]
+    for r in rows:
+        missing = [k for k in required if k not in r]
+        if missing:
+            print(f"ERROR: watchlist row {r.get('name')} missing fields: {missing}")
+            sys.exit(1)
+    if sum(1 for r in rows if r["aqi_covered"]) != 6:
+        print(f"ERROR: watchlist expected exactly 6 AQI-covered candidates")
+        sys.exit(1)
+    manaus = next((r for r in rows if r["name"] == "Manaus"), None)
+    if not manaus or manaus["lat"] != -3.18 or manaus["lng"] != -60.03:
+        print(f"ERROR: Manaus must use the river cell (-3.18, -60.03), got {manaus}")
+        sys.exit(1)
+    months = watch.get("season_months", [])
+    if len(months) != 3 or _date.today().month not in months:
+        print(f"ERROR: season_months invalid or missing current month: {months}")
+        sys.exit(1)
+    res_watch2 = requests.get(f"{server_url}/watchlist")
+    if res_watch2.json().get("results") != rows:
+        print("ERROR: watchlist TESTING fixture is not deterministic across calls")
+        sys.exit(1)
+    print(f"Success: /watchlist returned 12 ranked candidates (top: {rows[0]['name']}), deterministic fixture verified.")
+
 def run_regression():
     print("=====================================================================")
     print("                    STARTING REGRESSION SUITE                        ")

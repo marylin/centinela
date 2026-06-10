@@ -143,6 +143,24 @@
           </div>
         </section>
 
+        <!-- Candidate watchlist (read-only): activity-scored expansion candidates -->
+        <section class="card watchlist-panel" aria-labelledby="watchlist-title">
+          <div class="card-header">
+            <h2 id="watchlist-title">Candidate Watchlist</h2>
+            <div class="risk-timeline-meta">
+              <span class="badge scope-chip">ACTIVITY &middot; MODEL</span>
+              <span class="badge" id="watchlist-status-chip" hidden></span>
+              <span class="watchlist-computed-at" id="watchlist-computed-at"></span>
+            </div>
+          </div>
+          <div class="card-body" id="watchlist-container">
+            <div class="empty-alerts">Warming up: the first candidate scan is in progress.</div>
+          </div>
+          <p class="watchlist-footnote">Activity model from the USGS FDSN catalog + GloFAS reanalysis
+            (Open-Meteo), seasonal window &plusmn;1 month. Candidates are NOT monitored places;
+            promotion into the registry is a manual configuration step.</p>
+        </section>
+
         <div class="charts-row">
         <!-- Live Risk Timeline (selected municipality's composite risk over the poll) -->
         <section class="card risk-timeline-panel" aria-labelledby="risk-timeline-title">

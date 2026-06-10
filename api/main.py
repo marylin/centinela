@@ -20,6 +20,16 @@ load_dotenv()
 import requests
 import concurrent.futures
 import math
+import threading
+
+from api.watchlist import (
+    CANDIDATES as WATCHLIST_CANDIDATES,
+    ATTRIBUTION as WATCHLIST_ATTRIBUTION,
+    RADIUS_KM as WATCHLIST_RADIUS_KM,
+    MIN_MAG as WATCHLIST_MIN_MAG,
+    compute_watchlist,
+    season_months,
+)
 
 # MUNICIPALITY_COORDINATES is derived from the PLACES REGISTRY below (all 11
 # monitored places), so the live weather recorder covers every place (D1).
@@ -1703,6 +1713,114 @@ def get_places():
     """The monitored-places registry: groups with coordinates and kind.
     Same payload as /basins (kept as an alias for the frontend migration)."""
     return get_basins()
+
+# --- Candidate watchlist: backend-scored, Firestore-cached, read-only -------
+# Scores the candidate pool (api/watchlist.py) from the USGS catalog and the
+# GloFAS reanalysis. Promotion into the registry stays a manual config step.
+
+WATCHLIST_TTL_S = 6 * 3600
+WATCHLIST_CACHE = {"doc": None, "fetched_at": 0.0}
+WATCHLIST_REFRESH_LOCK = threading.Lock()
+
+def read_watchlist_doc():
+    if db is None:
+        return None
+    try:
+        snap = db.collection("watchlist").document("latest").get()
+        return snap.to_dict() if snap.exists else None
+    except Exception as e:
+        print(f"Watchlist Firestore read failed: {e}", flush=True)
+        return None
+
+def write_watchlist_doc(doc):
+    if db is None:
+        return
+    try:
+        db.collection("watchlist").document("latest").set(doc)
+    except Exception as e:
+        print(f"Watchlist Firestore write failed: {e}", flush=True)
+
+def watchlist_doc_fresh(doc, now_ms):
+    return bool(doc and doc.get("computed_at")
+                and now_ms - doc["computed_at"] < WATCHLIST_TTL_S * 1000)
+
+def refresh_watchlist_in_background():
+    """Recompute the watchlist (30-60s of external calls). Lock-guarded per
+    instance; re-reads Firestore inside the lock so concurrent Cloud Run
+    instances never stampede the public APIs."""
+    if not WATCHLIST_REFRESH_LOCK.acquire(blocking=False):
+        return
+    try:
+        now_ms = int(time.time() * 1000)
+        remote = read_watchlist_doc()
+        if watchlist_doc_fresh(remote, now_ms):
+            WATCHLIST_CACHE["doc"] = remote
+            WATCHLIST_CACHE["fetched_at"] = time.time()
+            return
+        doc = compute_watchlist()
+        write_watchlist_doc(doc)
+        WATCHLIST_CACHE["doc"] = doc
+        WATCHLIST_CACHE["fetched_at"] = time.time()
+        print(f"Watchlist refreshed: {len(doc['results'])} candidates.", flush=True)
+    except Exception as e:
+        print(f"Watchlist refresh failed: {e}", flush=True)
+    finally:
+        WATCHLIST_REFRESH_LOCK.release()
+
+def testing_watchlist_rows():
+    """Deterministic TESTING payload shaped exactly like production: the real
+    pool metadata with index-derived scores, no network, no Firestore."""
+    months = season_months(datetime.now().date())
+    results = []
+    for i, candidate in enumerate(WATCHLIST_CANDIDATES):
+        row = dict(candidate)
+        row.update({
+            "quake_90d_count": (3 * i) % 17,
+            "quake_90d_maxmag": round(4.5 + (i % 5) * 0.4, 1),
+            "days_above_seasonal_p90_last60": (2 * i) % 23,
+            "last60_max_vs_p90": round(0.6 + (i % 7) * 0.35, 2),
+            "seismic_score": round(max(0.0, 0.85 - i * 0.07), 2),
+            "flood_score": round(max(0.0, 0.55 - i * 0.04), 2),
+            "activity_score": round(max(0.0, 0.9 - i * 0.07), 2),
+        })
+        results.append(row)
+    results.sort(key=lambda r: r["activity_score"], reverse=True)
+    return {
+        "computed_at": int(time.time() * 1000),
+        "season_months": list(months),
+        "radius_km": WATCHLIST_RADIUS_KM,
+        "min_mag": WATCHLIST_MIN_MAG,
+        "attribution": WATCHLIST_ATTRIBUTION,
+        "results": results,
+    }
+
+@app.get("/watchlist")
+def get_watchlist():
+    """Ranked candidate watchlist (MODEL data: activity scored from the USGS
+    catalog + GloFAS reanalysis). Serves cached data immediately; a stale or
+    missing cache triggers a background refresh. Read-only: promoting a
+    candidate into the registry stays a manual config change + resync."""
+    if TESTING:
+        return {"status": "ok", **testing_watchlist_rows()}
+
+    now_ms = int(time.time() * 1000)
+    doc = WATCHLIST_CACHE["doc"]
+    if not watchlist_doc_fresh(doc, now_ms):
+        remote = read_watchlist_doc()
+        if remote:
+            doc = remote
+            WATCHLIST_CACHE["doc"] = remote
+            WATCHLIST_CACHE["fetched_at"] = time.time()
+    if watchlist_doc_fresh(doc, now_ms):
+        return {"status": "ok", **doc}
+
+    threading.Thread(target=refresh_watchlist_in_background, daemon=True).start()
+    if doc:
+        return {"status": "refreshing", **doc}
+    return {"status": "warming", "computed_at": None,
+            "season_months": list(season_months(datetime.now().date())),
+            "radius_km": WATCHLIST_RADIUS_KM, "min_mag": WATCHLIST_MIN_MAG,
+            "attribution": WATCHLIST_ATTRIBUTION, "results": []}
 
 @app.get("/incidents")
 def get_incidents():
