@@ -50,7 +50,8 @@ let appState = {
   lastSyncTime: null,
   selectedBasin: "rio_cauca",
   reopenedIncidentId: null,
-  boundsFitForBasin: null
+  boundsFitForBasin: null,
+  publicCenteredEvent: null
 };
 
 // Map instances & markers
@@ -2282,6 +2283,7 @@ function renderSeismicFocusRail() {
 function exitSeismicFocus(refit = true) {
   if (!appState.seismicFocus) return;
   appState.seismicFocus = null;
+  appState.publicCenteredEvent = null; // re-focusing the same event recenters
   if (seismicFocusMarker) seismicFocusMarker.setMap(null);
   if (seismicFocusCircle) seismicFocusCircle.setMap(null);
 
@@ -3429,9 +3431,15 @@ function renderPublicEventView(focus) {
       anchor: new google.maps.Point(24, 46)
     });
     publicEventMarker.setMap(publicMap);
-    publicMap.setCenter(pos);
-    publicMap.setZoom(6);
-    appState.publicCenteredBasin = null; // re-center on return to basin view
+    // Recenter ONLY when the focused event changes. The 5s poll re-renders
+    // this view; an unconditional recenter here was the "zoom randomly
+    // resets" bug. User zoom/pan wins until a new selection.
+    if (appState.publicCenteredEvent !== ev.id) {
+      publicMap.setCenter(pos);
+      publicMap.setZoom(6);
+      appState.publicCenteredEvent = ev.id;
+      appState.publicCenteredBasin = null; // re-center on return to basin view
+    }
   }
 }
 
@@ -3453,6 +3461,7 @@ function renderPublicView() {
   }
   setPublicBasinSectionsVisible(true);
   if (publicEventMarker) publicEventMarker.setMap(null);
+  appState.publicCenteredEvent = null; // a future event focus recenters once
 
   const selectedMuni = appState.selectedMuni || (database.risk.length > 0 ? database.risk[0] : null);
   if (!selectedMuni) {
