@@ -12,6 +12,8 @@ import { renderRail } from "./rail.js";
 import { renderAlertCard } from "./alert-card.js";
 import { renderConditions } from "./conditions.js";
 import { renderRiskTimeline, renderTrend } from "./charts.js";
+import { renderSeismicPanel } from "./seismic.js";
+import { renderRouteCard } from "./routes.js";
 import { CADENCE } from "./poll.js";
 
 let detailTimer = null;
@@ -117,6 +119,8 @@ async function onSelectionChange() {
   show("public-alert-card", monitored);
   show("risk-timeline-panel", monitored);
   show("trend-panel", monitored);
+  renderSeismicPanel();
+  renderRouteCard();
 
   if (monitored) {
     renderComponentsCard();    // instant from cache
@@ -139,8 +143,22 @@ async function onSelectionChange() {
 export function setupDetail() {
   subscribe((topic) => {
     if (topic === "selection") onSelectionChange();
-    if (topic === "index-data" && state.selection) { renderRail(); if (state.selection.kind === "place") renderComponentsCard(); }
+    if (topic === "index-data" && state.selection) {
+      renderRail();
+      renderSeismicPanel();
+      if (state.selection.kind === "place") renderComponentsCard();
+    }
     if (topic === "watchlist" && state.selection) renderRail();
     if (topic === "demo-changed" && state.selection && state.selection.kind === "place") refreshMonitoredDetail();
+    if (topic === "seismic-focus" && state.selection) {
+      // Basin-only panels yield while an event owns the page (nothing honest
+      // could render there for an arbitrary epicenter).
+      const focused = !!state.seismicFocus;
+      const monitored = state.selection.kind === "place";
+      show("public-alert-card", monitored && !focused);
+      show("risk-timeline-panel", monitored && !focused);
+      show("trend-panel", monitored && !focused);
+      renderRouteCard();
+    }
   });
 }

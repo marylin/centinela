@@ -11,6 +11,8 @@ import { setupDiagnostics } from "./diagnostics.js";
 import { setupRail } from "./rail.js";
 import { setupDetail } from "./detail.js";
 import { renderMap } from "./map.js";
+import { setupSeismicPanel, clearSeismicFocus } from "./seismic.js";
+import { setupRouteCard } from "./routes.js";
 
 // Maps loader callback: modules are module-scoped, so the bootstrap callback
 // must be attached to window explicitly.
@@ -55,7 +57,10 @@ function setupRouting() {
   const back = document.getElementById("back-to-grid");
   if (back) back.addEventListener("click", () => clearSelection());
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && state.selection) clearSelection();
+    if (e.key !== "Escape" || !state.selection) return;
+    // Escape peels back one layer: focus first, then the selection.
+    if (state.seismicFocus) clearSeismicFocus();
+    else clearSelection();
   });
 }
 
@@ -81,6 +86,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupTiles();
   setupRail();
   setupDetail();
+  setupSeismicPanel();
+  setupRouteCard();
   setupRouting();
   setupNotifications();
   setupDiagnostics();

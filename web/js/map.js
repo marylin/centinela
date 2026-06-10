@@ -30,6 +30,7 @@ export function initMap() {
     disableDefaultUI: true,
     zoomControl: true,
   });
+  window.__centinelaMap = map; // route renderer draws on the shared instance
 }
 
 function clearStore(store) {
