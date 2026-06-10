@@ -19,36 +19,24 @@ HISTORY_YEARS = 10
 USER_AGENT = "centinela-watchlist/1.0"
 ATTRIBUTION = "USGS FDSN catalog + GloFAS reanalysis (Open-Meteo)"
 
-# The probed candidate pool (2026-06-10 run). cell_scale/cell_p50_m3s describe
-# the GloFAS cell each coordinate samples (creek-scale cells overstate relative
-# anomalies); aqi_covered marks Google AQI availability. Manaus deliberately
-# uses the Rio Negro river cell, NOT the city center (the center cell is a
-# 1.9 m3/s creek and must not represent the Amazon).
+# The candidate pool: names only, NOTHING coordinate-shaped. Coordinates and
+# cell metadata are DERIVED at refresh time through the shared resolver
+# (geocoded anchor + strongest-discharge GloFAS cell; the probe finds the Rio
+# Negro at Manaus on its own). aqi_covered marks Google AQI availability
+# (probed 2026-06-10).
 CANDIDATES = [
-    {"name": "Bogotá", "country": "Colombia", "lat": 4.7110, "lng": -74.0721,
-     "aqi_covered": True, "cell_scale": "creek", "cell_p50_m3s": 0.7},
-    {"name": "Medellín", "country": "Colombia", "lat": 6.2442, "lng": -75.5812,
-     "aqi_covered": True, "cell_scale": "creek", "cell_p50_m3s": 1.8},
-    {"name": "Quito", "country": "Ecuador", "lat": -0.1807, "lng": -78.4678,
-     "aqi_covered": True, "cell_scale": "mid", "cell_p50_m3s": 46.6},
-    {"name": "Guayaquil", "country": "Ecuador", "lat": -2.1700, "lng": -79.9224,
-     "aqi_covered": True, "cell_scale": "river", "cell_p50_m3s": 3071.6},
-    {"name": "La Paz", "country": "Bolivia", "lat": -16.4897, "lng": -68.1193,
-     "aqi_covered": False, "cell_scale": "creek", "cell_p50_m3s": 1.0},
-    {"name": "San Salvador", "country": "El Salvador", "lat": 13.6929, "lng": -89.2182,
-     "aqi_covered": False, "cell_scale": "mid", "cell_p50_m3s": 7.0},
-    {"name": "Managua", "country": "Nicaragua", "lat": 12.1150, "lng": -86.2362,
-     "aqi_covered": False, "cell_scale": "mid", "cell_p50_m3s": 12.3},
-    {"name": "Tegucigalpa", "country": "Honduras", "lat": 14.0723, "lng": -87.1921,
-     "aqi_covered": False, "cell_scale": "creek", "cell_p50_m3s": 0.1},
-    {"name": "Santo Domingo", "country": "Dominican Republic", "lat": 18.4861, "lng": -69.9312,
-     "aqi_covered": False, "cell_scale": "mid", "cell_p50_m3s": 64.3},
-    {"name": "Kingston", "country": "Jamaica", "lat": 17.9712, "lng": -76.7936,
-     "aqi_covered": False, "cell_scale": "creek", "cell_p50_m3s": 0.5},
-    {"name": "Buenos Aires", "country": "Argentina", "lat": -34.6037, "lng": -58.3816,
-     "aqi_covered": True, "cell_scale": "mid", "cell_p50_m3s": 20.0},
-    {"name": "Manaus", "country": "Brazil", "lat": -3.1800, "lng": -60.0300,
-     "aqi_covered": True, "cell_scale": "river", "cell_p50_m3s": 54826.7},
+    {"name": "Bogotá", "country": "Colombia", "cc": "CO", "aqi_covered": True},
+    {"name": "Medellín", "country": "Colombia", "cc": "CO", "aqi_covered": True},
+    {"name": "Quito", "country": "Ecuador", "cc": "EC", "aqi_covered": True},
+    {"name": "Guayaquil", "country": "Ecuador", "cc": "EC", "aqi_covered": True},
+    {"name": "La Paz", "country": "Bolivia", "cc": "BO", "aqi_covered": False},
+    {"name": "San Salvador", "country": "El Salvador", "cc": "SV", "aqi_covered": False},
+    {"name": "Managua", "country": "Nicaragua", "cc": "NI", "aqi_covered": False},
+    {"name": "Tegucigalpa", "country": "Honduras", "cc": "HN", "aqi_covered": False},
+    {"name": "Santo Domingo", "country": "Dominican Republic", "cc": "DO", "aqi_covered": False},
+    {"name": "Kingston", "country": "Jamaica", "cc": "JM", "aqi_covered": False},
+    {"name": "Buenos Aires", "country": "Argentina", "cc": "AR", "aqi_covered": True},
+    {"name": "Manaus", "country": "Brazil", "cc": "BR", "aqi_covered": True},
 ]
 
 
@@ -117,9 +105,13 @@ def percentile(sorted_vals, p):
 
 
 def score_place(candidate, today, months):
-    """One candidate's metric row. Metadata passes through; missing sources
-    leave their metrics absent and their subscore at zero."""
+    """One RESOLVED candidate's metric row (the caller merges anchor/hydro
+    coordinates in). Seismic samples the city anchor; flood samples the
+    derived river cell. Metadata passes through; missing sources leave their
+    metrics absent and their subscore at zero."""
     lat, lng = candidate["lat"], candidate["lng"]
+    flood_lat = candidate.get("hydro_lat", lat)
+    flood_lng = candidate.get("hydro_lng", lng)
     rec = dict(candidate)
 
     recent = usgs_events(lat, lng, (today - timedelta(days=90)).isoformat(),
@@ -135,7 +127,7 @@ def score_place(candidate, today, months):
         rec["quake_season_avg_per_year"] = round(len(season) / HISTORY_YEARS, 1)
         rec["quake_season_maxmag"] = max((m for _, m in season), default=None)
 
-    series = flood_series(lat, lng, today)
+    series = flood_series(flood_lat, flood_lng, today)
     if series:
         season_hist = sorted(v for d, v in series
                              if d.month in months and d.year < today.year)
@@ -176,13 +168,14 @@ def score_place(candidate, today, months):
     return rec
 
 
-def compute_watchlist(today=None):
-    """Score the whole pool. One candidate failing never kills the refresh;
-    it keeps its metadata with zero scores."""
+def compute_watchlist(resolved_candidates, today=None):
+    """Score pre-resolved candidate rows (each already carrying lat/lng =
+    anchor, hydro_lat/hydro_lng, cell_p50_m3s, cell_scale). One candidate
+    failing never kills the refresh; it keeps its metadata with zero scores."""
     today = today or date.today()
     months = season_months(today)
     results = []
-    for candidate in CANDIDATES:
+    for candidate in resolved_candidates:
         try:
             results.append(score_place(candidate, today, months))
         except Exception as e:

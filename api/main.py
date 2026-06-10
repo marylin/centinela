@@ -1924,6 +1924,40 @@ def watchlist_doc_fresh(doc, now_ms):
     return bool(doc and doc.get("computed_at")
                 and now_ms - doc["computed_at"] < WATCHLIST_TTL_S * 1000)
 
+def resolved_watchlist_candidates():
+    """Candidate pool merged with DERIVED coordinates (the candidates section
+    of the resolution doc). Missing candidates are resolved inline: this only
+    runs inside the watchlist background refresh, which is already a long
+    job. Unresolvable candidates are skipped with a log line."""
+    with RESOLUTION_LOCK:
+        doc = read_resolution_doc() or {"registry": {}, "candidates": {}}
+        doc.setdefault("registry", {})
+        doc.setdefault("candidates", {})
+        missing = [{"key": c["name"], "name": c["name"], "cc": c.get("cc")}
+                   for c in WATCHLIST_CANDIDATES
+                   if c["name"] not in doc["candidates"]]
+        if missing:
+            doc["candidates"].update(resolve_entries(missing))
+            write_resolution_doc(doc)
+            RESOLUTION_CACHE["doc"] = doc
+    rows = []
+    for c in WATCHLIST_CANDIDATES:
+        entry = doc["candidates"].get(c["name"])
+        if not entry:
+            print(f"Watchlist: skipping unresolved candidate {c['name']}", flush=True)
+            continue
+        anchor = entry["anchor"]
+        hydro = entry.get("hydro_point") or {}
+        rows.append({
+            **c,
+            "lat": anchor["lat"], "lng": anchor["lng"],
+            "hydro_lat": hydro.get("lat", anchor["lat"]),
+            "hydro_lng": hydro.get("lng", anchor["lng"]),
+            "cell_p50_m3s": hydro.get("cell_p50_m3s"),
+            "cell_scale": hydro.get("cell_scale"),
+        })
+    return rows
+
 def refresh_watchlist_in_background():
     """Recompute the watchlist (30-60s of external calls). Lock-guarded per
     instance; re-reads Firestore inside the lock so concurrent Cloud Run
@@ -1937,7 +1971,7 @@ def refresh_watchlist_in_background():
             WATCHLIST_CACHE["doc"] = remote
             WATCHLIST_CACHE["fetched_at"] = time.time()
             return
-        doc = compute_watchlist()
+        doc = compute_watchlist(resolved_watchlist_candidates())
         write_watchlist_doc(doc)
         WATCHLIST_CACHE["doc"] = doc
         WATCHLIST_CACHE["fetched_at"] = time.time()
@@ -1947,13 +1981,38 @@ def refresh_watchlist_in_background():
     finally:
         WATCHLIST_REFRESH_LOCK.release()
 
+# Deterministic candidate resolution fixture (TESTING only): anchors are the
+# pre-derivation city coordinates; Manaus carries the Rio Negro river cell.
+TESTING_CANDIDATE_FIXTURE = {
+    "Bogotá":        {"lat": 4.7110, "lng": -74.0721, "p50": 0.7},
+    "Medellín":      {"lat": 6.2442, "lng": -75.5812, "p50": 1.8},
+    "Quito":         {"lat": -0.1807, "lng": -78.4678, "p50": 46.6},
+    "Guayaquil":     {"lat": -2.1700, "lng": -79.9224, "p50": 3071.6},
+    "La Paz":        {"lat": -16.4897, "lng": -68.1193, "p50": 1.0},
+    "San Salvador":  {"lat": 13.6929, "lng": -89.2182, "p50": 7.0},
+    "Managua":       {"lat": 12.1150, "lng": -86.2362, "p50": 12.3},
+    "Tegucigalpa":   {"lat": 14.0723, "lng": -87.1921, "p50": 0.1},
+    "Santo Domingo": {"lat": 18.4861, "lng": -69.9312, "p50": 64.3},
+    "Kingston":      {"lat": 17.9712, "lng": -76.7936, "p50": 0.5},
+    "Buenos Aires":  {"lat": -34.6037, "lng": -58.3816, "p50": 20.0},
+    "Manaus":        {"lat": -3.1800, "lng": -60.0300, "p50": 54826.7},
+}
+
 def testing_watchlist_rows():
     """Deterministic TESTING payload shaped exactly like production: the real
-    pool metadata with index-derived scores, no network, no Firestore."""
+    pool metadata with fixture resolution and index-derived scores, no
+    network, no Firestore."""
     months = season_months(datetime.now().date())
     results = []
     for i, candidate in enumerate(WATCHLIST_CANDIDATES):
+        fx = TESTING_CANDIDATE_FIXTURE[candidate["name"]]
         row = dict(candidate)
+        row.update({
+            "lat": fx["lat"], "lng": fx["lng"],
+            "hydro_lat": fx["lat"], "hydro_lng": fx["lng"],
+            "cell_p50_m3s": fx["p50"],
+            "cell_scale": cell_scale_for(fx["p50"]),
+        })
         row.update({
             "quake_90d_count": (3 * i) % 17,
             "quake_90d_maxmag": round(4.5 + (i % 5) * 0.4, 1),
