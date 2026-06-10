@@ -21,18 +21,18 @@ export async function renderConditions(lat, lng, label) {
     if (inFlightKey !== key) return; // a newer selection took over
     const prov = d.provenance || {};
     const rows = [];
-    if (d.rainfall_24h_mm !== null && d.rainfall_24h_mm !== undefined) {
-      rows.push(["Rain (24h)", `${Number(d.rainfall_24h_mm).toFixed(1)} mm`, prov.rainfall]);
+    if (d.rainfall && typeof d.rainfall.total_24h_mm === "number") {
+      rows.push(["Rain (24h)", `${d.rainfall.total_24h_mm.toFixed(1)} mm`, prov.rainfall]);
     }
-    if (d.air_quality_index !== null && d.air_quality_index !== undefined) {
-      rows.push(["Air quality (UAQI)", `${d.air_quality_index}`, prov.air_quality]);
+    if (d.air_quality && typeof d.air_quality.aqi === "number") {
+      rows.push(["Air quality (UAQI)", `${d.air_quality.aqi}${d.air_quality.category ? ` · ${d.air_quality.category}` : ""}`, prov.air_quality]);
     }
-    if (d.river_discharge_m3s !== null && d.river_discharge_m3s !== undefined) {
-      const dir = d.discharge_direction ? ` · ${d.discharge_direction}` : "";
-      rows.push(["River discharge", `${Number(d.river_discharge_m3s).toFixed(1)} m³/s${dir}`, prov.river_discharge]);
+    if (d.river_discharge && typeof d.river_discharge.latest_m3s === "number") {
+      const dir = d.river_discharge.direction ? ` · ${d.river_discharge.direction}` : "";
+      rows.push(["River discharge", `${d.river_discharge.latest_m3s.toFixed(1)} m³/s${dir}`, prov.river_discharge]);
     }
-    if (d.soil_moisture !== null && d.soil_moisture !== undefined) {
-      rows.push(["Soil moisture", `${Number(d.soil_moisture).toFixed(3)} m³/m³`, prov.soil_moisture]);
+    if (d.soil_moisture && typeof d.soil_moisture.latest_m3m3 === "number") {
+      rows.push(["Soil moisture", `${d.soil_moisture.latest_m3m3.toFixed(3)} m³/m³`, prov.soil_moisture]);
     }
     el.innerHTML = rows.length
       ? rows.map(([k, v, p]) => `
