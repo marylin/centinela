@@ -714,12 +714,23 @@ function angleDiff(a, b) {
 // Resolve the routing origin: live geolocation if already granted, else the
 // at-risk municipality's coordinates. Never blocks on a fresh permission prompt.
 function resolveRouteOrigin(selectedMuni) {
+  const muniCoords = municipalityCoords[selectedMuni.municipality];
   if (youAreHereMarker && typeof youAreHereMarker.getPosition === "function") {
     const p = youAreHereMarker.getPosition();
-    if (p) return { coords: { lat: p.lat(), lng: p.lng() }, label: "your location" };
+    if (p) {
+      const here = { lat: p.lat(), lng: p.lng() };
+      // Route from the device location only when it is plausibly inside the
+      // monitored area. A viewer on another continent would otherwise get a
+      // route through their own city, which reads as a broken feature.
+      if (!muniCoords || haversineMeters(here, muniCoords) <= 40000) {
+        return { coords: here, label: "your location" };
+      }
+      return muniCoords
+        ? { coords: muniCoords, label: `${selectedMuni.municipality} (your device is outside the monitored area)` }
+        : null;
+    }
   }
-  const coords = municipalityCoords[selectedMuni.municipality];
-  return coords ? { coords, label: selectedMuni.municipality } : null;
+  return muniCoords ? { coords: muniCoords, label: selectedMuni.municipality } : null;
 }
 
 // Promise wrapper around a single nearbySearch by type, ranked by distance.
@@ -1683,6 +1694,10 @@ function updateBasinPanelSubordination() {
   const collapse = seismicScoped && !appState.basinPanelsExpanded;
   document.querySelectorAll(".risk-timeline-panel, .telemetry-trend-panel, .alerts-panel").forEach(panel => {
     panel.classList.toggle("subordinated", collapse);
+    // Expanded while a seismic scope is active: say plainly why this panel
+    // still shows the monitored basin (no flood/river model exists for
+    // arbitrary event locations).
+    panel.classList.toggle("seismic-scoped", seismicScoped && !collapse);
   });
 }
 
@@ -2013,7 +2028,7 @@ function renderSeismicFocusRail() {
         <p>${escapeHtml(focus.narration)}</p>
       </div>` : ""}`}
       <p class="seismic-focus-note">${noteText}</p>
-      <button type="button" class="btn btn-sm seismic-focus-return" id="seismic-focus-return">Return to basin view</button>
+      <button type="button" class="btn btn-sm seismic-focus-return" id="seismic-focus-return">Close event focus &middot; back to the monitored basin</button>
     </div>
   `;
 
