@@ -39,16 +39,11 @@
       </div>
 
       <div class="basin-selector-wrapper">
-        <div class="selector-group basin-select-dropdown">
-          <label for="basin-select" class="selector-label">Basin</label>
-          <select id="basin-select" class="basin-select">
-            <option value="rio_cauca">Rio Cauca (Colombia)</option>
-            <option value="rio_magdalena">Rio Magdalena (Colombia)</option>
-          </select>
-        </div>
-        <!-- Municipality selector (Public mode only) -->
+        <!-- Municipality selector (Public mode only). The basin scope moved to
+             the Diagnostics slideout: live items in the scope strip drive
+             navigation now, not a watershed dropdown. -->
         <div class="selector-group muni-select-dropdown">
-          <label for="muni-select" class="selector-label">Municipality</label>
+          <label for="muni-select" class="selector-label">Monitored area (pilot): Rio Cauca, Colombia</label>
           <select id="muni-select" class="basin-select">
             <!-- Populated dynamically -->
           </select>
@@ -83,6 +78,11 @@
     <main class="dashboard-grid">
       <!-- OPERATIONS VIEW PANELS -->
       <div class="ops-panels-container">
+        <!-- Scope strip: live navigation. One pinned monitored-basin card plus
+             active seismic regions that actually have events in the 48h feed.
+             Picking an item aligns the whole page. -->
+        <nav class="scope-strip" id="scope-strip" aria-label="Live scope navigation"></nav>
+
         <!-- Basin Risk Map Panel -->
         <section class="card risk-map-panel" aria-labelledby="risk-map-title">
           <div class="card-header">
@@ -117,11 +117,48 @@
           </div>
         </section>
 
+        <!-- Live Seismic Events panel: global USGS feed with clickable events.
+             Promoted to sit directly under the map: it is the live navigation
+             surface. The 30-day activity row is context, collapsed by default. -->
+        <section class="card seismic-panel" aria-labelledby="seismic-title">
+          <div class="card-header">
+            <h2 id="seismic-title">Live Seismic Events</h2>
+            <div class="risk-timeline-meta">
+              <button type="button" class="btn btn-sm" id="regions-30d-toggle" aria-pressed="false"
+                      aria-controls="seismic-regions-container">30-day activity</button>
+              <span class="badge badge-live-usgs" title="Real events from the USGS earthquake feed">LIVE &middot; USGS</span>
+            </div>
+          </div>
+          <div class="card-body seismic-panel-body">
+            <div class="seismic-regions" id="seismic-regions-container" aria-label="Seismically active regions over the last 30 days" hidden></div>
+            <div class="seismic-list" id="seismic-feed-container" aria-label="Live seismic events, newest first">
+              <div class="empty-alerts">No recent seismic activity in range.</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Incident Triage alerts panel -->
+        <section class="card alerts-panel" aria-labelledby="alerts-title">
+          <div class="card-header">
+            <h2 id="alerts-title">Incident Triage: Active Alerts</h2>
+            <div class="risk-timeline-meta">
+              <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
+              <span class="badge badge-error" id="active-alert-count">0 Alerts</span>
+            </div>
+          </div>
+          <div class="card-body alert-list" id="alert-feed-container">
+            <!-- Alerts dynamically populated -->
+            <div class="empty-alerts">No active warnings. System telemetry is within safe operating ranges.</div>
+          </div>
+        </section>
+
+        <div class="charts-row">
         <!-- Live Risk Timeline (selected municipality's composite risk over the poll) -->
         <section class="card risk-timeline-panel" aria-labelledby="risk-timeline-title">
           <div class="card-header">
             <h2 id="risk-timeline-title">Live Risk Timeline</h2>
             <div class="risk-timeline-meta">
+              <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
               <span class="risk-timeline-muni" id="risk-timeline-muni">&mdash;</span>
               <span class="risk-timeline-value tabular-nums" id="risk-timeline-value">--%</span>
               <button type="button" class="btn btn-sm chart-table-toggle" id="timeline-table-toggle"
@@ -144,6 +181,7 @@
           <div class="card-header">
             <h2 id="telemetry-trend-title">River &amp; Rainfall Trend</h2>
             <div class="risk-timeline-meta">
+              <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
               <span class="trend-provenance">rainfall: live recorded &middot; river level: pipeline data (simulated gauge)</span>
               <button type="button" class="btn btn-sm chart-table-toggle" id="trend-table-toggle"
                       aria-pressed="false" aria-controls="telemetry-trend-table">View as table</button>
@@ -159,34 +197,7 @@
             <p id="telemetry-trend-summary" class="visually-hidden" aria-live="off"></p>
           </div>
         </section>
-
-        <!-- Incident Triage alerts panel -->
-        <section class="card alerts-panel" aria-labelledby="alerts-title">
-          <div class="card-header">
-            <h2 id="alerts-title">Incident Triage: Active Alerts</h2>
-            <span class="badge badge-error" id="active-alert-count">0 Alerts</span>
-          </div>
-          <div class="card-body alert-list" id="alert-feed-container">
-            <!-- Alerts dynamically populated -->
-            <div class="empty-alerts">No active warnings. System telemetry is within safe operating ranges.</div>
-          </div>
-        </section>
-
-        <!-- Live Seismic Events panel: global USGS feed with clickable events and an
-             active-regions summary. Falls back to the legacy basin-scoped feed when
-             the /seismic-events endpoint is not available, so nothing breaks. -->
-        <section class="card seismic-panel" aria-labelledby="seismic-title">
-          <div class="card-header">
-            <h2 id="seismic-title">Live Seismic Events</h2>
-            <span class="badge badge-live-usgs" title="Real events from the USGS earthquake feed">LIVE &middot; USGS</span>
-          </div>
-          <div class="card-body seismic-panel-body">
-            <div class="seismic-regions" id="seismic-regions-container" aria-label="Active seismic regions"></div>
-            <div class="seismic-list" id="seismic-feed-container" aria-label="Live seismic events, newest first">
-              <div class="empty-alerts">No recent seismic activity in range.</div>
-            </div>
-          </div>
-        </section>
+        </div><!-- /charts-row -->
       </div>
 
       <!-- PUBLIC ALERT VIEW PANELS -->
@@ -303,6 +314,24 @@
       <button type="button" class="slideout-close-btn" id="diagnostics-close-btn" aria-label="Close diagnostics panel">&times;</button>
     </div>
     <div class="slideout-body">
+      <!-- Operator basin-scope override. Day-to-day navigation is the scope
+           strip; this exists for operators and demos (e.g. the simulated
+           Magdalena basin, which never appears on the main surface). -->
+      <section class="card" aria-labelledby="basin-override-title">
+        <div class="card-header">
+          <h2 id="basin-override-title">Basin Scope (Operator Override)</h2>
+        </div>
+        <div class="card-body">
+          <div class="selector-group">
+            <label for="basin-select" class="selector-label">Scoped basin</label>
+            <select id="basin-select" class="basin-select">
+              <option value="rio_cauca">Rio Cauca (Colombia)</option>
+            </select>
+          </div>
+          <p class="seismic-focus-note" style="margin-top: 0.5rem;">Simulated basins carry modeled river and soil values and are labeled SIMULATED.</p>
+        </div>
+      </section>
+
       <!-- Pipeline Status Card -->
       <section class="card status-panel" id="pipeline-status-card" aria-labelledby="pipeline-title">
         <div class="card-header">

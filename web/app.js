@@ -1623,6 +1623,64 @@ async function fetchSeismicFeed() {
   }
 }
 
+// ==========================================================================
+// Scope strip: live navigation. One pinned monitored-basin card plus the
+// seismic regions that have events in the 48h feed. Picking aligns the page.
+// ==========================================================================
+function renderScopeStrip() {
+  const strip = document.getElementById("scope-strip");
+  if (!strip) return;
+
+  const basinScoped = !appState.regionFilter && !appState.seismicFocus;
+  const scopedBasin = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
+  const basinName = scopedBasin ? scopedBasin.name : "Rio Cauca";
+  const basinSimulated = !!(scopedBasin && scopedBasin.simulated);
+
+  // Regions present in the live 48h feed, strongest live magnitude first.
+  const counts = {};
+  (database.seismicEvents.events || []).forEach(ev => {
+    const region = eventRegion(ev);
+    if (!region) return;
+    if (!counts[region]) counts[region] = { region: region, count: 0, maxMag: 0 };
+    counts[region].count += 1;
+    counts[region].maxMag = Math.max(counts[region].maxMag, Number(ev.magnitude) || 0);
+  });
+  const liveRegions = Object.values(counts).sort((a, b) => (b.maxMag - a.maxMag) || (b.count - a.count));
+
+  strip.innerHTML = `
+    <button type="button" class="scope-item scope-basin ${basinScoped ? "active" : ""}"
+            data-scope-basin="1" aria-pressed="${basinScoped}">
+      <span class="scope-item-name">${escapeHtml(basinName)}</span>
+      <span class="scope-item-meta">Monitored basin &middot; ${basinSimulated ? "SIMULATED" : "live pipeline"}</span>
+    </button>
+    ${liveRegions.map(r => {
+      const sev = getMagnitudeSeverity(r.maxMag);
+      const active = appState.regionFilter === r.region;
+      return `
+      <button type="button" class="scope-item ${active ? "active" : ""}"
+              data-region="${escapeHtml(r.region)}" aria-pressed="${active}"
+              style="border-left-color: ${sev.colorHex};">
+        <span class="scope-item-name">${escapeHtml(r.region)}</span>
+        <span class="scope-item-meta tabular-nums">${r.count} live &middot; max M ${r.maxMag.toFixed(1)}</span>
+      </button>`;
+    }).join("")}`;
+}
+
+// Return the page to the monitored-basin scope (the pinned strip card).
+function selectBasinScope() {
+  if (appState.regionFilter) {
+    appState.regionFilter = null;
+    renderSeismicEvents();
+  }
+  if (appState.seismicFocus) {
+    exitSeismicFocus(); // refits the basin and clears the rail
+  } else {
+    appState.boundsFitForBasin = null;
+    renderMapMarkers();
+  }
+  renderScopeStrip();
+}
+
 // Region of one event, matching sql/seismic_active_regions.sql: the text
 // after the last comma of the USGS place string (or the whole string).
 function eventRegion(ev) {
@@ -1631,29 +1689,34 @@ function eventRegion(ev) {
   return (idx >= 0 ? place.slice(idx + 1) : place).trim();
 }
 
-// Toggle the live-feed region filter; with matches (and no seismic focus
-// owning the map) the map fits the matched epicenters, and clearing restores
-// the basin view via the normal bounds-fit path.
+// Pick (or clear) a region scope: the feed filters to it, the map fits its
+// epicenters, and the rail focuses the most recent event there. Clearing
+// returns to the monitored-basin scope.
 function toggleRegionFilter(region) {
-  appState.regionFilter = appState.regionFilter === region ? null : region;
+  if (appState.regionFilter === region) {
+    selectBasinScope();
+    return;
+  }
+  appState.regionFilter = region;
   renderSeismicEvents();
 
-  if (appState.seismicFocus || !map || typeof google === "undefined") return;
+  const matches = (database.seismicEvents.events || [])
+    .filter(ev => eventRegion(ev) === region &&
+      typeof ev.latitude === "number" && typeof ev.longitude === "number")
+    .sort((a, b) => (new Date(b.time) - new Date(a.time)) || (b.magnitude - a.magnitude));
 
-  if (appState.regionFilter) {
-    const matches = (database.seismicEvents.events || []).filter(ev =>
-      eventRegion(ev) === appState.regionFilter &&
-      typeof ev.latitude === "number" && typeof ev.longitude === "number");
-    if (matches.length) {
-      const bounds = new google.maps.LatLngBounds();
-      matches.forEach(ev => bounds.extend({ lat: ev.latitude, lng: ev.longitude }));
-      map.fitBounds(bounds);
-      if (matches.length === 1) map.setZoom(6);
-      initConsoleLog(`Map fitted to ${matches.length} recent event${matches.length === 1 ? "" : "s"} in ${appState.regionFilter}.`, "telemetry");
-    }
-  } else {
-    appState.boundsFitForBasin = null;
-    renderMapMarkers();
+  if (map && typeof google !== "undefined" && matches.length) {
+    const bounds = new google.maps.LatLngBounds();
+    matches.forEach(ev => bounds.extend({ lat: ev.latitude, lng: ev.longitude }));
+    map.fitBounds(bounds);
+    if (matches.length === 1) map.setZoom(6);
+    initConsoleLog(`Map fitted to ${matches.length} recent event${matches.length === 1 ? "" : "s"} in ${region}.`, "telemetry");
+  }
+
+  // The rail aligns to the region's most recent event; the map keeps the
+  // region-wide fit instead of snapping to that single epicenter.
+  if (matches.length) {
+    focusSeismicEvent(matches[0].id, { keepMapView: true });
   }
 }
 
@@ -1665,36 +1728,29 @@ function renderSeismicEvents() {
   const events = database.seismicEvents.events;
   const activeRegions = database.seismicEvents.active_regions;
 
+  // 30-day activity context row (collapsed by default): every active region,
+  // non-interactive. Live navigation happens in the scope strip, which only
+  // shows regions that actually have events in the 48h feed.
   if (regionsEl) {
     if (!activeRegions.length) {
       regionsEl.innerHTML = "";
     } else {
-      // Strongest regions first; defensive sort in case the backend reorders.
       const regions = [...activeRegions].sort((a, b) =>
         ((b.max_magnitude || 0) - (a.max_magnitude || 0)) || ((b.count || 0) - (a.count || 0)));
-      // On small screens the full chip wall pushes the first event below the
-      // fold, so cap it behind a "show all" toggle.
-      const isNarrow = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 640px)").matches;
-      const capped = isNarrow && !appState.regionsExpanded && regions.length > 6;
-      const visibleRegions = capped ? regions.slice(0, 6) : regions;
-      regionsEl.innerHTML = visibleRegions.map(r => {
+      regionsEl.innerHTML = regions.map(r => {
         const maxMag = typeof r.max_magnitude === "number" ? r.max_magnitude : 0;
         const sev = getMagnitudeSeverity(maxMag);
-        const active = appState.regionFilter === r.region;
+        const live48 = (events || []).filter(ev => eventRegion(ev) === r.region).length;
         return `
-          <button type="button" class="seismic-region-chip ${active ? "active" : ""}"
-                  data-region="${escapeHtml(r.region)}" aria-pressed="${active}"
-                  aria-label="${active ? "Clear the" : "Filter the live feed to the"} ${escapeHtml(r.region)} region"
-                  style="border-left-color: ${sev.colorHex};">
+          <span class="seismic-region-chip context" style="border-left-color: ${sev.colorHex};">
             <span class="seismic-region-name">${escapeHtml(r.region)}</span>
-            <span class="seismic-region-meta tabular-nums">${Number(r.count) || 0} event${(Number(r.count) || 0) === 1 ? "" : "s"} &middot; max M ${maxMag.toFixed(1)}</span>
-          </button>`;
-      }).join("") + (isNarrow && regions.length > 6 ? `
-          <button type="button" class="seismic-region-chip seismic-regions-toggle" data-regions-toggle="1">
-            <span class="seismic-region-name">${capped ? `Show all ${regions.length}` : "Show less"}</span>
-          </button>` : "");
+            <span class="seismic-region-meta tabular-nums">${Number(r.count) || 0} in 30d &middot; max M ${maxMag.toFixed(1)}${live48 ? ` &middot; ${live48} live` : ""}</span>
+          </span>`;
+      }).join("");
     }
   }
+
+  renderScopeStrip();
 
   if (events.length === 0) {
     container.innerHTML = `<div class="empty-alerts">No seismic events in the live feed right now.</div>`;
@@ -1757,7 +1813,7 @@ function renderSeismicEvents() {
 
 // Click-to-focus: fetch the seismic-only assessment for one event and open
 // the transient focus view (map centered on the epicenter + detail rail).
-async function focusSeismicEvent(eventId) {
+async function focusSeismicEvent(eventId, opts = {}) {
   if (!eventId || appState.isOffline) return;
   initConsoleLog(`Requesting seismic-only focus for event ${eventId}...`, "action");
 
@@ -1767,7 +1823,7 @@ async function focusSeismicEvent(eventId) {
   if (known) {
     appState.seismicFocus = { event: known, pending: true };
     renderSeismicFocusRail();
-    placeSeismicFocusOnMap();
+    placeSeismicFocusOnMap(opts.keepMapView);
     const mapPanel = document.getElementById("risk-map-container");
     if (mapPanel && typeof mapPanel.scrollIntoView === "function") {
       mapPanel.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "nearest" });
@@ -1786,7 +1842,7 @@ async function focusSeismicEvent(eventId) {
     if (known && !stillFocused()) return;
     appState.seismicFocus = data;
     renderSeismicFocusRail();
-    placeSeismicFocusOnMap();
+    placeSeismicFocusOnMap(opts.keepMapView);
     const ev = data.event;
     initConsoleLog(
       `SEISMIC FOCUS: M ${(Number(ev.magnitude) || 0).toFixed(1)} — ${ev.place || "unknown location"} ` +
@@ -1807,7 +1863,7 @@ async function focusSeismicEvent(eventId) {
   }
 }
 
-function placeSeismicFocusOnMap() {
+function placeSeismicFocusOnMap(keepMapView = false) {
   const focus = appState.seismicFocus;
   if (!focus || !map || typeof google === "undefined") return;
   // The focus owns the map: basin risk zones come back when the focus closes.
@@ -1848,8 +1904,12 @@ function placeSeismicFocusOnMap() {
   seismicFocusCircle.setRadius(Math.max(1, mag) * 12000);
   seismicFocusCircle.setMap(map);
 
-  map.setCenter(pos);
-  map.setZoom(7);
+  // A region pick fits the whole region; the focus marker should not snap
+  // the view to one epicenter in that flow.
+  if (!keepMapView) {
+    map.setCenter(pos);
+    map.setZoom(7);
+  }
 }
 
 function renderSeismicFocusRail() {
@@ -1960,6 +2020,7 @@ function exitSeismicFocus(refit = true) {
     appState.boundsFitForBasin = null;
     renderMapMarkers();
   }
+  renderScopeStrip();
   initConsoleLog("Exited seismic focus; returned to basin view.", "system");
 }
 
@@ -2649,19 +2710,25 @@ function setupEventHandlers() {
     });
   }
 
-  // Active-region chips: delegate so chips re-rendered each poll stay live.
-  const seismicRegions = document.getElementById("seismic-regions-container");
-  if (seismicRegions) {
-    seismicRegions.addEventListener("click", (e) => {
+  // Scope strip: delegate so items re-rendered each poll stay live.
+  const scopeStrip = document.getElementById("scope-strip");
+  if (scopeStrip) {
+    scopeStrip.addEventListener("click", (e) => {
       if (!e.target || typeof e.target.closest !== "function") return;
-      const toggle = e.target.closest("[data-regions-toggle]");
-      if (toggle) {
-        appState.regionsExpanded = !appState.regionsExpanded;
-        renderSeismicEvents();
-        return;
-      }
-      const chip = e.target.closest(".seismic-region-chip");
-      if (chip && chip.dataset && chip.dataset.region) toggleRegionFilter(chip.dataset.region);
+      const basinCard = e.target.closest("[data-scope-basin]");
+      if (basinCard) { selectBasinScope(); return; }
+      const item = e.target.closest(".scope-item");
+      if (item && item.dataset && item.dataset.region) toggleRegionFilter(item.dataset.region);
+    });
+  }
+
+  // 30-day activity context row (collapsed by default in the feed panel).
+  const regions30dToggle = document.getElementById("regions-30d-toggle");
+  const regionsRow = document.getElementById("seismic-regions-container");
+  if (regions30dToggle && regionsRow) {
+    regions30dToggle.addEventListener("click", () => {
+      regionsRow.hidden = !regionsRow.hidden;
+      regions30dToggle.setAttribute("aria-pressed", String(!regionsRow.hidden));
     });
   }
 

@@ -2619,6 +2619,95 @@ span.skeleton-block {
   gap: 0.4rem;
 }
 
+.seismic-regions[hidden] {
+  display: none;
+}
+
+/* Context chips in the 30-day row are informational, not interactive. */
+.seismic-region-chip.context {
+  cursor: default;
+  min-height: 0;
+}
+
+/* Scope strip: the page's live navigation. */
+.scope-strip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  scrollbar-width: thin;
+}
+
+.scope-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  flex: 0 0 auto;
+  min-height: 52px;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  border-left-width: 3px;
+  background-color: var(--bg-card, rgba(255, 255, 255, 0.02));
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.scope-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.scope-item.active {
+  background-color: rgba(79, 142, 247, 0.14);
+  border-color: var(--primary);
+}
+
+.scope-item.active .scope-item-name {
+  color: var(--primary);
+}
+
+.scope-item-name {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--text-main);
+}
+
+.scope-item-meta {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.scope-basin {
+  border-left-width: 3px;
+  border-left-color: var(--success);
+}
+
+/* Scope chips on basin-scoped panels (G2). */
+.scope-chip {
+  background-color: rgba(52, 211, 153, 0.08);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  font-size: 0.6rem;
+}
+
+/* Charts sit side by side on wide screens to shorten the page. */
+.charts-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .charts-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .seismic-regions:empty {
   display: none;
 }
