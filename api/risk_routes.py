@@ -156,8 +156,6 @@ def get_telemetry_history(basin: str = "rio_cauca", place: str = None):
 # moisture, model). Per-source failures degrade to null, never a 500.
 # NOTE: when the Google Flood Forecasting API approval arrives, swap/augment
 # the discharge source behind these same response fields.
-LOCATION_CONDITIONS_CACHE = {}  # (lat, lng rounded) -> (expiry_epoch_s, payload)
-LOCATION_CONDITIONS_TTL_S = 30 * 60
 
 
 @router.get("/group-summaries")
