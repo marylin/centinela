@@ -576,6 +576,60 @@ INDEX_CACHE_TTL_S = 60    # /risk is polled every 5s per client; BQ once a minut
 DOMINANT_BY_COMPONENT = {"flood": "FLOOD", "rain": "FLOOD", "soil": "LANDSLIDE", "landslide": "LANDSLIDE", "seismic": "SEISMIC"}
 
 
+def refresh_weather_records():
+    """Fetch live observed rainfall for every registry place (5-min cache) and
+    record it into BigQuery so per-place rainfall history accumulates (D1)."""
+    try:
+        api_key = os.environ.get("GOOGLE_WEATHER_API_KEY")
+        if not api_key:
+            print("Warning: GOOGLE_WEATHER_API_KEY environment variable is not set.", flush=True)
+            return
+        now_utc = datetime.now(timezone.utc)
+        global WEATHER_CACHE_EXPIRY, WEATHER_CACHE
+        if WEATHER_CACHE_EXPIRY and now_utc < WEATHER_CACHE_EXPIRY:
+            return
+        print("Weather cache expired or empty. Fetching new data from Google Weather API...", flush=True)
+        new_precip = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+            futures = {
+                executor.submit(fetch_precipitation_for_muni, muni, coord["lat"], coord["lng"], api_key): muni
+                for muni, coord in MUNICIPALITY_COORDINATES.items()
+            }
+            for future in concurrent.futures.as_completed(futures):
+                muni = futures[future]
+                try:
+                    val = future.result()
+                    if val is not None:
+                        new_precip[muni] = val
+                except Exception as e:
+                    print(f"Error in future result for {muni}: {e}", flush=True)
+
+        if not new_precip:
+            return
+        WEATHER_CACHE.update(new_precip)
+        WEATHER_CACHE_EXPIRY = now_utc + timedelta(minutes=5)
+        try:
+            bq_client = bigquery.Client(project='centinela-498622')
+            timestamp_str = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+            rows_to_insert = []
+            for muni, precip_val in new_precip.items():
+                coord = MUNICIPALITY_COORDINATES[muni]
+                safe_muni = muni.replace("'", "\\'")
+                rows_to_insert.append(
+                    f"('{timestamp_str}', 'GMP-01', {precip_val}, '{coord['basin']}', '{safe_muni}')")
+            if rows_to_insert:
+                insert_query = f"""
+                INSERT INTO unified_feeds.rainfall (timestamp, station_id, precipitation_mm, basin, municipality)
+                VALUES {', '.join(rows_to_insert)}
+                """
+                bq_client.query(insert_query).result()
+                print(f"Recorded {len(rows_to_insert)} live weather rows to BigQuery.", flush=True)
+        except Exception as bq_err:
+            print(f"Error writing Weather API data to BigQuery: {bq_err}", flush=True)
+    except Exception as weather_err:
+        print(f"Error in Weather API integration flow: {weather_err}", flush=True)
+
+
 def component_scores(discharge_stat, soil_latest, rain_mm_24h, quake_mag):
     """0-1 component scores from raw real values; absent data -> absent
     component (never a fabricated zero that would dilute the index).
