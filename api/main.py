@@ -2,6 +2,11 @@
 # os.environ reads here or in any other api module.
 import api.core as core
 from api.core import TESTING, db, MOCK_DB_STATE
+from api.config import (
+    BASINS, REAL_CONNECTORS, CONNECTOR_ID, SEISMIC_BBOX_PAD_DEG,
+    TELEMETRY_PROVENANCE, LOCATION_CONDITIONS_PROVENANCE,
+    RAW_EVENTS_TABLE, RAW_EVENT_FIELDS, basin_municipalities,
+)
 
 import os
 import asyncio
@@ -438,69 +443,6 @@ class TokenRegistration(BaseModel):
 # Resolutions persist in Firestore (places_resolution/latest, no TTL) and are
 # lazily filled by a lock-guarded background thread. Seismic bboxes derive
 # from the resolved anchors (+/- SEISMIC_BBOX_PAD_DEG).
-
-REAL_CONNECTORS = [
-    {"id": "kung_gleeful", "name": "USGS Raw Events (Connector SDK)", "type": "connector_sdk"},
-    {"id": "rpm_muriate", "name": "Global Hydrology — GloFAS + Soil (Connector SDK)", "type": "connector_sdk"}
-]
-
-BASINS = [
-    {
-        "id": "rio_cauca", "name": "Rio Cauca", "country": "Colombia", "cc": "CO",
-        "kind": "flood-watch",
-        "places": [
-            {"id": "cali", "name": "Cali"},
-            {"id": "yumbo", "name": "Yumbo"},
-            {"id": "jamundi", "name": "Jamundí"}
-        ],
-        "connectors": REAL_CONNECTORS
-    },
-    {
-        "id": "rio_magdalena", "name": "Rio Magdalena", "country": "Colombia", "cc": "CO",
-        "kind": "flood-watch",
-        "places": [
-            {"id": "neiva", "name": "Neiva"},
-            {"id": "girardot", "name": "Girardot"},
-            {"id": "honda", "name": "Honda"}
-        ],
-        "connectors": REAL_CONNECTORS
-    },
-    {
-        "id": "lima_peru", "name": "Lima", "country": "Peru", "cc": "PE",
-        "kind": "seismic-watch",
-        "places": [{"id": "lima", "name": "Lima"}],
-        "connectors": REAL_CONNECTORS
-    },
-    {
-        "id": "guatemala_city", "name": "Guatemala City", "country": "Guatemala", "cc": "GT",
-        "kind": "seismic-watch",
-        "places": [{"id": "guatemala_city", "name": "Guatemala City"}],
-        "connectors": REAL_CONNECTORS
-    },
-    {
-        "id": "santiago_chile", "name": "Santiago", "country": "Chile", "cc": "CL",
-        "kind": "seismic-watch",
-        "places": [{"id": "santiago", "name": "Santiago"}],
-        "connectors": REAL_CONNECTORS
-    },
-    {
-        "id": "mexico_city", "name": "Mexico City", "country": "Mexico", "cc": "MX",
-        "kind": "seismic-watch",
-        "places": [{"id": "mexico_city", "name": "Mexico City"}],
-        "connectors": REAL_CONNECTORS
-    },
-    {
-        "id": "port_au_prince", "name": "Port-au-Prince", "country": "Haiti", "cc": "HT",
-        "kind": "seismic-watch",
-        "places": [{"id": "port_au_prince", "name": "Port-au-Prince"}],
-        "connectors": REAL_CONNECTORS
-    }
-]
-
-def basin_municipalities(b):
-    return [p["name"] for p in b["places"]]
-
-CONNECTOR_ID = REAL_CONNECTORS[0]["id"]
 
 # --- Coordinate resolution (anchor + hydro point per place, nothing hardcoded)
 
@@ -976,8 +918,6 @@ def get_risk_history(basin: str = "rio_cauca"):
         return {"basin": basin, "ticks": ticks}
     return {"basin": basin, "ticks": get_risk_sample_ticks(basin)}
 
-TELEMETRY_PROVENANCE = {"rainfall": "live", "discharge": "model-glofas", "soil": "model-ecmwf"}
-
 @app.get("/telemetry-history")
 def get_telemetry_history(basin: str = "rio_cauca", place: str = None):
     """Real telemetry series for the trend panel: observed rainfall (48h,
@@ -1150,12 +1090,6 @@ def fetch_location_aqi(lat: float, lng: float, api_key: str):
         return None
     return {"aqi": int(uaqi.get("aqi") or 0), "category": uaqi.get("category") or ""}
 
-LOCATION_CONDITIONS_PROVENANCE = {
-    "rainfall": "observed · Google Weather",
-    "river_discharge": "model · GloFAS via Open-Meteo",
-    "soil_moisture": "model · ECMWF via Open-Meteo",
-    "air_quality": "observed · Google Air Quality"
-}
 
 @app.get("/location-conditions")
 def get_location_conditions(lat: float, lng: float):
@@ -2343,8 +2277,6 @@ def demo_clear_event(data: DemoClearRequest, background_tasks: BackgroundTasks):
 # (the real rows appear only after the connector is deployed and synced).
 # ---------------------------------------------------------------------------
 
-RAW_EVENTS_TABLE = os.environ.get("SEISMIC_RAW_EVENTS_TABLE", "usgs_raw_events.events")
-RAW_EVENT_FIELDS = ["id", "magnitude", "place", "time", "latitude", "longitude", "depth_km"]
 
 
 def parse_region(place: str) -> str:
