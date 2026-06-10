@@ -38,17 +38,8 @@
         <button type="button" class="mode-switch-btn" id="mode-btn-public" data-mode="public">Public Alert</button>
       </div>
 
-      <div class="basin-selector-wrapper">
-        <!-- Municipality selector (Public mode only). The basin scope moved to
-             the Diagnostics slideout: live items in the scope strip drive
-             navigation now, not a watershed dropdown. -->
-        <div class="selector-group muni-select-dropdown">
-          <label for="muni-select" class="selector-label">Monitored area (pilot): Rio Cauca, Colombia</label>
-          <select id="muni-select" class="basin-select">
-            <!-- Populated dynamically -->
-          </select>
-        </div>
-      </div>
+      <!-- No dropdowns anywhere: Operations navigates via the scope strip,
+           Public Alert via tappable area cards (and the map markers). -->
 
       <!-- Toggle Diagnostics (Operations mode only) -->
       <button type="button" class="btn btn-sm btn-diagnostics" id="diagnostics-toggle-btn" aria-label="Open Pipeline & Diagnostics panel" aria-haspopup="true" aria-expanded="false">
@@ -202,6 +193,12 @@
 
       <!-- PUBLIC ALERT VIEW PANELS -->
       <div class="public-panels-container">
+        <!-- Monitored areas (pilot scope): tappable cards, no dropdown. -->
+        <section class="public-area-section" id="public-area-section" aria-label="Monitored areas">
+          <p class="public-area-caption">Monitored area (pilot): Rio Cauca, Colombia &middot; pick your municipality</p>
+          <nav class="scope-strip public-area-strip" id="public-area-strip"></nav>
+        </section>
+
         <!-- Structured 5-element Emergency Alert Card -->
         <section class="card public-alert-card" id="public-alert-card" aria-labelledby="public-alert-title">
           <h2 class="guidance-title" id="public-alert-title">Emergency Alert</h2>

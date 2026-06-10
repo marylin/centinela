@@ -2641,10 +2641,44 @@ span.skeleton-block {
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
-  padding-bottom: 0.25rem;
-  scrollbar-width: thin;
+  padding-bottom: 0.35rem;
   min-width: 0;
   max-width: 100%;
+  /* Themed scrollbar: the OS default bar broke the dark styling. */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.scope-strip::-webkit-scrollbar {
+  height: 6px;
+}
+
+.scope-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scope-strip::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+}
+
+.scope-strip::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Public area cards reuse the scope-item look, slightly smaller. */
+.public-area-section {
+  grid-column: 1 / -1;
+}
+
+.public-area-caption {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin: 0 0 0.4rem 0;
+}
+
+.public-area-item {
+  min-height: 48px;
 }
 
 .scope-item {

@@ -512,6 +512,8 @@ function renderPublicMap(selectedMuni) {
         icon: markerIcon,
         zIndex: isSelected ? 1000 : 1
       });
+      // Tapping a marker selects that area (cards and map stay in sync).
+      publicMarkers[muni.municipality].addListener("click", () => selectPublicArea(muni.municipality));
     }
   });
 
@@ -2889,17 +2891,13 @@ function setupEventHandlers() {
     btnPub.addEventListener("click", () => switchMode("public"));
   }
   
-  // Set up muni selector dropdown change handler
-  const muniSelect = document.getElementById("muni-select");
-  if (muniSelect) {
-    muniSelect.addEventListener("change", (e) => {
-      const muniName = e.target.value;
-      const muniObj = database.risk.find(r => r.municipality === muniName);
-      if (muniObj) {
-        appState.selectedMuni = muniObj;
-        renderRiskTimeline();
-        renderPublicView();
-      }
+  // Public area cards: delegate so cards re-rendered each poll stay live.
+  const publicAreaStrip = document.getElementById("public-area-strip");
+  if (publicAreaStrip) {
+    publicAreaStrip.addEventListener("click", (e) => {
+      if (!e.target || typeof e.target.closest !== "function") return;
+      const card = e.target.closest("[data-public-area]");
+      if (card) selectPublicArea(card.dataset.publicArea);
     });
   }
 }
@@ -3082,19 +3080,11 @@ window.reopenIncident = async (id) => {
   }
 };
 
+// Keeps the public area selection valid for the scoped basin and renders the
+// tappable area cards (the dropdown is gone everywhere by design).
 function populateMuniDropdown() {
-  const muniSelect = document.getElementById("muni-select");
-  if (!muniSelect) return;
-
   const munis = getBasinMunis(appState.selectedBasin);
-  
-  const currentOptions = Array.from(muniSelect.options).map(o => o.value);
-  const optionsChanged = currentOptions.length !== munis.length || !currentOptions.every((val, i) => val === munis[i]);
-  
-  if (optionsChanged) {
-    muniSelect.innerHTML = munis.map(m => `<option value="${m}">${m}</option>`).join("");
-  }
-  
+
   if (!appState.selectedMuni || !munis.includes(appState.selectedMuni.municipality)) {
     const updated = database.risk.find(r => r.municipality === munis[0]);
     appState.selectedMuni = updated || { municipality: munis[0], risk_score: 0, dominant_hazard: "FLOOD" };
@@ -3104,8 +3094,35 @@ function populateMuniDropdown() {
       appState.selectedMuni = updated;
     }
   }
-  
-  muniSelect.value = appState.selectedMuni.municipality;
+
+  renderPublicAreaStrip(munis);
+}
+
+function renderPublicAreaStrip(munis) {
+  const strip = document.getElementById("public-area-strip");
+  if (!strip) return;
+  strip.innerHTML = (munis || []).map(name => {
+    const risk = database.risk.find(r => r.municipality === name);
+    const sev = risk ? getSeverityConfig(risk.risk_score) : null;
+    const active = appState.selectedMuni && appState.selectedMuni.municipality === name;
+    return `
+      <button type="button" class="scope-item public-area-item ${active ? "active" : ""}"
+              data-public-area="${escapeHtml(name)}" aria-pressed="${active}"
+              style="border-left-color: ${sev ? sev.colorHex : "var(--border-color)"};">
+        <span class="scope-item-name">${escapeHtml(name)}</span>
+        <span class="scope-item-meta">${sev ? `${escapeHtml(sev.label)} &middot; ${(risk.risk_score * 100).toFixed(0)}%` : "&mdash;"}</span>
+      </button>`;
+  }).join("");
+}
+
+// Public area selection (cards or map markers): the route, hero, alert card,
+// and timeline all follow it.
+function selectPublicArea(muniName) {
+  const muniObj = database.risk.find(r => r.municipality === muniName);
+  if (!muniObj) return;
+  appState.selectedMuni = muniObj;
+  renderRiskTimeline();
+  renderPublicView();
 }
 
 function switchMode(newMode) {
@@ -3225,7 +3242,7 @@ function renderPublicSeismicList() {
 // Show/hide the basin-specific public sections (irrelevant when the page is
 // aligned to a remote seismic event).
 function setPublicBasinSectionsVisible(visible) {
-  ["safe-route-card", "public-advisories-card"].forEach(id => {
+  ["safe-route-card", "public-advisories-card", "public-area-section"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.hidden = !visible;
   });
