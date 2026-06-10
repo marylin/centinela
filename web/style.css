@@ -2461,6 +2461,7 @@ span.skeleton-block {
 .trend-swatch-river { background: #38bdf8; }
 .trend-swatch-rain { background: var(--primary); opacity: 0.55; height: 8px; width: 6px; }
 .trend-swatch-discharge { background: #34d399; }
+.trend-swatch-soil { background: #a78bfa; }
 .trend-swatch-threshold { background: #ef4444; }
 
 /* C3: data-table fallbacks for the charts. */
@@ -2994,3 +2995,7 @@ button.seismic-event-row:focus-visible {
     transition: none;
   }
 }
+
+/* Rain component bar + subtle drawer text (index rail) */
+.sub-score-fill.rain-fill { background: linear-gradient(90deg, #38bdf8, #60a5fa); }
+.drawer-subtle { color: var(--text-muted); font-size: 0.85em; }

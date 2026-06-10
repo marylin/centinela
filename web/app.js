@@ -273,38 +273,55 @@ function getBasinMunis(basinId) {
   return (b && Array.isArray(b.municipalities)) ? b.municipalities : [];
 }
 
-// Fetch the basin catalog from the backend and build the selector options from it,
-// so any basin in config (including Lima/Peru) appears automatically.
+// Fetch the places registry: every monitored group is a scope card in the
+// strip (no dropdowns anywhere); coordinates ride along for the maps.
 async function loadBasins() {
-  const basinSelect = document.getElementById("basin-select");
   try {
-    const res = await fetch(`${API_BASE}/basins`);
+    const res = await fetch(`${API_BASE}/places`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
     const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) throw new Error("Empty basins config");
+    if (!Array.isArray(data) || data.length === 0) throw new Error("Empty places registry");
 
     appState.basins = data;
-    // The selector lists compound basins only; seismic-only places are reached
-    // through the Live Seismic Events feed instead. Entries without a "kind"
-    // (older backend without the contract field) keep appearing, so nothing
-    // breaks until the kind-aware backend lands.
-    const selectable = data.filter(b => b && b.kind !== "seismic");
-    const options = selectable.length ? selectable : data;
-    if (basinSelect) {
-      basinSelect.innerHTML = options
-        .map(b => `<option value="${b.id}">${b.name} (${b.country})${b.simulated ? " · SIMULATED" : ""}</option>`)
-        .join("");
-    }
-    // Default to the first selectable basin returned (keeps rio_cauca as today).
-    appState.selectedBasin = options[0].id;
-    if (basinSelect) basinSelect.value = appState.selectedBasin;
-    initConsoleLog(`Loaded ${data.length} basins from configuration (${options.length} selectable).`, "telemetry");
+    appState.selectedBasin = data[0].id;
+    // Registry coordinates take precedence over the built-in fallback map.
+    data.forEach(b => (b.places || []).forEach(p => {
+      if (p && p.name && typeof p.lat === "number") {
+        municipalityCoords[p.name] = { lat: p.lat, lng: p.lng };
+      }
+    }));
+    initConsoleLog(`Loaded ${data.length} monitored groups from the registry.`, "telemetry");
   } catch (err) {
-    // Resilience: keep the existing hardcoded options/basins; never crash.
+    // Resilience: keep the built-in registry mirror; never crash.
     appState.basins = FALLBACK_BASINS;
-    console.warn("Could not load basins from backend; using fallback list:", err && err.message);
-    initConsoleLog("Basin config unavailable; using built-in basin list.", "warn");
+    console.warn("Could not load the places registry; using fallback list:", err && err.message);
+    initConsoleLog("Places registry unavailable; using built-in list.", "warn");
   }
+}
+
+// Switch the scoped monitored group (strip cards drive this; no select).
+function selectGroupScope(groupId) {
+  if (!groupId || groupId === appState.selectedBasin) {
+    selectBasinScope();
+    return;
+  }
+  if (appState.seismicFocus) exitSeismicFocus(false);
+  appState.regionFilter = null;
+  appState.selectedBasin = groupId;
+  initConsoleLog(`Switched monitored scope to: ${groupId}`, "action");
+  appState.boundsFitForBasin = null;
+  setMapLoadingState("loading");
+  const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
+  if (drawer) {
+    drawer.innerHTML = `<div class="drawer-instruction">Select a monitored place to view its hazard index.</div>`;
+  }
+  appState.selectedMuni = null;
+  renderRiskTimeline();
+  populateMuniDropdown();
+  seedRiskHistory(appState.selectedBasin);
+  fetchTelemetryHistory(appState.selectedBasin);
+  fetchTelemetry();
+  renderScopeStrip();
 }
 
 // Google Maps Dark styles
@@ -1336,10 +1353,11 @@ async function seedRiskHistory(basin) {
 // ==========================================================================
 // River & Rainfall Trend (warehouse history: real rainfall, seeded river)
 // ==========================================================================
-async function fetchTelemetryHistory(basin) {
+async function fetchTelemetryHistory(basin, placeId) {
   const chartEl = document.getElementById("telemetry-trend-chart");
   try {
-    const res = await fetch(`${API_BASE}/telemetry-history?basin=${encodeURIComponent(basin)}`);
+    const placeParam = placeId ? `&place=${encodeURIComponent(placeId)}` : "";
+    const res = await fetch(`${API_BASE}/telemetry-history?basin=${encodeURIComponent(basin)}${placeParam}`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
     database.telemetryHistory = await res.json();
     renderTelemetryTrend();
@@ -1350,36 +1368,45 @@ async function fetchTelemetryHistory(basin) {
   }
 }
 
+// Registry place id for a municipality name (used to scope the trend).
+function placeIdForMuni(muniName) {
+  for (const g of (appState.basins || [])) {
+    const p = (g.places || []).find(x => x && x.name === muniName);
+    if (p) return p.id;
+  }
+  return null;
+}
+
 function renderTelemetryTrend() {
   const chartEl = document.getElementById("telemetry-trend-chart");
   const summaryEl = document.getElementById("telemetry-trend-summary");
   if (!chartEl) return;
   const hist = database.telemetryHistory;
-  const allRiver = (hist && Array.isArray(hist.river)) ? hist.river.filter(r => r && r.time) : [];
   const allRain = (hist && Array.isArray(hist.rainfall)) ? hist.rainfall.filter(r => r && r.time) : [];
+  const allSoil = (hist && Array.isArray(hist.soil)) ? hist.soil.filter(r => r && r.time) : [];
   // GloFAS model discharge: chart only the recent window so the 31-day series
-  // does not stretch the x-domain away from the 48h rainfall bars.
+  // does not stretch the x-domain away from the 48-72h hourly series.
   const allDischarge = (hist && Array.isArray(hist.discharge)) ? hist.discharge.filter(r => r && r.date) : [];
   const chartDischarge = allDischarge.slice(-8);
 
   // Minimum-data rule: a series under 3 points is dropped from the chart and
   // reported as a text KPI instead — never a lone floating dot.
   const MIN_POINTS = 3;
-  const riverOk = allRiver.length >= MIN_POINTS;
   const rainOk = allRain.length >= MIN_POINTS;
+  const soilOk = allSoil.length >= MIN_POINTS;
   const dischargeOk = chartDischarge.length >= MIN_POINTS;
-  const river = riverOk ? allRiver : [];
   const rain = rainOk ? allRain : [];
+  const soil = soilOk ? allSoil : [];
   const discharge = dischargeOk ? chartDischarge : [];
 
   const kpiNotes = [];
-  if (!riverOk && allRiver.length) {
-    const last = allRiver[allRiver.length - 1];
-    kpiNotes.push(`River level: ${(Number(last.river_level_m) || 0).toFixed(1)} m vs ${(Number(last.threshold_m) || 0).toFixed(1)} m threshold (${allRiver.length} reading${allRiver.length === 1 ? "" : "s"} in window; too sparse to chart)`);
-  }
   if (!rainOk && allRain.length) {
     const last = allRain[allRain.length - 1];
-    kpiNotes.push(`Rainfall: ${(Number(last.precipitation_mm) || 0).toFixed(1)} mm/h latest (${allRain.length} reading${allRain.length === 1 ? "" : "s"} in window; too sparse to chart)`);
+    kpiNotes.push(`Rainfall: ${(Number(last.precipitation_mm) || 0).toFixed(1)} mm/h latest (${allRain.length} reading${allRain.length === 1 ? "" : "s"}; too sparse to chart)`);
+  }
+  if (!soilOk && allSoil.length) {
+    const last = allSoil[allSoil.length - 1];
+    kpiNotes.push(`Soil moisture: ${(Number(last.moisture_m3m3) || 0).toFixed(2)} m³/m³ latest (${allSoil.length} reading${allSoil.length === 1 ? "" : "s"}; too sparse to chart)`);
   }
   if (!dischargeOk && allDischarge.length) {
     const last = allDischarge[allDischarge.length - 1];
@@ -1389,15 +1416,15 @@ function renderTelemetryTrend() {
     ? `<div class="trend-kpi-notes">${kpiNotes.map(n => `<span>${escapeHtml(n)}</span>`).join("")}</div>`
     : "";
 
-  if (!riverOk && !rainOk && !dischargeOk) {
+  if (!rainOk && !soilOk && !dischargeOk) {
     chartEl.innerHTML = `<div class="risk-timeline-empty">Not enough telemetry history to chart yet. The series grows as live readings accumulate.${kpiHtml}</div>`;
     if (summaryEl) summaryEl.textContent = "Telemetry history is still accumulating. " + kpiNotes.join(" ");
-    renderTelemetryTrendTable(allRiver, allRain, allDischarge);
+    renderTelemetryTrendTable(allRain, allSoil, allDischarge);
     return;
   }
 
   const W = 300, H = 100, PAD = 4;
-  const times = [...river.map(r => Date.parse(r.time)), ...rain.map(r => Date.parse(r.time)),
+  const times = [...rain.map(r => Date.parse(r.time)), ...soil.map(r => Date.parse(r.time)),
                  ...discharge.map(r => Date.parse(r.date))].filter(t => !isNaN(t));
   const minT = Math.min(...times), maxT = Math.max(...times);
   const spanT = Math.max(1, maxT - minT);
@@ -1410,37 +1437,23 @@ function renderTelemetryTrend() {
     const h = (v / maxRain) * (H * 0.45);
     return `<rect x="${(x(Date.parse(r.time)) - 1.6).toFixed(1)}" y="${(H - h).toFixed(1)}" width="3.2" height="${h.toFixed(1)}"
               fill="var(--primary)" opacity="0.45">
-              <title>${new Date(r.time).toLocaleString()}: ${v.toFixed(1)} mm rainfall (live)</title>
+              <title>${new Date(r.time).toLocaleString()}: ${v.toFixed(1)} mm rainfall (observed)</title>
             </rect>`;
   }).join("");
 
-  // River line: scale around level + threshold.
-  let riverLine = "", thresholdLine = "", breachMarks = "";
-  const threshold = river.length ? Number(river[river.length - 1].threshold_m) || 0 : 0;
-  if (river.length) {
-    const levels = river.map(r => Number(r.river_level_m) || 0);
-    const lo = Math.min(...levels, threshold) * 0.92;
-    const hi = Math.max(...levels, threshold) * 1.08;
-    const y = v => H - PAD - ((v - lo) / Math.max(0.001, hi - lo)) * (H - 2 * PAD);
-    const pts = river.map(r => `${x(Date.parse(r.time)).toFixed(1)},${y(Number(r.river_level_m) || 0).toFixed(1)}`);
-    riverLine = river.length > 1
-      ? `<polyline points="${pts.join(" ")}" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"></polyline>`
-      : `<circle cx="${pts[0].split(",")[0]}" cy="${pts[0].split(",")[1]}" r="2.5" fill="#38bdf8"></circle>`;
-    if (threshold > 0) {
-      thresholdLine = `<line x1="0" y1="${y(threshold).toFixed(1)}" x2="${W}" y2="${y(threshold).toFixed(1)}"
-        stroke="#ef4444" stroke-width="0.8" stroke-dasharray="4 3" opacity="0.8"></line>`;
-      // Breach markers: shape, not color alone.
-      breachMarks = river.filter(r => (Number(r.river_level_m) || 0) > threshold).map(r => {
-        const bx = x(Date.parse(r.time)), by = y(Number(r.river_level_m) || 0);
-        return `<path d="M ${bx.toFixed(1)} ${(by - 4).toFixed(1)} l 3.4 5.8 l -6.8 0 Z" fill="#ef4444">
-                  <title>${new Date(r.time).toLocaleString()}: ${(Number(r.river_level_m) || 0).toFixed(1)} m exceeds the ${threshold.toFixed(1)} m threshold</title>
-                </path>`;
-      }).join("");
-    }
+  // Soil moisture line: own scale, dashed (model data).
+  let soilLine = "";
+  if (soil.length) {
+    const vals = soil.map(r => Number(r.moisture_m3m3) || 0);
+    const sLo = Math.min(...vals) * 0.97, sHi = Math.max(...vals) * 1.03;
+    const sy = v => H - PAD - ((v - sLo) / Math.max(0.0001, sHi - sLo)) * (H * 0.4);
+    const pts = soil.map(r => `${x(Date.parse(r.time)).toFixed(1)},${sy(Number(r.moisture_m3m3) || 0).toFixed(1)}`);
+    soilLine = `<polyline points="${pts.join(" ")}" fill="none" stroke="#a78bfa" stroke-width="1.2"
+      stroke-dasharray="2 3" stroke-linejoin="round" stroke-linecap="round" opacity="0.9">
+      <title>Soil moisture (model), m³/m³</title></polyline>`;
   }
 
-  // GloFAS discharge line: own scale, distinct color, always-dashed so the
-  // model series is visually distinct from the (gauge-style) river level.
+  // GloFAS discharge line: own scale, dashed (model data).
   let dischargeLine = "";
   if (discharge.length) {
     const vals = discharge.map(r => Number(r.discharge_m3s) || 0);
@@ -1452,7 +1465,7 @@ function renderTelemetryTrend() {
       <title>River discharge (GloFAS model), m³/s</title></polyline>`;
   }
 
-  // Time orientation: a gridline every 12h plus start/end labels (G5).
+  // Time orientation: a gridline every 12h plus start/end labels.
   let timeTicks = "";
   const TICK_MS = 12 * 3600 * 1000;
   for (let t = Math.ceil(minT / TICK_MS) * TICK_MS; t < maxT; t += TICK_MS) {
@@ -1463,13 +1476,12 @@ function renderTelemetryTrend() {
 
   chartEl.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" focusable="false" class="telemetry-trend-svg">
-      ${timeTicks}${rainBars}${thresholdLine}${riverLine}${dischargeLine}${breachMarks}
+      ${timeTicks}${rainBars}${soilLine}${dischargeLine}
     </svg>
     <div class="trend-legend" aria-hidden="true">
-      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-river"></span>River level (m)</span>
-      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-rain"></span>Rainfall (mm/h)</span>
+      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-rain"></span>Rainfall (mm/h, observed)</span>
       <span class="trend-legend-item"><span class="trend-swatch trend-swatch-discharge"></span>Discharge (GloFAS model)</span>
-      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-threshold"></span>Alert threshold</span>
+      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-soil"></span>Soil moisture (model)</span>
     </div>
     <div class="trend-time-axis tabular-nums" aria-hidden="true">
       <span>${fmtTick(minT)}</span>
@@ -1477,53 +1489,50 @@ function renderTelemetryTrend() {
     </div>${kpiHtml}`;
 
   if (summaryEl) {
-    const latestRiver = river.length ? Number(river[river.length - 1].river_level_m) || 0 : null;
     const totalRain = rain.reduce((acc, r) => acc + (Number(r.precipitation_mm) || 0), 0);
-    const breaches = threshold > 0 ? river.filter(r => (Number(r.river_level_m) || 0) > threshold).length : 0;
     const latestDischarge = allDischarge.length ? Number(allDischarge[allDischarge.length - 1].discharge_m3s) || 0 : null;
+    const latestSoil = allSoil.length ? Number(allSoil[allSoil.length - 1].moisture_m3m3) || 0 : null;
     summaryEl.textContent =
       `${rain.length} hourly rainfall readings totaling ${totalRain.toFixed(1)} mm. ` +
-      (latestRiver !== null
-        ? `Latest river level ${latestRiver.toFixed(1)} m against a ${threshold.toFixed(1)} m threshold; ${breaches} reading${breaches === 1 ? "" : "s"} above threshold. `
-        : `No charted river readings in the window. `) +
-      (latestDischarge !== null ? `Latest modeled river discharge ${latestDischarge.toLocaleString()} m³/s (GloFAS).` : "") +
+      (latestDischarge !== null ? `Latest modeled river discharge ${latestDischarge.toLocaleString()} m³/s (GloFAS). ` : "") +
+      (latestSoil !== null ? `Latest model soil moisture ${latestSoil.toFixed(2)} m³/m³.` : "") +
       (kpiNotes.length ? " " + kpiNotes.join(" ") : "");
   }
 
-  renderTelemetryTrendTable(allRiver, allRain, allDischarge);
+  renderTelemetryTrendTable(allRain, allSoil, allDischarge);
 }
 
 // C3: data-table fallback for the trend chart.
-function renderTelemetryTrendTable(river, rain, discharge) {
+function renderTelemetryTrendTable(rain, soil, discharge) {
   const tableEl = document.getElementById("telemetry-trend-table");
   if (!tableEl || tableEl.hidden) return;
-  const riverRows = (river || []).slice(-10).reverse().map(r => `<tr>
-      <td class="tabular-nums">${new Date(r.time).toLocaleString()}</td>
-      <td class="tabular-nums">${(Number(r.river_level_m) || 0).toFixed(1)} m</td>
-      <td class="tabular-nums">${(Number(r.threshold_m) || 0).toFixed(1)} m</td>
-    </tr>`).join("");
   const rainRows = (rain || []).slice(-10).reverse().map(r => `<tr>
       <td class="tabular-nums">${new Date(r.time).toLocaleString()}</td>
       <td class="tabular-nums">${(Number(r.precipitation_mm) || 0).toFixed(1)} mm</td>
     </tr>`).join("");
+  const soilRows = (soil || []).slice(-10).reverse().map(r => `<tr>
+      <td class="tabular-nums">${new Date(r.time).toLocaleString()}</td>
+      <td class="tabular-nums">${(Number(r.moisture_m3m3) || 0).toFixed(3)} m³/m³</td>
+    </tr>`).join("");
+  const dischargeRows = (discharge || []).slice(-10).reverse().map(r => `<tr>
+      <td class="tabular-nums">${escapeHtml(r.date)}</td>
+      <td class="tabular-nums">${(Number(r.discharge_m3s) || 0).toLocaleString()} m³/s</td>
+    </tr>`).join("");
   tableEl.innerHTML = `
     <table class="chart-table">
-      <caption>River level (pipeline data, simulated gauge)</caption>
-      <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Threshold</th></tr></thead>
-      <tbody>${riverRows || `<tr><td colspan="3">No readings in the window.</td></tr>`}</tbody>
-    </table>
-    <table class="chart-table">
-      <caption>Hourly rainfall (live recorded)</caption>
-      <thead><tr><th scope="col">Hour</th><th scope="col">Rainfall</th></tr></thead>
+      <caption>Hourly rainfall (observed)</caption>
+      <thead><tr><th scope="col">Hour</th><th scope="col" class="num">Rainfall</th></tr></thead>
       <tbody>${rainRows || `<tr><td colspan="2">No readings in the window.</td></tr>`}</tbody>
     </table>
     <table class="chart-table">
       <caption>Daily river discharge (GloFAS model)</caption>
-      <thead><tr><th scope="col">Date</th><th scope="col">Discharge</th></tr></thead>
-      <tbody>${(discharge || []).slice(-10).reverse().map(r => `<tr>
-        <td class="tabular-nums">${escapeHtml(r.date)}</td>
-        <td class="tabular-nums">${(Number(r.discharge_m3s) || 0).toLocaleString()} m³/s</td>
-      </tr>`).join("") || `<tr><td colspan="2">No model data yet.</td></tr>`}</tbody>
+      <thead><tr><th scope="col">Date</th><th scope="col" class="num">Discharge</th></tr></thead>
+      <tbody>${dischargeRows || `<tr><td colspan="2">No model data yet.</td></tr>`}</tbody>
+    </table>
+    <table class="chart-table">
+      <caption>Soil moisture (model)</caption>
+      <thead><tr><th scope="col">Hour</th><th scope="col" class="num">Moisture</th></tr></thead>
+      <tbody>${soilRows || `<tr><td colspan="2">No model data yet.</td></tr>`}</tbody>
     </table>`;
 }
 
@@ -1687,7 +1696,6 @@ function renderScopeStrip() {
   const basinScoped = !appState.regionFilter && !appState.seismicFocus;
   const scopedBasin = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
   const basinName = scopedBasin ? scopedBasin.name : "Rio Cauca";
-  const basinSimulated = !!(scopedBasin && scopedBasin.simulated);
 
   // Regions present in the live 48h feed, strongest live magnitude first.
   const counts = {};
@@ -1704,9 +1712,10 @@ function renderScopeStrip() {
   // between a user's pointer-down and click made taps land on detached nodes
   // and silently do nothing (the route "always Cali" bug).
   const items = [
-    { key: "basin", region: null, name: basinName,
-      meta: `Monitored basin · ${basinSimulated ? "SIMULATED" : "live pipeline"}`,
-      active: basinScoped, border: "" },
+    ...(appState.basins || []).map(g => ({
+      key: `group:${g.id}`, region: null, group: g.id, name: g.name,
+      meta: `${g.kind === "seismic-watch" ? "Seismic watch" : "Flood watch"} · ${g.country}`,
+      active: basinScoped && appState.selectedBasin === g.id, border: "" })),
     ...liveRegions.map(r => {
       const sev = getMagnitudeSeverity(r.maxMag);
       return { key: `region:${r.region}`, region: r.region, name: r.region,
@@ -1719,7 +1728,7 @@ function renderScopeStrip() {
   if (strip.dataset.keys !== desiredKeys) {
     strip.innerHTML = items.map(i => `
       <button type="button" class="scope-item${i.region ? "" : " scope-basin"}"
-              ${i.region ? `data-region="${escapeHtml(i.region)}"` : `data-scope-basin="1"`}>
+              ${i.region ? `data-region="${escapeHtml(i.region)}"` : `data-group="${escapeHtml(i.group)}"`}>
         <span class="scope-item-name"></span>
         <span class="scope-item-meta tabular-nums"></span>
       </button>`).join("");
@@ -1734,7 +1743,7 @@ function renderScopeStrip() {
     if (item.border) el.style.borderLeftColor = item.border;
     el.setAttribute("aria-label", item.region
       ? `${item.active ? "Clear the" : "Filter the live feed to the"} ${item.region} region`
-      : "Return to the monitored basin view");
+      : `Scope the dashboard to ${item.name}`);
     const nameEl = el.querySelector(".scope-item-name");
     const metaEl = el.querySelector(".scope-item-meta");
     if (nameEl && nameEl.textContent !== item.name) nameEl.textContent = item.name;
@@ -1744,7 +1753,7 @@ function renderScopeStrip() {
   // Basin-scoped panels carry an explicit scope chip and hide while a
   // seismic scope owns the page (G2).
   document.querySelectorAll("[data-scope-chip]").forEach(chip => {
-    chip.textContent = `${basinName.toUpperCase()} BASIN${basinSimulated ? " · SIMULATED" : ""}`;
+    chip.textContent = `${basinName.toUpperCase()} · MODEL INDEX`;
   });
   updateBasinPanelSubordination();
 }
@@ -2347,7 +2356,8 @@ function renderMapMarkers() {
         appState.selectedMuni = muni;
         displayMuniDetails(muni);
         renderRiskTimeline();
-        initConsoleLog(`Selected region: ${muni.municipality} (Risk Score: ${muni.risk_score.toFixed(2)})`, "action");
+        fetchTelemetryHistory(appState.selectedBasin, placeIdForMuni(muni.municipality));
+        initConsoleLog(`Selected place: ${muni.municipality} (index ${muni.risk_score.toFixed(2)})`, "action");
       });
 
       markers[muni.municipality] = marker;
@@ -2429,27 +2439,31 @@ function setMapLoadingState(mode) {
 function displayMuniDetails(muni) {
   const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
   if (!drawer) return;
-  
+
   const severityConfig = getSeverityConfig(muni.risk_score);
   const riskBadge = `<span class="badge ${severityConfig.badgeClass}">${severityConfig.label}</span>`;
-  const scopedBasin = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
-  const simulatedBadge = scopedBasin && scopedBasin.simulated
-    ? `<span class="badge badge-simulated" title="River and soil values for this basin are modeled, not measured.">SIMULATED</span>`
-    : "";
 
-  // Calculations for River vs Threshold bullet gauge
-  const pct = muni.threshold > 0 ? (muni.river_level_m / muni.threshold) * 100 : 0;
-  const pctText = pct.toFixed(0);
-  const isExceeded = muni.river_level_m > muni.threshold;
-  const exceededText = isExceeded ? '<span class="gauge-exceeded-label" aria-live="polite">[EXCEEDED]</span>' : '';
-  const exceededClass = isExceeded ? 'exceeded' : '';
-  
-  // Dynamic scaling for bullet gauge
-  const maxScaleValue = Math.max(muni.threshold * 1.3, muni.river_level_m);
-  const fillPct = maxScaleValue > 0 ? (muni.river_level_m / maxScaleValue) * 100 : 0;
-  const targetPct = maxScaleValue > 0 ? (muni.threshold / maxScaleValue) * 100 : 0;
+  const componentBar = (label, icon, score, fillClass) => {
+    const pct = (typeof score === "number") ? (score * 100).toFixed(0) + "%" : "--";
+    const width = (typeof score === "number") ? score * 100 : 0;
+    return `
+        <div class="sub-score-item">
+          <div class="sub-score-info">
+            <span class="sub-score-icon-label">${icon} ${label}</span>
+            <span class="sub-score-val tabular-nums">${pct}</span>
+          </div>
+          <div class="sub-score-track" aria-label="${label} component: ${pct}">
+            <div class="sub-score-fill ${fillClass}" style="width: ${width}%"></div>
+          </div>
+        </div>`;
+  };
 
-  // Render HTML
+  const dischargeText = (typeof muni.discharge_m3s === "number")
+    ? `${muni.discharge_m3s.toLocaleString()} m³/s <span class="drawer-subtle">(typical ${typeof muni.discharge_p50 === "number" ? muni.discharge_p50.toLocaleString() : "--"})</span>`
+    : "no river cell here";
+  const soilText = (typeof muni.soil_moisture === "number") ? `${muni.soil_moisture.toFixed(2)} m³/m³` : "--";
+  const quakeText = muni.earthquake_magnitude ? `M ${Number(muni.earthquake_magnitude).toFixed(1)} (48h, nearby)` : "none in 48h";
+
   drawer.innerHTML = `
     <div class="drawer-grid">
       <div class="muni-detail-header">
@@ -2460,15 +2474,15 @@ function displayMuniDetails(muni) {
           </svg>
           ${muni.municipality}
         </h3>
-        ${simulatedBadge}${riskBadge}
+        ${riskBadge}
       </div>
 
-      <!-- Composite Risk Readout -->
+      <!-- Centinela model hazard index -->
       <div class="composite-risk-card">
         <div class="detail-section-header">
-          <span class="drawer-label">Composite Risk Index</span>
+          <span class="drawer-label">Centinela Hazard Index <span class="badge scope-chip">MODEL</span></span>
           <div class="tooltip-wrapper">
-            <button type="button" class="tooltip-trigger" aria-label="Composite Risk Info" aria-describedby="risk-tooltip">
+            <button type="button" class="tooltip-trigger" aria-label="Hazard index info" aria-describedby="risk-tooltip">
               <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -2476,51 +2490,24 @@ function displayMuniDetails(muni) {
               </svg>
             </button>
             <div id="risk-tooltip" class="tooltip-content" role="tooltip">
-              Weighted composite of active hazard models including flood levels, landslide susceptibility, and seismic activity.
+              Centinela's own model index, computed from live feeds: river discharge vs this
+              place's 31-day baseline (GloFAS), model soil moisture, observed 24h rainfall, and
+              real USGS earthquakes nearby. Not an official authority warning.
             </div>
           </div>
         </div>
         <div class="risk-percentage-display ${severityConfig.class}">
           <span class="risk-percentage-num tabular-nums">${(muni.risk_score * 100).toFixed(0)}%</span>
-          <span class="risk-percentage-label">${severityConfig.label} Risk Level</span>
+          <span class="risk-percentage-label">${severityConfig.label} index level</span>
         </div>
       </div>
 
-      <!-- River vs Threshold Bullet Gauge -->
-      <div class="bullet-gauge-card">
-        <div class="detail-section-header">
-          <span class="drawer-label">River vs Alert Threshold</span>
-          <div class="tooltip-wrapper">
-            <button type="button" class="tooltip-trigger" aria-label="River Level vs Threshold Info" aria-describedby="river-tooltip">
-              <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
-            </button>
-            <div id="river-tooltip" class="tooltip-content" role="tooltip">
-              Current river level in meters compared to the alert threshold. Values above 100% represent warning exceedance.
-            </div>
-          </div>
-        </div>
-        <div class="bullet-gauge-meta">
-          <span class="bullet-gauge-text-val tabular-nums">Level: <strong>${muni.river_level_m.toFixed(2)}m</strong> / Thresh: ${muni.threshold.toFixed(2)}m</span>
-          <span class="bullet-gauge-pct tabular-nums ${isExceeded ? 'text-danger font-bold' : ''}">
-            ${pctText}% ${exceededText}
-          </span>
-        </div>
-        <div class="bullet-gauge-track" aria-label="River level of ${muni.river_level_m.toFixed(2)}m compared to threshold of ${muni.threshold.toFixed(2)}m (${pctText}%)">
-          <div class="bullet-gauge-fill ${exceededClass}" style="width: ${fillPct}%"></div>
-          <div class="bullet-gauge-target" style="left: ${targetPct}%" title="Threshold: ${muni.threshold.toFixed(2)}m"></div>
-        </div>
-      </div>
-
-      <!-- Hazard Sub-scores horizontal bars -->
+      <!-- Index components -->
       <div class="sub-scores-card">
         <div class="detail-section-header">
-          <span class="drawer-label">Hazard Sub-Scores</span>
+          <span class="drawer-label">Index Components</span>
           <div class="tooltip-wrapper">
-            <button type="button" class="tooltip-trigger" aria-label="Hazard Sub-scores Info" aria-describedby="hazards-tooltip">
+            <button type="button" class="tooltip-trigger" aria-label="Components info" aria-describedby="hazards-tooltip">
               <svg class="info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -2528,69 +2515,41 @@ function displayMuniDetails(muni) {
               </svg>
             </button>
             <div id="hazards-tooltip" class="tooltip-content" role="tooltip">
-              Individual hazard index scores modeled for flood propagation, landslide slope slip, and seismic activity.
+              River flow: discharge vs this place's own normal range. Ground wetness:
+              soil moisture amplified by active water drivers. Rain: observed last 24h.
+              Seismic: strongest real USGS detection nearby in 48h.
             </div>
           </div>
         </div>
-
-        <div class="sub-score-item">
-          <div class="sub-score-info">
-            <span class="sub-score-icon-label">${HAZARD_ICONS.FLOOD} Flood</span>
-            <span class="sub-score-val tabular-nums">${muni.flood_score !== undefined ? (muni.flood_score * 100).toFixed(0) + '%' : '--'}</span>
-          </div>
-          <div class="sub-score-track" aria-label="Flood sub-score: ${muni.flood_score !== undefined ? (muni.flood_score * 100).toFixed(0) + '%' : '--'}">
-            <div class="sub-score-fill flood-fill" style="width: ${muni.flood_score !== undefined ? (muni.flood_score * 100) : 0}%"></div>
-          </div>
-        </div>
-
-        <div class="sub-score-item">
-          <div class="sub-score-info">
-            <span class="sub-score-icon-label">${HAZARD_ICONS.LANDSLIDE} Landslide</span>
-            <span class="sub-score-val tabular-nums">${muni.landslide_score !== undefined ? (muni.landslide_score * 100).toFixed(0) + '%' : '--'}</span>
-          </div>
-          <div class="sub-score-track" aria-label="Landslide sub-score: ${muni.landslide_score !== undefined ? (muni.landslide_score * 100).toFixed(0) + '%' : '--'}">
-            <div class="sub-score-fill landslide-fill" style="width: ${muni.landslide_score !== undefined ? (muni.landslide_score * 100) : 0}%"></div>
-          </div>
-        </div>
-
-        <div class="sub-score-item">
-          <div class="sub-score-info">
-            <span class="sub-score-icon-label">${HAZARD_ICONS.SEISMIC} Seismic</span>
-            <span class="sub-score-val tabular-nums">${muni.seismic_score !== undefined ? (muni.seismic_score * 100).toFixed(0) + '%' : '--'}</span>
-          </div>
-          <div class="sub-score-track" aria-label="Seismic sub-score: ${muni.seismic_score !== undefined ? (muni.seismic_score * 100).toFixed(0) + '%' : '--'}">
-            <div class="sub-score-fill seismic-fill" style="width: ${muni.seismic_score !== undefined ? (muni.seismic_score * 100) : 0}%"></div>
-          </div>
-        </div>
+        ${componentBar("River flow", HAZARD_ICONS.FLOOD, muni.flood_score, "flood-fill")}
+        ${componentBar("Ground wetness", HAZARD_ICONS.LANDSLIDE, muni.landslide_score, "landslide-fill")}
+        ${componentBar("Rain (24h)", HAZARD_ICONS.FLOOD, muni.rain_score, "rain-fill")}
+        ${componentBar("Seismic", HAZARD_ICONS.SEISMIC, muni.seismic_score, "seismic-fill")}
       </div>
 
-      <!-- Other Telemetry Metrics -->
+      <!-- Live driver values -->
       <div class="drawer-divider"></div>
-      
       <div class="drawer-metric">
         <span class="drawer-label">Dominant Hazard</span>
-        <span class="drawer-val warning text-critical">${muni.dominant_hazard || 'FLOOD'}</span>
+        <span class="drawer-val warning text-critical">${muni.dominant_hazard || "FLOOD"}</span>
       </div>
-
+      <div class="drawer-metric">
+        <span class="drawer-label">River Discharge</span>
+        <span class="drawer-val tabular-nums">${dischargeText}</span>
+      </div>
       <div class="drawer-metric">
         <span class="drawer-label">Rainfall (24h)</span>
-        <span class="drawer-val tabular-nums">${muni.rainfall_mm.toFixed(1)} mm</span>
+        <span class="drawer-val tabular-nums">${(Number(muni.rainfall_mm) || 0).toFixed(1)} mm</span>
       </div>
-
       <div class="drawer-metric">
-        <span class="drawer-label">Soil Saturation</span>
-        <span class="drawer-val tabular-nums">${(muni.soil_saturation * 100).toFixed(0)}%</span>
+        <span class="drawer-label">Soil Moisture</span>
+        <span class="drawer-val tabular-nums">${soilText}</span>
       </div>
-
-      <div class="drawer-metric">
-        <span class="drawer-label">Slope / Susc.</span>
-        <span class="drawer-val tabular-nums">${muni.slope_angle_deg !== undefined ? muni.slope_angle_deg.toFixed(0) + '°' : '--'} / ${muni.susceptibility_index !== undefined ? (muni.susceptibility_index * 100).toFixed(0) + '%' : '--'}</span>
-      </div>
-
       <div class="drawer-metric">
         <span class="drawer-label">Earthquake</span>
-        <span class="drawer-val tabular-nums">${muni.earthquake_magnitude ? muni.earthquake_magnitude.toFixed(1) + ' Mw' : 'None'}</span>
+        <span class="drawer-val tabular-nums">${quakeText}</span>
       </div>
+      <p class="seismic-focus-note">All values from live feeds; the index is Centinela's model, not an official warning.</p>
     </div>
   `;
 }
@@ -2797,44 +2756,6 @@ window.healConnector = async (id) => {
 };
 
 function setupEventHandlers() {
-  // Basin selector handler
-  const basinSelect = document.getElementById("basin-select");
-  if (basinSelect) {
-    basinSelect.addEventListener("change", (e) => {
-      // A seismic focus belongs to no basin; leave it before switching scope.
-      // No re-fit here: the basin switch below resets the fit flag itself.
-      if (appState.seismicFocus) exitSeismicFocus(false);
-      appState.selectedBasin = e.target.value;
-      initConsoleLog(`Switched catchment basin scope to: ${appState.selectedBasin}`, "action");
-
-      // Recenter happens via the per-basin bounds-fit once the new basin's markers
-      // render; reset the fit flag so it re-fits on this basin change (not every poll).
-      appState.boundsFitForBasin = null;
-
-      // Show the spinner overlay until the new basin's data renders.
-      setMapLoadingState("loading");
-
-      // Clear muni detail drawer/rail
-      const drawer = document.getElementById("muni-detail-drawer") || document.getElementById("muni-detail-rail");
-      if (drawer) {
-        drawer.innerHTML = `<div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>`;
-      }
-      appState.selectedMuni = null;
-      renderRiskTimeline();
-
-      // Populate dropdown for Public mode
-      populateMuniDropdown();
-
-      // History panels follow the basin scope; a region filter belongs to
-      // the global feed and is cleared for a clean slate.
-      appState.regionFilter = null;
-      seedRiskHistory(appState.selectedBasin);
-      fetchTelemetryHistory(appState.selectedBasin);
-
-      fetchTelemetry();
-    });
-  }
-
   // Clear reopened incident handler
   const clearReopenBtn = document.getElementById("clear-reopen-btn");
   if (clearReopenBtn) {
@@ -2884,8 +2805,8 @@ function setupEventHandlers() {
   if (scopeStrip) {
     scopeStrip.addEventListener("click", (e) => {
       if (!e.target || typeof e.target.closest !== "function") return;
-      const basinCard = e.target.closest("[data-scope-basin]");
-      if (basinCard) { selectBasinScope(); return; }
+      const groupCard = e.target.closest("[data-group]");
+      if (groupCard) { selectGroupScope(groupCard.dataset.group); return; }
       const item = e.target.closest(".scope-item");
       if (item && item.dataset && item.dataset.region) toggleRegionFilter(item.dataset.region);
     });
@@ -3167,21 +3088,6 @@ function selectPublicArea(muniName) {
 
 function switchMode(newMode) {
   appState.mode = newMode;
-
-  // Public mode has no basin selector and never shows a simulated basin:
-  // residents always see the real (non-simulated) pipeline.
-  if (newMode === "public") {
-    const scoped = (appState.basins || []).find(b => b && b.id === appState.selectedBasin);
-    if (scoped && scoped.simulated) {
-      const real = (appState.basins || []).find(b => b && b.kind !== "seismic" && !b.simulated);
-      const basinSelect = document.getElementById("basin-select");
-      if (real && basinSelect) {
-        initConsoleLog(`Public mode scopes to the live basin: ${real.name}.`, "telemetry");
-        basinSelect.value = real.id;
-        basinSelect.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-    }
-  }
 
   const wrapper = document.getElementById("dashboard-wrapper");
   if (wrapper) {

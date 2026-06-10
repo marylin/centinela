@@ -173,7 +173,7 @@
             <h2 id="telemetry-trend-title">River &amp; Rainfall Trend</h2>
             <div class="risk-timeline-meta">
               <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
-              <span class="trend-provenance">rainfall: live &middot; discharge: GloFAS model &middot; river level: pipeline data (simulated gauge)</span>
+              <span class="trend-provenance">rainfall: observed &middot; discharge + soil: model (GloFAS / ECMWF)</span>
               <button type="button" class="btn btn-sm chart-table-toggle" id="trend-table-toggle"
                       aria-pressed="false" aria-controls="telemetry-trend-table">View as table</button>
             </div>
@@ -322,24 +322,6 @@
       <button type="button" class="slideout-close-btn" id="diagnostics-close-btn" aria-label="Close diagnostics panel">&times;</button>
     </div>
     <div class="slideout-body">
-      <!-- Operator basin-scope override. Day-to-day navigation is the scope
-           strip; this exists for operators and demos (e.g. the simulated
-           Magdalena basin, which never appears on the main surface). -->
-      <section class="card" aria-labelledby="basin-override-title">
-        <div class="card-header">
-          <h2 id="basin-override-title">Basin Scope (Operator Override)</h2>
-        </div>
-        <div class="card-body">
-          <div class="selector-group">
-            <label for="basin-select" class="selector-label">Scoped basin</label>
-            <select id="basin-select" class="basin-select">
-              <option value="rio_cauca">Rio Cauca (Colombia)</option>
-            </select>
-          </div>
-          <p class="seismic-focus-note" style="margin-top: 0.5rem;">Simulated basins carry modeled river and soil values and are labeled SIMULATED.</p>
-        </div>
-      </section>
-
       <!-- Pipeline Status Card -->
       <section class="card status-panel" id="pipeline-status-card" aria-labelledby="pipeline-title">
         <div class="card-header">
