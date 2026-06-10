@@ -113,6 +113,7 @@ let lastAlertGroup = null;
 
 async function onSelectionChange() {
   stopDetailPoll();
+  stopAlertAudio();
   const sel = state.selection;
   if (!sel) return;
   // Alert payloads are per group: never let another group's narration or
@@ -213,11 +214,27 @@ export function setupSubscribeButton() {
   });
 }
 
+let alertAudio = null;
+
+export function stopAlertAudio() {
+  if (alertAudio) {
+    alertAudio.pause();
+    URL.revokeObjectURL(alertAudio.src);
+    alertAudio = null;
+  }
+  const btn = document.getElementById("alert-listen-btn");
+  if (btn) { btn.textContent = "Listen"; btn.disabled = false; }
+}
+
 export function setupListenButton() {
   const btn = document.getElementById("alert-listen-btn");
   if (!btn) return;
-  let audio = null;
   btn.addEventListener("click", async () => {
+    // Playing -> the same button stops the narration.
+    if (alertAudio && !alertAudio.paused) {
+      stopAlertAudio();
+      return;
+    }
     const sel = state.selection;
     if (!sel || sel.kind !== "place") return;
     btn.disabled = true;
@@ -226,14 +243,15 @@ export function setupListenButton() {
       const res = await fetch(`${window.location.origin}/alert-audio?basin=${encodeURIComponent(sel.groupId)}`);
       if (!res.ok) throw new Error(`audio ${res.status}`);
       const blob = await res.blob();
-      if (audio) { audio.pause(); URL.revokeObjectURL(audio.src); }
-      audio = new Audio(URL.createObjectURL(blob));
-      audio.play();
+      stopAlertAudio();
+      alertAudio = new Audio(URL.createObjectURL(blob));
+      alertAudio.addEventListener("ended", stopAlertAudio);
+      await alertAudio.play();
+      btn.textContent = "Stop";
+      btn.disabled = false;
     } catch (err) {
       console.error("Alert audio failed:", err);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = "Listen";
+      stopAlertAudio();
     }
   });
 }

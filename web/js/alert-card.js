@@ -90,6 +90,10 @@ export async function renderAlertCard(alertData) {
 
   const advEl = document.getElementById("alert-advisories");
   if (advEl) {
+    // The 5s poll re-renders this block: remember whether the user had the
+    // original-English toggle open so the rewrite never snaps it shut.
+    const prevDetails = advEl.querySelector("details.broadcast-original");
+    const keepOpen = !!(prevDetails && prevDetails.open);
     const graded = (alertData && alertData.graded_alert) || [];
     const groupMunis = (group.places || []).map(p => p.name);
     const active = graded.filter(a => groupMunis.includes(a.municipality) && a.severity !== "LOW");
@@ -111,7 +115,7 @@ export async function renderAlertCard(alertData) {
       const original = alertData.resident_broadcast || "";
       html += `<div class="broadcast-box">
         <p class="advisory-line">${escapeHtml(broadcast)}</p>
-        ${lang !== "en" && original ? `<details class="broadcast-original"><summary>${escapeHtml(b.ui.original_english)}</summary><p>${escapeHtml(original)}</p></details>` : ""}
+        ${lang !== "en" && original ? `<details class="broadcast-original"${keepOpen ? " open" : ""}><summary>${escapeHtml(b.ui.original_english)}</summary><p>${escapeHtml(original)}</p></details>` : ""}
       </div>`;
     }
     advEl.innerHTML = html;

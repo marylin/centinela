@@ -52,6 +52,9 @@ export function candidateByName(name) {
 export function selectPlace(name) {
   const p = placeByName(name);
   if (!p) return;
+  // A new selection always dissolves an event focus: the map and the nearby
+  // feed must follow the place the user just chose.
+  state.seismicFocus = null;
   state.selection = { kind: "place", id: p.id, name: p.name, groupId: p.groupId };
   notify("selection");
 }
@@ -59,6 +62,7 @@ export function selectPlace(name) {
 export function selectCandidate(name) {
   const c = candidateByName(name);
   if (!c) return;
+  state.seismicFocus = null;
   state.selection = { kind: "candidate", id: name, name, groupId: null };
   notify("selection");
 }
