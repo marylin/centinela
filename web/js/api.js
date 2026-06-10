@@ -24,6 +24,7 @@ export const getRiskAll = () => request("/risk-all");
 export const getGroupSummaries = () => request("/group-summaries");
 export const getWatchlist = () => request("/watchlist");
 export const getAlert = (basin) => request(`/alert?basin=${encodeURIComponent(basin)}`);
+export const getUiStrings = (lang) => request(`/ui-strings?lang=${encodeURIComponent(lang)}`);
 export const getRiskHistory = (basin) => request(`/risk-history?basin=${encodeURIComponent(basin)}`);
 export const getTelemetryHistory = (basin, place) =>
   request(`/telemetry-history?basin=${encodeURIComponent(basin)}${place ? `&place=${encodeURIComponent(place)}` : ""}`);

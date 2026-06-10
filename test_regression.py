@@ -652,6 +652,29 @@ try {
             sys.exit(1)
     print("Success: /alert serves every new basin (generic fallback narration works).")
 
+    # 18. Resident language layer
+    print("\nStep 17: Verifying ui-strings bundle + translated broadcast...")
+    res_es = requests.get(f"{server_url}/ui-strings", params={"lang": "es"}).json()
+    if not res_es["bundle"]["hazard_actions"]["FLOOD"].startswith("[es] "):
+        print(f"ERROR: es bundle not translated under TESTING: {res_es['bundle']['hazard_actions']['FLOOD'][:50]}")
+        sys.exit(1)
+    res_en = requests.get(f"{server_url}/ui-strings", params={"lang": "en"}).json()
+    if res_en["bundle"]["hazard_actions"]["FLOOD"].startswith("["):
+        print("ERROR: en bundle must be canonical")
+        sys.exit(1)
+    if requests.get(f"{server_url}/ui-strings", params={"lang": "es"}).json() != res_es:
+        print("ERROR: ui-strings not deterministic")
+        sys.exit(1)
+    alert_es = requests.get(f"{server_url}/alert", params={"basin": "rio_cauca"}).json()
+    if alert_es.get("lang") != "es" or not alert_es.get("broadcast_translated", "").startswith("[es] "):
+        print(f"ERROR: alert localization missing: lang={alert_es.get('lang')}")
+        sys.exit(1)
+    alert_en = requests.get(f"{server_url}/alert", params={"basin": "wellington"}).json()
+    if alert_en.get("lang") != "en":
+        print(f"ERROR: wellington should be en, got {alert_en.get('lang')}")
+        sys.exit(1)
+    print("Success: resident copy translates per place language (deterministic TESTING layer).")
+
     res_unknown = requests.post(f"{server_url}/places/resolve", params={"place": "atlantis"})
     if res_unknown.status_code != 404:
         print(f"ERROR: unknown place should 404, got {res_unknown.status_code}")

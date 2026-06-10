@@ -3158,3 +3158,6 @@ button.seismic-event-row:focus-visible {
 .tile-skeleton { height: 96px; border-left-color: var(--border-color); animation: skeleton-pulse 1.2s ease-in-out infinite; pointer-events: none; }
 @keyframes skeleton-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.7; } }
 @media (prefers-reduced-motion: reduce) { .tile-skeleton { animation: none; opacity: 0.5; } }
+.broadcast-box { margin-top: 0.7rem; padding: 0.6rem 0.8rem; border: 1px solid var(--border-color); border-radius: 6px; }
+.broadcast-original summary { color: var(--text-muted); font-size: 0.75rem; cursor: pointer; }
+.broadcast-original p { color: var(--text-muted); font-size: 0.8rem; }

@@ -1,23 +1,13 @@
-// The public alert card: the 5-field structured alert (Hazard / Where /
-// Action / When / Source), severity-tiered guidance, and plain advisories.
-// Copy carried over from the retired Public Alert mode; honest and fixed,
-// never generated.
+// The public alert card, rendered in the RESIDENT'S LANGUAGE: the copy bundle
+// comes from the backend (canonical English translated server-side and
+// cached), the language rides on the alert payload, and the live narration
+// broadcast arrives pre-translated with an original-English toggle. The
+// authority name stays untranslated (proper noun).
 
 import { state, riskRowFor } from "./state.js";
+import { getUiStrings } from "./api.js";
 import { getSeverityConfig } from "./severity.js";
 import { escapeHtml } from "./util.js";
-
-const HAZARD_LABELS = {
-  FLOOD: "Flood",
-  LANDSLIDE: "Landslide",
-  SEISMIC: "Earthquake / seismic activity",
-};
-
-const HAZARD_ACTIONS = {
-  FLOOD: "Move to higher ground, away from the river channel and low-lying areas. Do not cross moving water.",
-  LANDSLIDE: "Move away from steep slopes and the base of hillsides; avoid narrow valleys and drainage paths.",
-  SEISMIC: "Drop, cover, and hold on. After shaking stops, move away from damaged structures to open ground.",
-};
 
 const ALERT_SOURCE = "Unidad Nacional para la Gestión del Riesgo de Desastres (UNGRD)";
 
@@ -26,86 +16,40 @@ const BASIN_HISTORY = {
   rio_magdalena: "The Río Magdalena basin experiences seasonal flooding during Colombia's rainy seasons.",
 };
 
-function guidanceFor(statusWord, quakeWatch) {
-  if (quakeWatch && (statusWord === "CRITICAL" || statusWord === "DANGER")) {
-    return {
-      meaning: "Strong seismic activity has been detected nearby. Expect aftershocks.",
-      items: [
-        HAZARD_ACTIONS.SEISMIC,
-        "Move to open ground away from buildings and power lines.",
-        "Expect aftershocks; do not re-enter damaged structures.",
-        "Follow instructions from civil protection authorities.",
-      ],
-    };
+const bundles = {};       // lang -> bundle (client cache)
+let bundleFetching = {};  // lang -> promise
+
+async function bundleFor(lang) {
+  const l = lang || "en";
+  if (bundles[l]) return bundles[l];
+  if (!bundleFetching[l]) {
+    bundleFetching[l] = getUiStrings(l)
+      .then(d => { bundles[l] = d.bundle; return d.bundle; })
+      .catch(() => null)
+      .finally(() => { delete bundleFetching[l]; });
   }
-  if (quakeWatch && statusWord === "WARNING") {
-    return {
-      meaning: "Elevated hazard signals for this area. Stay alert.",
-      items: [
-        "Review your earthquake plan and identify the nearest open assembly area.",
-        "Keep emergency supplies and documents reachable.",
-        "Follow official channels for updates.",
-      ],
-    };
-  }
-  if (quakeWatch) {
-    return {
-      meaning: "No elevated hazard signals right now. This area is monitored for earthquake activity.",
-      items: [
-        "Know your nearest open assembly area (park, plaza, stadium).",
-        "Secure heavy furniture and keep an emergency kit reachable.",
-        "Stay informed via local safety advisories and public announcements.",
-      ],
-    };
-  }
-  if (statusWord === "CRITICAL") {
-    return {
-      meaning: "Severe risk of flood, landslide, or seismic activity. Immediate threat to life and property.",
-      items: [
-        "EVACUATE IMMEDIATELY to higher ground.",
-        "Avoid low-lying areas, river catchments, and steep slopes.",
-        "Follow instructions from civil protection authorities without delay.",
-        "Check on neighbors and vulnerable family members if safe to do so.",
-      ],
-    };
-  }
-  if (statusWord === "DANGER") {
-    return {
-      meaning: "High hazard probability detected. Conditions are deteriorating rapidly.",
-      items: [
-        "PREPARE TO EVACUATE. Secure emergency supply kits.",
-        "Move valuable items, electronics, and documents to upper floors.",
-        "Stand by and monitor official radio or messaging channels for evacuation orders.",
-        "Avoid crossing flooded roads or flowing water.",
-      ],
-    };
-  }
-  if (statusWord === "WARNING") {
-    return {
-      meaning: "Moderate risk. Precautionary measures and vigilance are advised.",
-      items: [
-        "STAY VIGILANT. Monitor water levels in local streams and catchments.",
-        "Review your family emergency plans and supply kits.",
-        "Avoid steep terrains and non-essential travel in affected zones.",
-        "Keep safety devices charged and notification options active.",
-      ],
-    };
-  }
-  return {
-    meaning: "Hydrological conditions are safe and stable.",
-    items: [
-      "No immediate actions are required.",
-      "Stay informed via local safety advisories and public announcements.",
-    ],
-  };
+  return await bundleFetching[l] || bundles.en || null;
 }
 
-export function renderAlertCard(alertData) {
+function guidanceKey(statusWord, quakeWatch) {
+  if (quakeWatch) {
+    if (statusWord === "CRITICAL" || statusWord === "DANGER") return "quake_high";
+    if (statusWord === "WARNING") return "quake_warning";
+    return "quake_low";
+  }
+  return statusWord.toLowerCase() === "low" ? "low" : statusWord.toLowerCase();
+}
+
+export async function renderAlertCard(alertData) {
   const card = document.getElementById("public-alert-card");
   if (!card) return;
   const sel = state.selection;
   if (!sel || sel.kind !== "place") { card.hidden = true; return; }
   card.hidden = false;
+
+  const lang = (alertData && alertData.lang) || "en";
+  const b = await bundleFor(lang) || (await bundleFor("en"));
+  if (!b || !state.selection || state.selection.name !== sel.name) return;
 
   const row = riskRowFor(sel.name);
   const score = row ? Number(row.risk_score) || 0 : 0;
@@ -114,24 +58,25 @@ export function renderAlertCard(alertData) {
   const group = (state.groups || []).find(g => g.id === sel.groupId) || {};
   const quakeWatch = group.kind === "seismic-watch";
   const dominant = ((row && row.dominant_hazard) || (quakeWatch ? "SEISMIC" : "FLOOD")).toUpperCase();
-  const g = guidanceFor(statusWord, quakeWatch);
+  const g = b.guidance[guidanceKey(statusWord, quakeWatch)] || b.guidance.low;
+  const statusLabel = (b.status_labels && b.status_labels[statusWord]) || sev.label;
   const asOf = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   card.style.borderLeft = `4px solid ${sev.colorHex}`;
   const statusEl = document.getElementById("alert-status");
   if (statusEl) {
-    statusEl.innerHTML = `<span class="public-hero-status" style="color:${sev.colorHex}">${statusWord}</span>
-      <span class="alert-meaning">${escapeHtml(sel.name)}: ${escapeHtml(g.meaning)}${row && row.simulated ? ' <span class="badge badge-simulated">SIMULATED</span>' : ""}</span>`;
+    statusEl.innerHTML = `<span class="public-hero-status" style="color:${sev.colorHex}">${escapeHtml(statusLabel.toUpperCase())}</span>
+      <span class="alert-meaning">${escapeHtml(sel.name)}: ${escapeHtml(g.meaning)}${row && row.simulated ? ` <span class="badge badge-simulated">${escapeHtml(b.ui.simulated)}</span>` : ""}</span>`;
   }
 
   const fieldsEl = document.getElementById("alert-fields");
   if (fieldsEl) {
     fieldsEl.innerHTML = `
-      <div class="alert-field"><dt>Hazard</dt><dd>${HAZARD_LABELS[dominant] || HAZARD_LABELS.FLOOD}</dd></div>
-      <div class="alert-field"><dt>Where</dt><dd>${escapeHtml(sel.name)}</dd></div>
-      <div class="alert-field alert-field-wide"><dt>Action</dt><dd>${HAZARD_ACTIONS[dominant] || HAZARD_ACTIONS.FLOOD}</dd></div>
-      <div class="alert-field"><dt>When</dt><dd>as of ${asOf}</dd></div>
-      <div class="alert-field alert-field-wide"><dt>Source</dt><dd>${ALERT_SOURCE}</dd></div>`;
+      <div class="alert-field"><dt>${escapeHtml(b.ui.hazard)}</dt><dd>${escapeHtml(b.hazard_labels[dominant] || b.hazard_labels.FLOOD)}</dd></div>
+      <div class="alert-field"><dt>${escapeHtml(b.ui.where)}</dt><dd>${escapeHtml(sel.name)}</dd></div>
+      <div class="alert-field alert-field-wide"><dt>${escapeHtml(b.ui.action)}</dt><dd>${escapeHtml(b.hazard_actions[dominant] || b.hazard_actions.FLOOD)}</dd></div>
+      <div class="alert-field"><dt>${escapeHtml(b.ui.when)}</dt><dd>${escapeHtml(b.ui.as_of)} ${asOf}</dd></div>
+      <div class="alert-field alert-field-wide"><dt>${escapeHtml(b.ui.source)}</dt><dd>${ALERT_SOURCE}</dd></div>`;
   }
 
   const ctx = document.getElementById("alert-context");
@@ -140,25 +85,35 @@ export function renderAlertCard(alertData) {
   const guidanceEl = document.getElementById("alert-guidance");
   if (guidanceEl) {
     guidanceEl.innerHTML = g.items.map(item =>
-      `<div class="guidance-item"><span class="guidance-item-bullet">&bull;</span><span>${item}</span></div>`).join("");
+      `<div class="guidance-item"><span class="guidance-item-bullet">&bull;</span><span>${escapeHtml(item)}</span></div>`).join("");
   }
 
-  // Plain advisories from the live graded alert (selected group only).
   const advEl = document.getElementById("alert-advisories");
   if (advEl) {
     const graded = (alertData && alertData.graded_alert) || [];
-    const groupMunis = ((state.groups || []).find(x => x.id === sel.groupId) || { places: [] })
-      .places.map(p => p.name);
+    const groupMunis = (group.places || []).map(p => p.name);
     const active = graded.filter(a => groupMunis.includes(a.municipality) && a.severity !== "LOW");
-    advEl.innerHTML = active.length
+    let html = active.length
       ? active.map(a => {
           const s = getSeverityConfig(a.risk_score);
-          const hz = a.dominant_hazard === "FLOOD" ? "River flooding" : a.dominant_hazard === "LANDSLIDE" ? "Landslide" : "Earthquake / seismic";
+          const hz = b.hazard_labels[a.dominant_hazard] || b.hazard_labels.FLOOD;
+          const sLabel = (b.status_labels && b.status_labels[s.label.toUpperCase()]) || s.label;
           return `<div class="plain-warning-card" style="border-left:3px solid ${s.colorHex};">
             <span class="plain-warning-title">${escapeHtml(a.municipality)}</span>
-            <span class="plain-warning-body">${hz} risk is currently <strong>${s.label}</strong>.</span>
+            <span class="plain-warning-body">${escapeHtml(hz)} ${escapeHtml(b.ui.risk_is_currently)} <strong>${escapeHtml(sLabel)}</strong>.</span>
           </div>`;
         }).join("")
-      : `<div class="empty-alerts">No active warnings for this area.</div>`;
+      : `<div class="empty-alerts">${escapeHtml(b.ui.no_warnings)}</div>`;
+
+    // Live narration broadcast in the resident's language, original on demand.
+    const broadcast = alertData && alertData.broadcast_translated;
+    if (broadcast && active.length) {
+      const original = alertData.resident_broadcast || "";
+      html += `<div class="broadcast-box">
+        <p class="advisory-line">${escapeHtml(broadcast)}</p>
+        ${lang !== "en" && original ? `<details class="broadcast-original"><summary>${escapeHtml(b.ui.original_english)}</summary><p>${escapeHtml(original)}</p></details>` : ""}
+      </div>`;
+    }
+    advEl.innerHTML = html;
   }
 }

@@ -19,8 +19,29 @@ from api.risk_routes import get_risk
 from api.incident_routes import log_alert_or_outage
 from api.push_routes import check_and_trigger_push_sync
 from rapid_agent.centinela_agent import run_narration_turn
+from api.i18n import lang_for_cc, translate_text_cached, get_bundle
 
 router = APIRouter()
+
+def _basin_lang(basin: str) -> str:
+    cfg = next((b for b in BASINS if b["id"] == basin), None)
+    return lang_for_cc(cfg.get("cc")) if cfg else "en"
+
+def _localize_alert(basin: str, resp: dict) -> dict:
+    """Adds the resident language + translated broadcast to any alert payload."""
+    lang = _basin_lang(basin)
+    resp["lang"] = lang
+    broadcast = resp.get("resident_broadcast") or ""
+    resp["broadcast_translated"] = (
+        translate_text_cached(broadcast, lang) if lang != "en" else broadcast)
+    return resp
+
+@router.get("/ui-strings")
+def get_ui_strings(lang: str = "en"):
+    """The resident-facing copy bundle in the requested language (canonical
+    English source, translated once per language and cached; English fallback
+    on any failure so the card never breaks)."""
+    return {"lang": lang, "bundle": get_bundle(lang)}
 
 
 @router.get("/alert")
@@ -49,7 +70,7 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
                 })
                 if sev in ["HIGH", "EXTREME"]:
                     affected.append(r["municipality"])
-            return {
+            return _localize_alert(basin, {
                 "graded_alert": graded,
                 "agency_incident": {
                     "title": f"REOPENED HISTORICAL INCIDENT: {matching['id']}",
@@ -57,7 +78,7 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
                     "affected_municipalities": affected
                 },
                 "resident_broadcast": f"HISTORICAL INCIDENT DATA: {matching['details']}"
-            }
+            })
 
     try:
         # Re-use the risk computation logic
@@ -95,7 +116,7 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
         # Check Firestore cache first
         cached = get_cached_narration(basin, risk_data)
         if cached:
-            return {
+            return _localize_alert(basin, {
                 "graded_alert": graded_alert,
                 "agency_incident": {
                     "title": title,
@@ -103,7 +124,7 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
                     "affected_municipalities": affected_municipalities
                 },
                 "resident_broadcast": cached["broadcast"]
-            }
+            })
             
         # Cache miss: return last good narration or generating placeholder instantly and trigger background generation
         fallback = get_fallback_narration(basin, risk_data)
@@ -126,7 +147,7 @@ def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None
                 import asyncio
                 asyncio.create_task(asyncio.to_thread(generate_narration_in_background, basin, risk_data))
                 
-        return alert_response
+        return _localize_alert(basin, alert_response)
     except Exception as e:
         import traceback
         traceback.print_exc()
