@@ -14,21 +14,19 @@ MODULE_NAME_RE = re.compile(r"^[a-z][a-z0-9-]*\.js$")
 
 @router.get("/next", response_class=HTMLResponse)
 def read_next():
-    """Preview path for the unified index UI (becomes / at cutover)."""
-    try:
-        with open("web/next.html", "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    """Legacy preview alias: the unified UI is the root page since cutover."""
+    return read_index()
 
 @router.get("/assets/js/{name}")
 def read_module(name: str):
-    """Serves the unified-UI ES modules."""
+    """Serves the unified-UI ES modules. no-cache so deploys propagate
+    without stale-module sessions (modules are small; revalidation is cheap)."""
     if not MODULE_NAME_RE.match(name):
         raise HTTPException(status_code=404, detail="Unknown asset")
     try:
         with open(f"web/js/{name}", "r", encoding="utf-8") as f:
-            return Response(content=f.read(), media_type="text/javascript")
+            return Response(content=f.read(), media_type="text/javascript",
+                            headers={"Cache-Control": "no-cache"})
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Unknown asset")
     except Exception as e:
@@ -43,21 +41,13 @@ def read_index():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/app.js")
-def read_js():
-    """Serves the client-side JavaScript engine."""
-    try:
-        with open("web/app.js", "r", encoding="utf-8") as f:
-            return Response(content=f.read(), media_type="application/javascript")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.get("/style.css")
 def read_css():
     """Serves the dashboard stylesheet."""
     try:
         with open("web/style.css", "r", encoding="utf-8") as f:
-            return Response(content=f.read(), media_type="text/css")
+            return Response(content=f.read(), media_type="text/css",
+                            headers={"Cache-Control": "no-cache"})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

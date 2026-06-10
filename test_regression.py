@@ -129,132 +129,68 @@ def run_test_logic(server_url):
             sys.exit(1)
     print("Success: Firebase Enable Alerts UI elements verified in index.html.")
 
-    # 8. Run JS DOM and handler execution check
-    print("\nStep 7: Verifying click handler in app.js via Node.js mock execution...")
+    # 8. Run JS handler check: ESM-import the notifications module with mocks
+    print("\nStep 7: Verifying the notifications module via Node ESM mock execution...")
+    notify_path = os.path.abspath("web/js/notify.js").replace("\\", "/")
     js_verifier = """
 const mockElements = {};
 const clickListeners = {};
 
-global.window = {
-  location: { origin: 'http://127.0.0.1:8000' }
-};
-
-global.navigator = {
-  clipboard: {
-    writeText: async (txt) => {
-      console.log('Clipboard wrote:', txt);
-    }
-  }
-};
-
-global.Notification = {
-  requestPermission: async () => 'granted'
-};
-
-global.firebase = {
+globalThis.window = { location: { origin: 'http://127.0.0.1:8000' } };
+Object.defineProperty(globalThis, 'navigator', {
+  value: {
+    clipboard: { writeText: async () => {} },
+    serviceWorker: { register: async () => ({ scope: '/' }) }
+  },
+  configurable: true
+});
+globalThis.Notification = { requestPermission: async () => 'granted' };
+globalThis.firebase = {
+  apps: [],
   initializeApp: () => ({}),
   messaging: () => ({
     getToken: async () => 'mock-fcm-token',
     onMessage: () => {}
   })
 };
-
-global.fetch = async (url, options) => {
-  if (url.includes('/risk')) {
-    return { ok: true, json: async () => [] };
-  }
-  if (url.includes('/connector-status')) {
-    return { ok: true, json: async () => ({ status: 'active', connectors: [] }) };
-  }
-  if (url.includes('/alert')) {
-    return { ok: true, json: async () => ({ graded_alert: [], agency_incident: { affected_municipalities: [] }, resident_broadcast: '' }) };
-  }
-  if (url.includes('/autonomous-heals')) {
-    return { ok: true, json: async () => [] };
-  }
-  if (url.includes('/incidents')) {
-    return { ok: true, json: async () => [] };
-  }
-  return {
-    ok: true,
-    json: async () => ({ status: 'Success' })
-  };
-};
-
-global.document = {
-  addEventListener: (event, cb) => {
-    if (event === 'DOMContentLoaded') {
-      setTimeout(cb, 0);
-    }
-  },
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ status: 'Success' }) });
+globalThis.document = {
   getElementById: (id) => {
     if (!mockElements[id]) {
       mockElements[id] = {
-        id: id,
-        classList: {
-          remove: (cls) => {},
-          add: (cls) => {}
-        },
-        className: { baseVal: '' },
-        addEventListener: (event, cb) => {
-          if (event === 'click') {
-            clickListeners[id] = cb;
-          }
-        },
-        style: { width: '0%' },
+        id,
+        classList: { add: () => {}, remove: () => {} },
+        addEventListener: (event, cb) => { if (event === 'click') clickListeners[id] = cb; },
         textContent: '',
-        innerHTML: '',
-        appendChild: () => {}
+        disabled: false
       };
     }
     return mockElements[id];
-  },
-  createElement: (tag) => ({
-    setAttribute: () => {},
-    appendChild: () => {},
-    classList: { add: () => {}, remove: () => {} },
-    style: {},
-    addEventListener: () => {},
-    scrollTop: 0,
-    scrollHeight: 100
-  }),
-  createElementNS: (ns, tag) => ({
-    setAttribute: () => {},
-    appendChild: () => {},
-    classList: { add: () => {}, remove: () => {} },
-    style: { animation: '' },
-    addEventListener: () => {},
-    scrollTop: 0,
-    scrollHeight: 100
-  })
+  }
 };
 
-global.setInterval = (cb, ms) => {
-  return 1;
-};
+const { setupNotifications } = await import('file://NOTIFY_PATH');
+setupNotifications();
 
-const fs = require('fs');
-const code = fs.readFileSync('web/app.js', 'utf8');
-eval(code);
-
-setTimeout(async () => {
-  const clickHandler = clickListeners['enable-notifications-btn'];
-  if (!clickHandler) {
-    console.error('ERROR: Click listener on enable-notifications-btn not registered');
+const clickHandler = clickListeners['enable-notifications-btn'];
+if (!clickHandler) {
+  console.error('ERROR: Click listener on enable-notifications-btn not registered');
+  process.exit(1);
+}
+try {
+  await clickHandler();
+  if (mockElements['notification-token'].textContent !== 'mock-fcm-token') {
+    console.error('ERROR: Token was not written to the UI');
     process.exit(1);
   }
-  
-  try {
-    await clickHandler();
-    process.exit(0);
-  } catch (err) {
-    console.error('ERROR: Click handler threw error:', err);
-    process.exit(1);
-  }
-}, 50);
-"""
+  process.exit(0);
+} catch (err) {
+  console.error('ERROR: Click handler threw error:', err);
+  process.exit(1);
+}
+""".replace("NOTIFY_PATH", notify_path)
     import tempfile
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.mjs', delete=False) as f:
         f.write(js_verifier)
         temp_name = f.name
         

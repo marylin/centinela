@@ -3,424 +3,163 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Centinela | Basin Risk & Pipeline Monitor</title>
-  <meta name="description" content="Real-time hydrological basin risk mapping and data pipeline monitoring dashboard for flood mitigation and emergency response.">
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230d1326'/%3E%3Cpath d='M12 4L4 12h2.5v7h4.5v-5h2v5h4.5v-7H20L12 4z' fill='%2338bdf8'/%3E%3C/svg%3E">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./style.css">
+  <title>Centinela · All places</title>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div id="api-offline-banner" class="api-offline-banner hidden">CRITICAL: BACKEND API OFFLINE - ATTEMPTING RECONNECTION...</div>
-  <div class="dashboard-wrapper mode-operations" id="dashboard-wrapper">
-    <!-- Header Area -->
-    <header class="app-header">
-      <div class="brand">
-        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 2L2 12h3v8h6v-6h2v6h6v-8h3L12 2z" fill="url(#logo-grad)"/>
-          <defs>
-            <linearGradient id="logo-grad" x1="2" y1="2" x2="22" y2="20" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="#38bdf8"/>
-              <stop offset="100%" stop-color="#2563eb"/>
-            </linearGradient>
-          </defs>
-        </svg>
-        <div class="brand-text">
-          <h1>Centinela</h1>
-          <span class="sub-brand">Basin Monitor & Risk Engine</span>
-        </div>
-      </div>
-      
-      <!-- Mode Switcher Segmented Control -->
-      <div class="mode-switch-wrapper">
-        <button type="button" class="mode-switch-btn active" id="mode-btn-operations" data-mode="operations">Operations</button>
-        <button type="button" class="mode-switch-btn" id="mode-btn-public" data-mode="public">Public Alert</button>
-      </div>
-
-      <!-- No dropdowns anywhere: Operations navigates via the scope strip,
-           Public Alert via tappable area cards (and the map markers). -->
-
-      <!-- Toggle Diagnostics (Operations mode only) -->
-      <button type="button" class="btn btn-sm btn-diagnostics" id="diagnostics-toggle-btn" aria-label="Open Pipeline & Diagnostics panel" aria-haspopup="true" aria-expanded="false">
-        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-          <line x1="6" y1="6" x2="6.01" y2="6"></line>
-          <line x1="6" y1="18" x2="6.01" y2="18"></line>
-        </svg>
-        <span>Diagnostics</span>
-      </button>
-
-      <div class="header-meta">
-        <div class="system-time">
-          <span class="meta-label">System Time</span>
-          <span class="meta-value tabular-nums" id="current-time">--:--:--</span>
-        </div>
-        <div class="sync-indicator pulse-slow">
-          <div class="led-dot" id="system-status-led"></div>
-          <span id="system-status-text">SYSTEM ONLINE</span>
-          <span id="metric-freshness" class="tabular-nums" style="display: none;">--</span>
-        </div>
-      </div>
-    </header>
-
-    <!-- Main Grid Layout -->
-    <main class="dashboard-grid">
-      <!-- OPERATIONS VIEW PANELS -->
-      <div class="ops-panels-container">
-        <!-- Scope strip: live navigation. One pinned monitored-basin card plus
-             active seismic regions that actually have events in the 48h feed.
-             Picking an item aligns the whole page. -->
-        <nav class="scope-strip" id="scope-strip" aria-label="Live scope navigation"></nav>
-
-        <!-- Basin Risk Map Panel -->
-        <section class="card risk-map-panel" aria-labelledby="risk-map-title">
-          <div class="card-header">
-            <h2 id="risk-map-title">Basin Risk-Map</h2>
-            <div class="card-actions">
-              <span class="legend-item"><span class="legend-dot low"></span> Low &lt;40%</span>
-              <span class="legend-item"><span class="legend-dot warning"></span> Warning 40%+</span>
-              <span class="legend-item"><span class="legend-dot danger"></span> Danger 60%+</span>
-              <span class="legend-item"><span class="legend-dot critical"></span> Critical 80%+</span>
-              <button type="button" class="btn btn-sm" id="choropleth-toggle" aria-pressed="true">Risk zones: on</button>
-            </div>
-          </div>
-          <div class="card-body map-panel-split">
-            <div class="map-wrapper" id="risk-map-container">
-              <div class="map-loading" id="map-loading-overlay" role="status" aria-label="Loading hazard data">
-                <div class="map-skeleton" aria-hidden="true">
-                  <div class="skeleton-block skeleton-map-bg"></div>
-                  <div class="skeleton-row">
-                    <div class="skeleton-block skeleton-pill"></div>
-                    <div class="skeleton-block skeleton-pill"></div>
-                    <div class="skeleton-block skeleton-pill"></div>
-                  </div>
-                </div>
-                <span class="skeleton-sr-only">Loading hazard data...</span>
-              </div>
-              <div id="google-map" class="google-map"></div>
-            </div>
-            <!-- Side Detail Rail -->
-            <aside class="detail-rail" id="muni-detail-rail">
-              <div class="drawer-instruction">Select a basin area to view detailed telemetry metrics.</div>
-            </aside>
-          </div>
-        </section>
-
-        <!-- Live Seismic Events panel: global USGS feed with clickable events.
-             Promoted to sit directly under the map: it is the live navigation
-             surface. The 30-day activity row is context, collapsed by default. -->
-        <section class="card seismic-panel" aria-labelledby="seismic-title">
-          <div class="card-header">
-            <h2 id="seismic-title">Live Seismic Events</h2>
-            <div class="risk-timeline-meta">
-              <button type="button" class="btn btn-sm" id="regions-30d-toggle" aria-pressed="false"
-                      aria-controls="seismic-regions-container">30-day activity</button>
-              <span class="badge badge-live-usgs" title="Real events from the USGS earthquake feed">LIVE &middot; USGS</span>
-            </div>
-          </div>
-          <div class="card-body seismic-panel-body">
-            <div class="seismic-regions" id="seismic-regions-container" aria-label="Seismically active regions over the last 30 days" hidden></div>
-            <div class="seismic-list" id="seismic-feed-container" aria-label="Live seismic events, newest first">
-              <div class="empty-alerts">No recent seismic activity in range.</div>
-            </div>
-          </div>
-        </section>
-
-        <!-- Incident Triage alerts panel -->
-        <section class="card alerts-panel" aria-labelledby="alerts-title">
-          <div class="card-header">
-            <h2 id="alerts-title">Incident Triage: Active Alerts</h2>
-            <div class="risk-timeline-meta">
-              <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
-              <span class="badge badge-error" id="active-alert-count">0 Alerts</span>
-            </div>
-          </div>
-          <div class="card-body alert-list" id="alert-feed-container">
-            <!-- Alerts dynamically populated -->
-            <div class="empty-alerts">No active warnings. System telemetry is within safe operating ranges.</div>
-          </div>
-        </section>
-
-        <!-- Candidate watchlist (read-only): activity-scored expansion candidates -->
-        <section class="card watchlist-panel" aria-labelledby="watchlist-title">
-          <div class="card-header">
-            <h2 id="watchlist-title">Candidate Watchlist</h2>
-            <div class="risk-timeline-meta">
-              <span class="badge scope-chip">ACTIVITY &middot; MODEL</span>
-              <span class="badge" id="watchlist-status-chip" hidden></span>
-              <span class="watchlist-computed-at" id="watchlist-computed-at"></span>
-            </div>
-          </div>
-          <div class="card-body" id="watchlist-container">
-            <div class="empty-alerts">Warming up: the first candidate scan is in progress.</div>
-          </div>
-          <p class="watchlist-footnote">Activity model from the USGS FDSN catalog + GloFAS reanalysis
-            (Open-Meteo), seasonal window &plusmn;1 month. Candidates are NOT monitored places;
-            promotion into the registry is a manual configuration step.</p>
-        </section>
-
-        <div class="charts-row">
-        <!-- Live Risk Timeline (selected municipality's composite risk over the poll) -->
-        <section class="card risk-timeline-panel" aria-labelledby="risk-timeline-title">
-          <div class="card-header">
-            <h2 id="risk-timeline-title">Live Risk Timeline</h2>
-            <div class="risk-timeline-meta">
-              <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
-              <span class="risk-timeline-muni" id="risk-timeline-muni">&mdash;</span>
-              <span class="risk-timeline-value tabular-nums" id="risk-timeline-value">--%</span>
-              <button type="button" class="btn btn-sm chart-table-toggle" id="timeline-table-toggle"
-                      aria-pressed="false" aria-controls="risk-timeline-table">View as table</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div id="risk-timeline-chart" class="risk-timeline-chart" tabindex="0" role="img"
-                 aria-label="Composite risk timeline for the selected municipality"
-                 aria-describedby="risk-timeline-summary">
-              <div class="risk-timeline-empty">Collecting samples&hellip;</div>
-            </div>
-            <div id="risk-timeline-table" class="chart-table-wrap" hidden></div>
-            <p id="risk-timeline-summary" class="visually-hidden" aria-live="off"></p>
-          </div>
-        </section>
-
-        <!-- River & rainfall trend (warehouse telemetry history) -->
-        <section class="card telemetry-trend-panel" aria-labelledby="telemetry-trend-title">
-          <div class="card-header">
-            <h2 id="telemetry-trend-title">River &amp; Rainfall Trend</h2>
-            <div class="risk-timeline-meta">
-              <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
-              <span class="trend-provenance">rainfall: observed &middot; discharge + soil: model (GloFAS / ECMWF)</span>
-              <button type="button" class="btn btn-sm chart-table-toggle" id="trend-table-toggle"
-                      aria-pressed="false" aria-controls="telemetry-trend-table">View as table</button>
-            </div>
-          </div>
-          <div class="card-body">
-            <div id="telemetry-trend-chart" class="telemetry-trend-chart" tabindex="0" role="img"
-                 aria-label="River level and hourly rainfall over the recent window"
-                 aria-describedby="telemetry-trend-summary">
-              <div class="risk-timeline-empty">Loading telemetry history&hellip;</div>
-            </div>
-            <div id="telemetry-trend-table" class="chart-table-wrap" hidden></div>
-            <p id="telemetry-trend-summary" class="visually-hidden" aria-live="off"></p>
-          </div>
-        </section>
-        </div><!-- /charts-row -->
-      </div>
-
-      <!-- PUBLIC ALERT VIEW PANELS -->
-      <div class="public-panels-container">
-        <!-- Monitored areas (pilot scope): tappable cards, no dropdown. -->
-        <section class="public-area-section" id="public-area-section" aria-label="Monitored areas">
-          <p class="public-area-caption">Monitored area (pilot): Rio Cauca, Colombia &middot; pick your municipality</p>
-          <nav class="scope-strip public-area-strip" id="public-area-strip"></nav>
-        </section>
-
-        <!-- Structured 5-element Emergency Alert Card -->
-        <section class="card public-alert-card" id="public-alert-card" aria-labelledby="public-alert-title">
-          <h2 class="guidance-title" id="public-alert-title">Emergency Alert</h2>
-          <dl class="alert-field-grid" id="public-alert-fields">
-            <!-- Five labeled elements: Hazard, Where, Action, When, Source -->
-          </dl>
-          <p class="alert-context-line" id="public-alert-context">
-            <!-- True, neutral historical context line per area -->
-          </p>
-          <p class="alert-uphill-line" id="public-alert-uphill" hidden>
-            <!-- Elevation-derived uphill direction; hidden when unavailable -->
-          </p>
-        </section>
-
-        <!-- Status Hero Card -->
-        <section class="card public-hero-card" id="public-status-hero">
-          <!-- Dynamic plain-language status hero -->
-        </section>
-
-        <!-- "This is your area" map -->
-        <section class="card public-map-card" aria-labelledby="public-map-title">
-          <h2 class="guidance-title" id="public-map-title">This is your area</h2>
-          <div class="public-map-wrapper">
-            <div id="public-map" class="public-map" role="img" aria-label="Map highlighting your at-risk municipality"></div>
-            <div class="public-map-loading" id="public-map-loading">Loading map&hellip;</div>
-          </div>
-        </section>
-
-        <!-- Nearest hospital / safe point + walking route -->
-        <section class="card safe-route-card" id="safe-route-card" aria-labelledby="safe-route-title">
-          <h2 class="guidance-title" id="safe-route-title">Nearest hospital / safe point</h2>
-          <p class="safe-route-disclaimer">
-            The nearest hospital, school, or large public building &mdash; not an official shelter.
-            Always follow instructions from local authorities.
-          </p>
-          <button type="button" class="btn btn-safe-route" id="find-safe-route-btn" aria-controls="safe-route-status">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-              <path d="M12 21s-6-5.686-6-10a6 6 0 0 1 12 0c0 4.314-6 10-6 10z"></path>
-              <circle cx="12" cy="11" r="2"></circle>
-            </svg>
-            <span>Find walking route to safety</span>
-          </button>
-          <div class="safe-route-result">
-            <p class="safe-route-status" id="safe-route-status" role="status" aria-live="polite" aria-atomic="true">
-              Tap the button to find the nearest hospital or safe point and a walking route.
-            </p>
-            <div class="safe-route-detail" id="safe-route-detail" hidden>
-              <p class="safe-route-dest" id="safe-route-dest"></p>
-              <p class="safe-route-meta" id="safe-route-meta"></p>
-              <nav class="safe-route-directions" aria-label="Walking directions, step by step">
-                <ol class="safe-route-steps" id="safe-route-steps"></ol>
-              </nav>
-            </div>
-          </div>
-        </section>
-
-        <!-- Safety Guidance Card -->
-        <section class="card guidance-card">
-          <h2 class="guidance-title">Guidance & Protective Action</h2>
-          <div class="guidance-list" id="public-guidance-list">
-            <!-- Dynamic guidance list -->
-          </div>
-        </section>
-        
-        <!-- Active Warnings & Broadcast Card -->
-        <section class="card guidance-card" id="public-advisories-card">
-          <h2 class="guidance-title">Public Advisories & Alerts</h2>
-          <div class="plain-warnings-list" id="public-warnings-list">
-            <!-- Dynamic plain warnings list -->
-          </div>
-        </section>
-
-        <!-- Public seismic layer: the same real global feed, in plain language -->
-        <section class="card guidance-card" id="public-seismic-card">
-          <h2 class="guidance-title"><span id="public-seismic-heading">Earthquakes near your area</span> <span class="badge badge-live-usgs">LIVE &middot; USGS</span></h2>
-          <p class="safe-route-disclaimer">
-            Real detections from the U.S. Geological Survey within ~800 km of your selected area, magnitude 4.5 and above, last 48 hours.
-          </p>
-          <div class="plain-warnings-list" id="public-seismic-list">
-            <!-- Plain-language event rows -->
-          </div>
-        </section>
-
-        <!-- Firebase Subscription panel (CTA) -->
-        <section class="card notification-panel">
-          <div class="card-header">
-            <h2 id="notification-title">Subscribe to Real-Time Warnings</h2>
-          </div>
-          <div class="card-body notification-panel-body">
-            <p class="control-description control-description-compact">
-              Register your browser to receive instant emergency notifications directly on your device when hazard alerts are triggered.
-            </p>
-            <button type="button" class="btn btn-success btn-full-width" id="enable-notifications-btn">
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-              <span>Enable Real-Time Alerts</span>
-            </button>
-            <div id="token-display-box" class="hidden token-display-box">
-              <span class="token-label">Registration Token:</span>
-              <code id="notification-token" class="token-code"></code>
-              <button class="btn btn-sm btn-token-copy" id="copy-token-btn">Copy Token</button>
-            </div>
-          </div>
-        </section>
-      </div>
-    </main>
-
-    <!-- Footer -->
-    <footer class="app-footer">
-      <p>&copy; 2026 Centinela Systems. Flood Prevention and Catchment Basin Analytics. Unit 3A Scaffold.</p>
-    </footer>
+  <div id="api-offline-banner" class="api-offline-banner hidden" role="alert">
+    Backend unreachable — showing the last loaded data.
   </div>
 
-  <!-- Collapsible Pipeline Diagnostics Slide-over -->
-  <div class="diagnostics-overlay" id="diagnostics-overlay"></div>
-  <aside class="diagnostics-slideout" id="diagnostics-slideout">
-    <div class="slideout-header">
-      <h2>Pipeline & Diagnostics</h2>
-      <button type="button" class="slideout-close-btn" id="diagnostics-close-btn" aria-label="Close diagnostics panel">&times;</button>
+  <header class="app-header">
+    <div class="header-brand">
+      <h1>CENTINELA</h1>
+      <span class="header-tagline">Multi-hazard monitoring &middot; LatAm</span>
     </div>
-    <div class="slideout-body">
-      <!-- Pipeline Status Card -->
-      <section class="card status-panel" id="pipeline-status-card" aria-labelledby="pipeline-title">
-        <div class="card-header">
-          <h2 id="pipeline-title">Pipeline Status</h2>
-          <span class="badge scope-chip" data-scope-chip>RIO CAUCA BASIN</span>
-        </div>
-        <div class="card-body connectors-container" id="pipeline-connectors-container" role="status" aria-label="Loading pipeline connectors">
-          <div class="skeleton-connector-card" aria-hidden="true">
-            <div class="skeleton-block skeleton-title"></div>
-            <div class="skeleton-block skeleton-text"></div>
-            <div class="skeleton-block skeleton-text skeleton-text-short"></div>
-          </div>
-          <div class="skeleton-connector-card" aria-hidden="true">
-            <div class="skeleton-block skeleton-title"></div>
-            <div class="skeleton-block skeleton-text"></div>
-            <div class="skeleton-block skeleton-text skeleton-text-short"></div>
-          </div>
-        </div>
-        <div class="card-footer card-footer-compact">
-          <div class="sync-progress-bar">
-            <div class="progress-bar-fill" id="sync-progress"></div>
-          </div>
-        </div>
-      </section>
+    <div class="header-meta">
+      <span id="system-time" class="tabular-nums"></span>
+      <button type="button" id="diagnostics-toggle-btn" class="btn btn-sm" aria-expanded="false">Diagnostics</button>
+    </div>
+  </header>
 
-      <!-- Demo Controls (operator-only simulation tool) -->
-      <section class="card demo-controls-panel" aria-labelledby="demo-controls-title">
-        <div class="card-header">
-          <h2 id="demo-controls-title">Demo Controls</h2>
-          <span class="badge badge-simulated">OPERATOR TOOL</span>
-        </div>
+  <main id="app" class="view-index">
+    <!-- VIEW 1: the single entry point -->
+    <section id="index-view" aria-label="All places">
+      <div class="index-toolbar">
+        <input id="place-filter" type="search" placeholder="Filter places…" aria-controls="tile-grid-monitored tile-grid-candidates">
+        <span id="grid-status" aria-live="polite" class="visually-hidden"></span>
+      </div>
+
+      <h2 class="grid-section-title">Monitored places <span class="badge scope-chip">MODEL INDEX</span></h2>
+      <div id="tile-grid-monitored" class="tile-grid"></div>
+
+      <h2 class="grid-section-title">Watchlist candidates <span class="badge scope-chip">NOT MONITORED &middot; ACTIVITY MODEL</span></h2>
+      <p class="watchlist-footnote">Activity model from the USGS FDSN catalog + GloFAS reanalysis
+        (Open-Meteo), seasonal window &plusmn;1 month. Candidates are NOT monitored places;
+        promotion into the registry is a manual configuration step.</p>
+      <div id="tile-grid-candidates" class="tile-grid tile-grid-candidates"></div>
+
+      <section class="card notification-panel" aria-labelledby="notif-title">
+        <div class="card-header"><h2 id="notif-title">Emergency push notifications</h2></div>
         <div class="card-body">
-          <p class="control-description control-description-compact">
-            Injects a clearly-labeled <strong>SIMULATED</strong> seismic event into the selected basin for
-            demonstrations. Simulated events are always tagged SIMULATED and never presented as real detections.
-          </p>
-          <div class="demo-controls-actions">
-            <button type="button" class="btn btn-danger" id="simulate-event-btn">Simulate event (demo)</button>
-            <button type="button" class="btn btn-success" id="clear-simulation-btn">Clear simulation</button>
+          <button type="button" id="enable-notifications-btn" class="btn">Enable notifications on this device</button>
+          <div id="token-display-box" class="token-display-box hidden">
+            <code id="notification-token"></code>
+            <button type="button" id="copy-token-btn" class="btn btn-sm">Copy</button>
           </div>
-          <p class="demo-controls-status" id="demo-controls-status" role="status" aria-live="polite"></p>
         </div>
       </section>
+    </section>
 
-      <!-- Autonomous Self-Heal History -->
-      <section class="card autonomous-heals-panel" aria-labelledby="auto-heals-title">
-        <div class="card-header">
-          <h2 id="auto-heals-title">Autonomous Self-Heal Logs</h2>
+    <!-- VIEW 2: detail (Phase B fills the panels; the shell is honest now) -->
+    <div id="detail-view" hidden>
+      <aside id="side-rail" aria-label="Places">
+        <button type="button" id="back-to-grid" class="btn btn-sm">&larr; All places</button>
+        <div id="rail-list"></div>
+      </aside>
+      <div id="detail-main">
+        <h2 id="detail-heading" tabindex="-1"></h2>
+        <p id="detail-kind" class="detail-kind"></p>
+
+        <section id="public-alert-card" class="card" aria-labelledby="alert-title" hidden>
+          <div class="card-header"><h3 id="alert-title">Public alert</h3></div>
+          <div class="card-body">
+            <div id="alert-status"></div>
+            <dl id="alert-fields" class="alert-fields"></dl>
+            <p id="alert-context" class="alert-context"></p>
+            <div id="alert-guidance"></div>
+            <div id="alert-advisories"></div>
+          </div>
+        </section>
+
+        <section class="card" aria-label="Map">
+          <div class="card-header"><h3>Map</h3><span class="tile-model-tag">anchor pin &middot; river monitoring point when flood is elevated</span></div>
+          <div id="google-map" class="detail-map"></div>
+        </section>
+
+        <div class="detail-columns">
+          <section class="card" aria-labelledby="components-title">
+            <div class="card-header"><h3 id="components-title">Hazard model</h3></div>
+            <div class="card-body" id="components-body"></div>
+          </section>
+          <section class="card" aria-labelledby="conditions-title">
+            <div class="card-header"><h3 id="conditions-title">Live conditions</h3><span id="conditions-scope" class="tile-model-tag"></span></div>
+            <div class="card-body" id="conditions-body"></div>
+          </section>
         </div>
-        <div class="card-body log-console logs-container-max-150" id="auto-heals-container">
-          <div class="log-line system">No autonomous self-heals logged.</div>
+
+        <section class="card" id="seismic-panel" aria-labelledby="seismic-title">
+          <div class="card-header"><h3 id="seismic-title">Seismic activity</h3><span id="seismic-region-chips"></span></div>
+          <div id="seismic-focus-content" class="seismic-focus-content" hidden></div>
+          <div class="card-body" id="seismic-feed-body"></div>
+        </section>
+
+        <section class="card" id="route-card" aria-labelledby="route-title" hidden>
+          <div class="card-header"><h3 id="route-title">Safe route</h3></div>
+          <div class="card-body">
+            <p id="route-uphill" class="alert-context" hidden></p>
+            <button type="button" id="route-find-btn" class="btn">Find a safe point and walking route</button>
+            <p id="route-status" class="diag-status"></p>
+            <ol id="route-steps" class="route-steps"></ol>
+          </div>
+        </section>
+
+        <div class="detail-columns">
+          <section class="card" id="risk-timeline-panel" aria-labelledby="timeline-title" hidden>
+            <div class="card-header"><h3 id="timeline-title">Risk timeline</h3><span class="tile-model-tag">MODEL &middot; server-recorded</span></div>
+            <div class="card-body" id="risk-timeline-body"></div>
+          </section>
+          <section class="card" id="trend-panel" aria-labelledby="trend-title" hidden>
+            <div class="card-header"><h3 id="trend-title">Rain &middot; river &middot; soil</h3><span class="tile-model-tag">observed + model series</span></div>
+            <div class="card-body" id="trend-body"></div>
+          </section>
         </div>
-      </section>
-      
-      <!-- Incident History Panel -->
-      <section class="card incidents-panel" aria-labelledby="incidents-history-title">
-        <div class="card-header">
-          <h2 id="incidents-history-title">Incident History</h2>
-          <button id="clear-reopen-btn" class="btn btn-sm btn-return-live hidden">Return to Live</button>
-        </div>
-        <div class="card-body log-console logs-container-max-180" id="incidents-history-container">
-          <div class="log-line system">No historical incidents recorded.</div>
-        </div>
-      </section>
-      
-      <!-- Live System Logs / Telemetry Stream -->
-      <section class="card logs-panel" aria-labelledby="logs-title">
-        <div class="card-header">
-          <h2 id="logs-title">Telemetry Stream Logs</h2>
-        </div>
-        <div class="card-body log-console" id="log-console-container">
-          <div class="log-line system">[SYSTEM] Dashboard UI initialized. Reading telemetry data contract...</div>
-        </div>
-      </section>
+      </div>
     </div>
+  </main>
+
+  <footer class="app-footer">
+    <span>Centinela &middot; model hazard index &middot; data: GloFAS/ECMWF (Open-Meteo), Google Weather &amp; AQI, USGS</span>
+  </footer>
+
+  <!-- Diagnostics slideout -->
+  <div id="diagnostics-overlay" class="diagnostics-overlay"></div>
+  <aside id="diagnostics-slideout" class="diagnostics-slideout" aria-label="Diagnostics">
+    <div class="card-header">
+      <h2>Diagnostics</h2>
+      <button type="button" id="diagnostics-close-btn" class="btn btn-sm">Close</button>
+    </div>
+    <section class="diag-section">
+      <h3>Pipeline <span id="diag-last-sync" class="tabular-nums"></span></h3>
+      <div id="diag-connectors"></div>
+      <div class="diag-actions">
+        <button type="button" id="diag-break-btn" class="btn btn-sm">Simulate outage</button>
+        <button type="button" id="diag-heal-btn" class="btn btn-sm">Heal</button>
+      </div>
+    </section>
+    <section class="diag-section">
+      <h3>Demo event (SIMULATED)</h3>
+      <select id="demo-muni-select" aria-label="Demo target place"></select>
+      <div class="diag-actions">
+        <button type="button" id="demo-inject-btn" class="btn btn-sm">Inject M 7.2</button>
+        <button type="button" id="demo-clear-btn" class="btn btn-sm">Clear</button>
+      </div>
+      <p id="demo-controls-status" class="diag-status"></p>
+    </section>
+    <section class="diag-section">
+      <h3>Autonomous heals</h3>
+      <div id="diag-heals"></div>
+    </section>
+    <section class="diag-section">
+      <h3>Incident history</h3>
+      <div id="diag-incidents"></div>
+    </section>
   </aside>
-  
+
   <!-- Firebase App & Messaging compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"></script>
-  
+
   <!-- Google Maps -->
   <script>
     window.googleMapsReady = false;
@@ -433,6 +172,6 @@
     src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCvD5IH8wjYrcBuqr8Alnj5dc3NAoqs4vg&libraries=places&callback=onGoogleMapsLoad&loading=async">
   </script>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="/assets/js/main.js"></script>
 </body>
 </html>
