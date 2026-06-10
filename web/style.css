@@ -3030,3 +3030,70 @@ button.seismic-event-row:focus-visible {
   color: var(--text-muted); font-size: 0.78em; margin: 0;
   padding: 8px 16px 12px; border-top: 1px solid var(--border-color);
 }
+
+/* ==========================================================================
+   NEW UNIFIED INDEX UI (next.html / Phase A) — shares tokens with the
+   legacy page; legacy selectors above remain untouched until cutover.
+   ========================================================================== */
+.app-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.9rem 1.4rem; border-bottom: 1px solid var(--border-color);
+}
+.app-header h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.12em; }
+.header-tagline { color: var(--text-muted); font-size: 0.8rem; margin-left: 0.6rem; }
+.header-meta { display: flex; align-items: center; gap: 0.8rem; }
+.app-footer {
+  padding: 0.8rem 1.4rem; color: var(--text-muted); font-size: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+#index-view, #detail-view { padding: 1.1rem 1.4rem; }
+.index-toolbar { margin-bottom: 0.9rem; }
+.index-toolbar input[type="search"] {
+  width: min(340px, 100%); padding: 0.5rem 0.8rem; border-radius: 6px;
+  border: 1px solid var(--border-color); background: rgba(255,255,255,0.04);
+  color: inherit;
+}
+.grid-section-title { font-size: 0.95rem; margin: 1.1rem 0 0.6rem; }
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px;
+  clip: rect(0 0 0 0); overflow: hidden; white-space: nowrap;
+}
+.tile-grid {
+  display: flex; flex-wrap: wrap; gap: 0.7rem;
+}
+.tile {
+  display: flex; flex-direction: column; gap: 4px;
+  width: 230px; padding: 0.7rem 0.85rem; text-align: left;
+  background: rgba(255,255,255,0.03); color: inherit; cursor: pointer;
+  border: 1px solid var(--border-color); border-left-width: 4px;
+  border-radius: 8px; font: inherit;
+}
+.tile:hover, .tile:focus-visible { border-color: var(--border-color-glow); }
+.tile-hidden { display: none; }
+.tile-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.tile-name { font-weight: 600; }
+.tile-hazard .hazard-icon { width: 18px; height: 18px; color: var(--text-muted); }
+.tile-severity { font-size: 0.85rem; display: flex; align-items: center; gap: 6px; }
+.tile-model-tag { color: var(--text-muted); font-size: 0.65rem; letter-spacing: 0.06em; }
+.tile-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.tile-bar i { display: block; height: 100%; }
+.tile-meta { color: var(--text-muted); font-size: 0.75rem; }
+.tile-candidate { opacity: 0.92; background: rgba(255,255,255,0.015); border-style: dashed; border-left-style: solid; }
+.tile-badge { font-size: 0.6rem; border: 1px solid var(--border-color-glow); color: var(--text-muted); padding: 1px 6px; }
+#detail-view { display: flex; gap: 1rem; }
+#side-rail { width: 220px; flex-shrink: 0; }
+#detail-main { flex: 1; min-width: 0; }
+.detail-kind { color: var(--text-muted); font-size: 0.8rem; }
+.diag-section { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-color); }
+.diag-section h3 { margin: 0 0 0.5rem; font-size: 0.85rem; }
+.diag-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.diag-status { color: var(--text-muted); font-size: 0.78rem; min-height: 1em; }
+.diag-connector-row, .diag-history-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding: 4px 0; font-size: 0.82rem;
+}
+.api-offline-banner {
+  background: var(--danger, #ef4444); color: #fff; text-align: center;
+  padding: 0.4rem; font-size: 0.85rem;
+}
+.api-offline-banner.hidden { display: none; }
