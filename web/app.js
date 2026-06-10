@@ -1664,6 +1664,25 @@ function renderScopeStrip() {
         <span class="scope-item-meta tabular-nums">${r.count} live &middot; max M ${r.maxMag.toFixed(1)}</span>
       </button>`;
     }).join("")}`;
+
+  // Basin-scoped panels carry an explicit scope chip and collapse while a
+  // seismic scope owns the page (G2).
+  document.querySelectorAll("[data-scope-chip]").forEach(chip => {
+    chip.textContent = `${basinName.toUpperCase()} BASIN${basinSimulated ? " · SIMULATED" : ""}`;
+  });
+  updateBasinPanelSubordination();
+}
+
+// While a seismic scope (region pick or event focus) is active, the
+// basin-scoped panels collapse to their header so the page never shows
+// Colombia panels at full volume under a Philippines map. Click to expand.
+function updateBasinPanelSubordination() {
+  const seismicScoped = !!(appState.seismicFocus || appState.regionFilter);
+  if (!seismicScoped) appState.basinPanelsExpanded = false;
+  const collapse = seismicScoped && !appState.basinPanelsExpanded;
+  document.querySelectorAll(".risk-timeline-panel, .telemetry-trend-panel, .alerts-panel").forEach(panel => {
+    panel.classList.toggle("subordinated", collapse);
+  });
 }
 
 // Return the page to the monitored-basin scope (the pinned strip card).
@@ -2721,6 +2740,15 @@ function setupEventHandlers() {
       if (item && item.dataset && item.dataset.region) toggleRegionFilter(item.dataset.region);
     });
   }
+
+  // Subordinated basin panels expand on a header click while seismic-scoped.
+  document.addEventListener("click", (e) => {
+    if (!e.target || typeof e.target.closest !== "function") return;
+    const header = e.target.closest(".subordinated .card-header");
+    if (!header) return;
+    appState.basinPanelsExpanded = true;
+    updateBasinPanelSubordination();
+  });
 
   // 30-day activity context row (collapsed by default in the feed panel).
   const regions30dToggle = document.getElementById("regions-30d-toggle");
