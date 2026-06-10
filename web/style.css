@@ -613,6 +613,9 @@ h1, h2, h3, h4 {
   font-size: 0.9rem;
   font-weight: 600;
   cursor: pointer;
+  /* Explicit text color: buttons without a variant otherwise fall back to
+     the UA default (black), invisible on this dark theme. */
+  color: var(--text-main);
   border: 1px solid transparent;
   background-color: transparent;
   transition: all var(--transition-normal);
@@ -2428,6 +2431,18 @@ span.skeleton-block {
   display: inline-block;
 }
 
+.trend-time-axis {
+  position: absolute;
+  bottom: 4px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.6rem;
+  color: var(--text-dark);
+  pointer-events: none;
+}
+
 .trend-swatch-river { background: #38bdf8; }
 .trend-swatch-rain { background: var(--primary); opacity: 0.55; height: 8px; width: 6px; }
 .trend-swatch-threshold { background: #ef4444; }
@@ -2442,6 +2457,13 @@ span.skeleton-block {
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* The flex rule above would otherwise override the hidden attribute. */
+.chart-table-wrap[hidden] {
+  display: none;
 }
 
 .chart-table {
@@ -2460,8 +2482,14 @@ span.skeleton-block {
 .chart-table th,
 .chart-table td {
   border: 1px solid var(--border-color);
-  padding: 0.25rem 0.55rem;
+  padding: 0.35rem 0.9rem;
   text-align: left;
+  min-width: 110px;
+}
+
+.chart-table td.tabular-nums,
+.chart-table th.num {
+  text-align: right;
 }
 
 .chart-table th {

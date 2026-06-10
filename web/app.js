@@ -1264,11 +1264,15 @@ function renderRiskTimelineTable(samples, selected) {
     tableEl.innerHTML = `<p class="chart-table-note">No samples yet.</p>`;
     return;
   }
-  const recent = samples.slice(-12).reverse();
+  // One row per minute: the live 5s samples are near-identical and read as
+  // duplicates in a table.
+  const byMinute = new Map();
+  samples.forEach(s => byMinute.set(Math.floor(s.t / 60000), s));
+  const recent = [...byMinute.values()].slice(-12).reverse();
   tableEl.innerHTML = `
     <table class="chart-table">
       <caption class="visually-hidden">Recent composite risk samples for ${escapeHtml(selected.municipality)}</caption>
-      <thead><tr><th scope="col">Time</th><th scope="col">Composite risk</th></tr></thead>
+      <thead><tr><th scope="col">Time</th><th scope="col" class="num">Composite risk</th></tr></thead>
       <tbody>
         ${recent.map(s => `<tr>
           <td class="tabular-nums">${new Date(s.t).toLocaleTimeString()}</td>
@@ -1385,14 +1389,27 @@ function renderTelemetryTrend() {
     }
   }
 
+  // Time orientation: a gridline every 12h plus start/end labels (G5).
+  let timeTicks = "";
+  const TICK_MS = 12 * 3600 * 1000;
+  for (let t = Math.ceil(minT / TICK_MS) * TICK_MS; t < maxT; t += TICK_MS) {
+    timeTicks += `<line x1="${x(t).toFixed(1)}" y1="0" x2="${x(t).toFixed(1)}" y2="${H}"
+      stroke="rgba(255,255,255,0.07)" stroke-width="0.6"></line>`;
+  }
+  const fmtTick = t => new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
   chartEl.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" focusable="false" class="telemetry-trend-svg">
-      ${rainBars}${thresholdLine}${riverLine}${breachMarks}
+      ${timeTicks}${rainBars}${thresholdLine}${riverLine}${breachMarks}
     </svg>
     <div class="trend-legend" aria-hidden="true">
       <span class="trend-legend-item"><span class="trend-swatch trend-swatch-river"></span>River level (m)</span>
       <span class="trend-legend-item"><span class="trend-swatch trend-swatch-rain"></span>Rainfall (mm/h)</span>
       <span class="trend-legend-item"><span class="trend-swatch trend-swatch-threshold"></span>Alert threshold</span>
+    </div>
+    <div class="trend-time-axis tabular-nums" aria-hidden="true">
+      <span>${fmtTick(minT)}</span>
+      <span>${fmtTick(maxT)}</span>
     </div>`;
 
   if (summaryEl) {
