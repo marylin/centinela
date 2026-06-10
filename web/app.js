@@ -1689,15 +1689,15 @@ function renderScopeStrip() {
 // basin-scoped panels collapse to their header so the page never shows
 // Colombia panels at full volume under a Philippines map. Click to expand.
 function updateBasinPanelSubordination() {
+  // Information stays consequent with the selection: while a seismic scope
+  // (region pick or event focus) owns the page, the basin-only panels
+  // (timeline, trend, triage) disappear entirely. No flood/river model
+  // exists for arbitrary event locations, so there is nothing honest those
+  // panels could show for the selection. They return with the basin scope.
   const seismicScoped = !!(appState.seismicFocus || appState.regionFilter);
-  if (!seismicScoped) appState.basinPanelsExpanded = false;
-  const collapse = seismicScoped && !appState.basinPanelsExpanded;
   document.querySelectorAll(".risk-timeline-panel, .telemetry-trend-panel, .alerts-panel").forEach(panel => {
-    panel.classList.toggle("subordinated", collapse);
-    // Expanded while a seismic scope is active: say plainly why this panel
-    // still shows the monitored basin (no flood/river model exists for
-    // arbitrary event locations).
-    panel.classList.toggle("seismic-scoped", seismicScoped && !collapse);
+    panel.classList.toggle("scope-hidden", seismicScoped);
+    panel.classList.remove("subordinated", "seismic-scoped");
   });
 }
 
@@ -2756,15 +2756,6 @@ function setupEventHandlers() {
       if (item && item.dataset && item.dataset.region) toggleRegionFilter(item.dataset.region);
     });
   }
-
-  // Subordinated basin panels expand on a header click while seismic-scoped.
-  document.addEventListener("click", (e) => {
-    if (!e.target || typeof e.target.closest !== "function") return;
-    const header = e.target.closest(".subordinated .card-header");
-    if (!header) return;
-    appState.basinPanelsExpanded = true;
-    updateBasinPanelSubordination();
-  });
 
   // 30-day activity context row (collapsed by default in the feed panel).
   const regions30dToggle = document.getElementById("regions-30d-toggle");

@@ -2629,13 +2629,21 @@ span.skeleton-block {
   min-height: 0;
 }
 
-/* Scope strip: the page's live navigation. */
+/* Scope strip: the page's live navigation. min-width 0 across this chain:
+   the strip's intrinsic chip width must never widen the page (it was forcing
+   a ~750px-wide body on phones). */
+.ops-panels-container {
+  min-width: 0;
+}
+
 .scope-strip {
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
   padding-bottom: 0.25rem;
   scrollbar-width: thin;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .scope-item {
@@ -2695,36 +2703,10 @@ span.skeleton-block {
   font-size: 0.6rem;
 }
 
-/* Basin panels subordinate while a seismic scope owns the page (G2). */
-.card.subordinated .card-body,
-.card.subordinated .card-footer {
+/* Basin-only panels vanish while a seismic scope owns the page: information
+   stays consequent with the selection (G2, hardened after user feedback). */
+.card.scope-hidden {
   display: none;
-}
-
-.card.subordinated .card-header {
-  cursor: pointer;
-  opacity: 0.8;
-}
-
-.card.subordinated .card-header::after {
-  content: "monitored-basin data only · click to expand";
-  font-size: 0.62rem;
-  color: var(--text-dark);
-  font-weight: 400;
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-/* Expanded basin panel while a seismic scope is active: explain the boundary. */
-.card.seismic-scoped .card-body::before {
-  content: "This panel always shows the monitored basin. River, rainfall, and composite risk are not modeled for seismic event locations.";
-  display: block;
-  margin-bottom: 0.6rem;
-  padding: 0.4rem 0.6rem;
-  border: 1px dashed var(--border-color);
-  border-radius: 6px;
-  font-size: 0.68rem;
-  color: var(--text-muted);
 }
 
 /* Charts sit side by side on wide screens to shorten the page. */
