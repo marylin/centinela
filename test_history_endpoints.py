@@ -132,6 +132,29 @@ def run_tests():
         fail(f"Expected 404 for unknown basin, got {res.status_code}")
     print("Success: unknown basin returns 404.")
 
+    # 6. /location-conditions seeded payload + provenance contract
+    print("\nStep 6: /location-conditions returns the seeded multi-source payload...")
+    res = requests.get(f"{SERVER_URL}/location-conditions", params={"lat": 5.77, "lng": 125.12})
+    if res.status_code != 200:
+        fail(f"GET /location-conditions returned {res.status_code}")
+    body = res.json()
+    rain = body.get("rainfall") or {}
+    if len(rain.get("hourly") or []) != 24 or "total_24h_mm" not in rain:
+        fail(f"Rainfall block malformed: {rain}")
+    discharge = body.get("river_discharge") or {}
+    if discharge.get("direction") not in ("rising", "falling", "steady") or not discharge.get("daily"):
+        fail(f"Discharge block malformed: {discharge}")
+    soil = body.get("soil_moisture") or {}
+    if not (0.0 <= float(soil.get("latest_m3m3", -1)) <= 1.0):
+        fail(f"Soil block malformed: {soil}")
+    prov = body.get("provenance") or {}
+    if "Google Weather" not in prov.get("rainfall", "") or "GloFAS" not in prov.get("river_discharge", ""):
+        fail(f"Provenance contract wrong: {prov}")
+    res = requests.get(f"{SERVER_URL}/location-conditions", params={"lat": 999, "lng": 0})
+    if res.status_code != 400:
+        fail(f"Expected 400 for out-of-range lat, got {res.status_code}")
+    print("Success: seeded conditions payload with provenance; out-of-range rejected.")
+
 
 def main():
     kill_port()
