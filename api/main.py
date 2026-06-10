@@ -30,9 +30,10 @@ from api.watchlist import (
     compute_watchlist,
     season_months,
 )
+from api.places_resolver import cell_scale_for, resolve_entries, resolve_place
 
-# MUNICIPALITY_COORDINATES is derived from the PLACES REGISTRY below (all 11
-# monitored places), so the live weather recorder covers every place (D1).
+# Place coordinates are DERIVED at runtime (geocode + GloFAS river-cell probe
+# via api/places_resolver.py); the registry below holds names only.
 
 WEATHER_CACHE = {}
 WEATHER_CACHE_EXPIRY = None
@@ -452,7 +453,14 @@ class TokenRegistration(BaseModel):
 # No seeded sheets/CSVs anywhere; the hazard index is computed from these
 # feeds and is always labeled as a Centinela MODEL INDEX.
 # kind: "flood-watch" (river basin framing) | "seismic-watch" (quake framing).
-# seismic_bbox: numeric bounds used to attribute nearby USGS events.
+#
+# NOTHING COORDINATE-SHAPED IS HARDCODED. The registry holds structure and
+# names only; coordinates are DERIVED per place by api/places_resolver.py:
+#   anchor      geocoded city center (map pin, rain recorder, AQI, routes)
+#   hydro_point strongest-discharge GloFAS cell within ~15 km (river sampling)
+# Resolutions persist in Firestore (places_resolution/latest, no TTL) and are
+# lazily filled by a lock-guarded background thread. Seismic bboxes derive
+# from the resolved anchors (+/- SEISMIC_BBOX_PAD_DEG).
 
 REAL_CONNECTORS = [
     {"id": "kung_gleeful", "name": "USGS Raw Events (Connector SDK)", "type": "connector_sdk"},
@@ -461,105 +469,208 @@ REAL_CONNECTORS = [
 
 BASINS = [
     {
-        "id": "rio_cauca",
-        "name": "Rio Cauca",
-        "country": "Colombia",
+        "id": "rio_cauca", "name": "Rio Cauca", "country": "Colombia", "cc": "CO",
         "kind": "flood-watch",
-        "seismic_bbox": {"lat_min": 2.0, "lat_max": 5.0, "lng_min": -78.0, "lng_max": -75.0},
         "places": [
-            {"id": "cali", "name": "Cali", "lat": 3.4516, "lng": -76.5320},
-            {"id": "yumbo", "name": "Yumbo", "lat": 3.5855, "lng": -76.4952},
-            {"id": "jamundi", "name": "Jamundí", "lat": 3.2610, "lng": -76.5394}
+            {"id": "cali", "name": "Cali"},
+            {"id": "yumbo", "name": "Yumbo"},
+            {"id": "jamundi", "name": "Jamundí"}
         ],
         "connectors": REAL_CONNECTORS
     },
     {
-        "id": "rio_magdalena",
-        "name": "Rio Magdalena",
-        "country": "Colombia",
+        "id": "rio_magdalena", "name": "Rio Magdalena", "country": "Colombia", "cc": "CO",
         "kind": "flood-watch",
-        "seismic_bbox": {"lat_min": 2.0, "lat_max": 6.0, "lng_min": -76.5, "lng_max": -73.5},
         "places": [
-            {"id": "neiva", "name": "Neiva", "lat": 2.9273, "lng": -75.2819},
-            {"id": "girardot", "name": "Girardot", "lat": 4.3009, "lng": -74.8061},
-            {"id": "honda", "name": "Honda", "lat": 5.2045, "lng": -74.7411}
+            {"id": "neiva", "name": "Neiva"},
+            {"id": "girardot", "name": "Girardot"},
+            {"id": "honda", "name": "Honda"}
         ],
         "connectors": REAL_CONNECTORS
     },
     {
-        "id": "lima_peru",
-        "name": "Lima",
-        "country": "Peru",
+        "id": "lima_peru", "name": "Lima", "country": "Peru", "cc": "PE",
         "kind": "seismic-watch",
-        "seismic_bbox": {"lat_min": -13.0, "lat_max": -11.0, "lng_min": -78.0, "lng_max": -76.0},
-        "places": [
-            {"id": "lima", "name": "Lima", "lat": -12.046, "lng": -77.043}
-        ],
+        "places": [{"id": "lima", "name": "Lima"}],
         "connectors": REAL_CONNECTORS
     },
     {
-        "id": "guatemala_city",
-        "name": "Guatemala City",
-        "country": "Guatemala",
+        "id": "guatemala_city", "name": "Guatemala City", "country": "Guatemala", "cc": "GT",
         "kind": "seismic-watch",
-        "seismic_bbox": {"lat_min": 13.0, "lat_max": 16.0, "lng_min": -92.0, "lng_max": -89.0},
-        "places": [
-            {"id": "guatemala_city", "name": "Guatemala City", "lat": 14.6349, "lng": -90.5069}
-        ],
+        "places": [{"id": "guatemala_city", "name": "Guatemala City"}],
         "connectors": REAL_CONNECTORS
     },
     {
-        "id": "santiago_chile",
-        "name": "Santiago",
-        "country": "Chile",
+        "id": "santiago_chile", "name": "Santiago", "country": "Chile", "cc": "CL",
         "kind": "seismic-watch",
-        "seismic_bbox": {"lat_min": -34.5, "lat_max": -32.0, "lng_min": -72.5, "lng_max": -69.5},
-        "places": [
-            {"id": "santiago", "name": "Santiago", "lat": -33.4489, "lng": -70.6693}
-        ],
+        "places": [{"id": "santiago", "name": "Santiago"}],
         "connectors": REAL_CONNECTORS
     },
     {
-        "id": "mexico_city",
-        "name": "Mexico City",
-        "country": "Mexico",
+        "id": "mexico_city", "name": "Mexico City", "country": "Mexico", "cc": "MX",
         "kind": "seismic-watch",
-        "seismic_bbox": {"lat_min": 17.5, "lat_max": 20.5, "lng_min": -100.5, "lng_max": -97.5},
-        "places": [
-            {"id": "mexico_city", "name": "Mexico City", "lat": 19.4326, "lng": -99.1332}
-        ],
+        "places": [{"id": "mexico_city", "name": "Mexico City"}],
         "connectors": REAL_CONNECTORS
     },
     {
-        "id": "port_au_prince",
-        "name": "Port-au-Prince",
-        "country": "Haiti",
+        "id": "port_au_prince", "name": "Port-au-Prince", "country": "Haiti", "cc": "HT",
         "kind": "seismic-watch",
-        "seismic_bbox": {"lat_min": 17.5, "lat_max": 19.5, "lng_min": -74.0, "lng_max": -71.0},
-        "places": [
-            {"id": "port_au_prince", "name": "Port-au-Prince", "lat": 18.5944, "lng": -72.3074}
-        ],
+        "places": [{"id": "port_au_prince", "name": "Port-au-Prince"}],
         "connectors": REAL_CONNECTORS
     }
 ]
 
-# Derived lookups (kept as module maps so existing call sites stay simple).
-ALL_PLACES = [
-    {**p, "basin_id": b["id"], "basin_name": b["name"], "country": b["country"], "kind": b["kind"]}
-    for b in BASINS for p in b["places"]
-]
-PLACE_BY_NAME = {p["name"]: p for p in ALL_PLACES}
-
 def basin_municipalities(b):
     return [p["name"] for p in b["places"]]
 
-# Back-compat: several call sites build {name: {lat, lng, basin}} maps.
-MUNICIPALITY_COORDINATES = {
-    p["name"]: {"lat": p["lat"], "lng": p["lng"], "basin": p["basin_name"]}
-    for p in ALL_PLACES
+CONNECTOR_ID = REAL_CONNECTORS[0]["id"]
+
+# --- Coordinate resolution (anchor + hydro point per place, nothing hardcoded)
+
+SEISMIC_BBOX_PAD_DEG = 1.5
+RESOLUTION_CACHE = {"doc": None, "fetched_at": 0.0}
+RESOLUTION_LOCK = threading.Lock()
+
+# Deterministic TESTING resolution: the pre-derivation coordinates as anchors
+# plus fixed hydro metadata mirroring the verified 2026-06-10 probe run. Kept
+# ONLY for fixtures; production never reads these.
+TESTING_RESOLUTION = {
+    "cali":            {"anchor": {"lat": 3.4516, "lng": -76.5320},  "p50": 1078.0},
+    "yumbo":           {"anchor": {"lat": 3.5855, "lng": -76.4952},  "p50": 2.8},
+    "jamundi":         {"anchor": {"lat": 3.2610, "lng": -76.5394},  "p50": 848.2},
+    "neiva":           {"anchor": {"lat": 2.9273, "lng": -75.2819},  "p50": 0.6},
+    "girardot":        {"anchor": {"lat": 4.3009, "lng": -74.8061},  "p50": 471.6},
+    "honda":           {"anchor": {"lat": 5.2045, "lng": -74.7411},  "p50": 1900.0},
+    "lima":            {"anchor": {"lat": -12.046, "lng": -77.043},  "p50": 53.7},
+    "guatemala_city":  {"anchor": {"lat": 14.6349, "lng": -90.5069}, "p50": 0.2},
+    "santiago":        {"anchor": {"lat": -33.4489, "lng": -70.6693}, "p50": 2.5},
+    "mexico_city":     {"anchor": {"lat": 19.4326, "lng": -99.1332}, "p50": 13.0},
+    "port_au_prince":  {"anchor": {"lat": 18.5944, "lng": -72.3074}, "p50": 9.7},
 }
 
-CONNECTOR_ID = REAL_CONNECTORS[0]["id"]
+def testing_resolution():
+    registry = {}
+    for pid, fx in TESTING_RESOLUTION.items():
+        registry[pid] = {
+            "anchor": dict(fx["anchor"]),
+            "hydro_point": {
+                "lat": fx["anchor"]["lat"],
+                "lng": round(fx["anchor"]["lng"] - 0.05, 5),
+                "cell_p50_m3s": fx["p50"],
+                "cell_scale": cell_scale_for(fx["p50"]),
+            },
+            "geocode": {"country": None, "admin1": None, "population": None},
+            "resolved_at": 0,
+        }
+    return {"registry": registry, "candidates": {}}
+
+def read_resolution_doc():
+    if db is None:
+        return None
+    try:
+        snap = db.collection("places_resolution").document("latest").get()
+        return snap.to_dict() if snap.exists else None
+    except Exception as e:
+        print(f"Resolution Firestore read failed: {e}", flush=True)
+        return None
+
+def write_resolution_doc(doc):
+    if db is None:
+        return
+    try:
+        db.collection("places_resolution").document("latest").set(doc)
+    except Exception as e:
+        print(f"Resolution Firestore write failed: {e}", flush=True)
+
+def registry_resolution_entries():
+    return [{"key": p["id"], "name": p["name"], "cc": b.get("cc")}
+            for b in BASINS for p in b["places"]]
+
+def get_resolution():
+    """The resolution doc: {registry: {place_id: ...}, candidates: {name: ...}}.
+    Never blocks: serves L1/Firestore and fills gaps in the background.
+    Geography is stable, so entries have no TTL (force via the endpoint)."""
+    if TESTING:
+        return testing_resolution()
+    doc = RESOLUTION_CACHE["doc"]
+    if doc is None:
+        remote = read_resolution_doc()
+        doc = remote or {"registry": {}, "candidates": {}}
+        RESOLUTION_CACHE["doc"] = doc
+        RESOLUTION_CACHE["fetched_at"] = time.time()
+    missing = [e for e in registry_resolution_entries()
+               if e["key"] not in (doc.get("registry") or {})]
+    if missing:
+        threading.Thread(target=refresh_resolution_in_background,
+                         args=(False,), daemon=True).start()
+    return doc
+
+def refresh_resolution_in_background(force=False):
+    """Resolve missing (or all, when forced) registry places. Lock-guarded;
+    re-reads Firestore inside the lock so concurrent instances cooperate."""
+    if not RESOLUTION_LOCK.acquire(blocking=False):
+        return
+    try:
+        doc = read_resolution_doc() or {"registry": {}, "candidates": {}}
+        doc.setdefault("registry", {})
+        doc.setdefault("candidates", {})
+        entries = registry_resolution_entries()
+        if not force:
+            entries = [e for e in entries if e["key"] not in doc["registry"]]
+        if not entries:
+            RESOLUTION_CACHE["doc"] = doc
+            return
+        resolved = resolve_entries(entries)
+        doc["registry"].update(resolved)
+        write_resolution_doc(doc)
+        RESOLUTION_CACHE["doc"] = doc
+        print(f"Resolution refreshed: {len(resolved)}/{len(entries)} places.", flush=True)
+    except Exception as e:
+        print(f"Resolution refresh failed: {e}", flush=True)
+    finally:
+        RESOLUTION_LOCK.release()
+
+def resolved_places(basin_config):
+    """Registry places merged with their resolution. Unresolved places carry
+    resolved=False and no coordinates (the UI renders them without markers)."""
+    registry = (get_resolution().get("registry") or {})
+    out = []
+    for p in basin_config["places"]:
+        entry = registry.get(p["id"])
+        row = {"id": p["id"], "name": p["name"], "resolved": entry is not None}
+        if entry:
+            row["anchor"] = entry["anchor"]
+            row["hydro_point"] = entry.get("hydro_point")
+            # Legacy lat/lng = anchor so existing consumers keep working.
+            row["lat"] = entry["anchor"]["lat"]
+            row["lng"] = entry["anchor"]["lng"]
+        out.append(row)
+    return out
+
+def group_seismic_bbox(basin_config):
+    """Attribution bbox derived from resolved anchors (+/- pad). None until
+    at least one place in the group is resolved."""
+    anchors = [p["anchor"] for p in resolved_places(basin_config) if p.get("anchor")]
+    if not anchors:
+        return None
+    return {
+        "lat_min": min(a["lat"] for a in anchors) - SEISMIC_BBOX_PAD_DEG,
+        "lat_max": max(a["lat"] for a in anchors) + SEISMIC_BBOX_PAD_DEG,
+        "lng_min": min(a["lng"] for a in anchors) - SEISMIC_BBOX_PAD_DEG,
+        "lng_max": max(a["lng"] for a in anchors) + SEISMIC_BBOX_PAD_DEG,
+    }
+
+def municipality_coordinates():
+    """{name: {lat, lng, basin}} from resolved anchors (recorder, attribution,
+    demo epicenters). Unresolved places are simply absent."""
+    out = {}
+    for b in BASINS:
+        for p in resolved_places(b):
+            if p.get("anchor"):
+                out[p["name"]] = {"lat": p["anchor"]["lat"],
+                                  "lng": p["anchor"]["lng"],
+                                  "basin": b["name"]}
+    return out
 
 # ---------------------------------------------------------------------------
 # CENTINELA MODEL HAZARD INDEX (real-data unification)
@@ -599,11 +710,15 @@ def refresh_weather_records():
         if WEATHER_CACHE_EXPIRY and now_utc < WEATHER_CACHE_EXPIRY:
             return
         print("Weather cache expired or empty. Fetching new data from Google Weather API...", flush=True)
+        muni_coords = municipality_coordinates()
+        if not muni_coords:
+            print("Weather refresh skipped: no resolved places yet.", flush=True)
+            return
         new_precip = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
             futures = {
                 executor.submit(fetch_precipitation_for_muni, muni, coord["lat"], coord["lng"], api_key): muni
-                for muni, coord in MUNICIPALITY_COORDINATES.items()
+                for muni, coord in muni_coords.items()
             }
             for future in concurrent.futures.as_completed(futures):
                 muni = futures[future]
@@ -623,7 +738,7 @@ def refresh_weather_records():
             timestamp_str = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
             rows_to_insert = []
             for muni, precip_val in new_precip.items():
-                coord = MUNICIPALITY_COORDINATES[muni]
+                coord = muni_coords[muni]
                 safe_muni = muni.replace("'", "\\'")
                 rows_to_insert.append(
                     f"('{timestamp_str}', 'GMP-01', {precip_val}, '{coord['basin']}', '{safe_muni}')")
@@ -718,7 +833,7 @@ def compute_hazard_index(basin_config):
     refresh_weather_records()
 
     places = basin_config["places"]
-    bbox = basin_config.get("seismic_bbox") or {}
+    bbox = group_seismic_bbox(basin_config) or {}
     ids_sql = ", ".join(f"'{p['id']}'" for p in places)
     names_sql = ", ".join("'" + p["name"].replace("'", "\\'") + "'" for p in places)
 
@@ -1695,15 +1810,18 @@ def clear_autonomous_heals():
 
 @app.get("/basins")
 def get_basins():
-    """Returns the configured basins so the selector can be populated from config."""
+    """The configured groups with RESOLVED places (anchor + hydro point per
+    place, derived, never hardcoded). Unresolved places carry resolved=false
+    and no coordinates until the background resolution lands."""
     return [
         {
             "id": b["id"],
             "name": b["name"],
             "country": b["country"],
             "kind": b.get("kind", "flood-watch"),
-            "places": b["places"],
-            "municipalities": basin_municipalities(b)
+            "places": resolved_places(b),
+            "municipalities": basin_municipalities(b),
+            "seismic_bbox": group_seismic_bbox(b)
         }
         for b in BASINS
     ]
@@ -1713,6 +1831,38 @@ def get_places():
     """The monitored-places registry: groups with coordinates and kind.
     Same payload as /basins (kept as an alias for the frontend migration)."""
     return get_basins()
+
+@app.post("/places/resolve")
+def resolve_places_endpoint(place: str = None, force: bool = False):
+    """Operator escape hatch. With `place`: synchronously re-resolve that one
+    place id and write through. Without: kick a background re-resolution of
+    missing places (or everything with force=true)."""
+    if TESTING:
+        doc = testing_resolution()
+        if place:
+            entry = doc["registry"].get(place)
+            if entry is None:
+                raise HTTPException(status_code=404, detail=f"Unknown place: {place}")
+            return {"status": "ok", "place": place, "resolution": entry}
+        return {"status": "started"}
+
+    if place:
+        target = next((e for e in registry_resolution_entries() if e["key"] == place), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail=f"Unknown place: {place}")
+        resolution = resolve_place(target["name"], target.get("cc"))
+        if resolution is None:
+            raise HTTPException(status_code=502, detail=f"Could not resolve {target['name']}")
+        with RESOLUTION_LOCK:
+            doc = read_resolution_doc() or {"registry": {}, "candidates": {}}
+            doc.setdefault("registry", {})[place] = resolution
+            write_resolution_doc(doc)
+            RESOLUTION_CACHE["doc"] = doc
+        return {"status": "ok", "place": place, "resolution": resolution}
+
+    threading.Thread(target=refresh_resolution_in_background,
+                     args=(force,), daemon=True).start()
+    return {"status": "started"}
 
 @app.get("/group-summaries")
 def get_group_summaries():
@@ -1910,31 +2060,11 @@ def set_db_state(data: DbStateUpdate):
 # Portfolio demo: live USGS seismic feed + simulated event injection
 # ---------------------------------------------------------------------------
 
-# Same coordinates the USGS connector uses for nearest-municipality attribution,
-# extended with the Rio Magdalena municipalities from MUNICIPALITY_COORDINATES.
-LIVE_SEISMIC_COORDINATES = {
-    "Cali": (3.4516, -76.5320),
-    "Yumbo": (3.5833, -76.4917),
-    "Jamundí": (3.2667, -76.5333),
-    "Neiva": (2.9273, -75.2819),
-    "Girardot": (4.3009, -74.8061),
-    "Honda": (5.2045, -74.7411),
-    "Lima": (-12.046, -77.043),
-    "Callao": (-12.056, -77.118),
-    "Chorrillos": (-12.168, -77.022),
-    "Guatemala City": (14.6349, -90.5069),
-    "Mixco": (14.6333, -90.6064),
-    "Villa Nueva": (14.5269, -90.5969),
-    "Santiago": (-33.4489, -70.6693),
-    "Puente Alto": (-33.6117, -70.5756),
-    "Maipu": (-33.5110, -70.7580),
-    "Mexico City": (19.4326, -99.1332),
-    "Ecatepec": (19.6010, -99.0500),
-    "Nezahualcoyotl": (19.4003, -98.9870),
-    "Port-au-Prince": (18.5944, -72.3074),
-    "Carrefour": (18.5410, -72.3990),
-    "Delmas": (18.5500, -72.3000)
-}
+# Event attribution + demo epicenters use the RESOLVED anchors (derived, not
+# hardcoded). Only registry names ever flow through these call sites.
+def live_seismic_coordinates():
+    return {name: (c["lat"], c["lng"])
+            for name, c in municipality_coordinates().items()}
 
 USGS_LIVE_FEED_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
 USGS_LIVE_CACHE = {"data": None, "fetched_at": 0.0}
@@ -1966,10 +2096,11 @@ def get_live_seismic(basin: str = "rio_cauca"):
     basin_config = next((b for b in BASINS if b["id"] == basin), None)
     if basin_config is None:
         raise HTTPException(status_code=404, detail=f"Unknown basin: {basin}")
+    live_coords = live_seismic_coordinates()
     munis = {
-        m: LIVE_SEISMIC_COORDINATES[m]
+        m: live_coords[m]
         for m in basin_municipalities(basin_config)
-        if m in LIVE_SEISMIC_COORDINATES
+        if m in live_coords
     }
     feed = fetch_usgs_live_feed()
     events = []
@@ -2117,7 +2248,7 @@ def demo_inject_event(data: DemoEventRequest, background_tasks: BackgroundTasks)
         )
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
-    muni_lat, muni_lon = LIVE_SEISMIC_COORDINATES.get(data.municipality, (0.0, 0.0))
+    muni_lat, muni_lon = live_seismic_coordinates().get(data.municipality, (0.0, 0.0))
     event = {
         "basin": data.basin,
         "municipality": data.municipality,

@@ -666,6 +666,50 @@ setTimeout(async () => {
         sys.exit(1)
     print(f"Success: /group-summaries returned 7 groups sorted by criticality (top: {groups[0]['name']}).")
 
+    # 17. Derived coordinates: resolved registry + resolve endpoint
+    print("\nStep 16: Verifying resolved registry (derived coordinates)...")
+    places_payload = requests.get(f"{server_url}/places").json()
+    n_places = 0
+    for g in places_payload:
+        if g.get("seismic_bbox") is None:
+            print(f"ERROR: group {g['id']} has no derived seismic_bbox")
+            sys.exit(1)
+        for p in g.get("places", []):
+            n_places += 1
+            if not p.get("resolved"):
+                print(f"ERROR: place {p.get('id')} not resolved under TESTING: {p}")
+                sys.exit(1)
+            anchor = p.get("anchor") or {}
+            hydro = p.get("hydro_point") or {}
+            if not isinstance(anchor.get("lat"), float) or not isinstance(anchor.get("lng"), float):
+                print(f"ERROR: place {p['id']} anchor malformed: {anchor}")
+                sys.exit(1)
+            if p.get("lat") != anchor["lat"] or p.get("lng") != anchor["lng"]:
+                print(f"ERROR: place {p['id']} legacy lat/lng != anchor")
+                sys.exit(1)
+            if hydro.get("cell_scale") not in ("river", "mid", "creek"):
+                print(f"ERROR: place {p['id']} hydro cell_scale invalid: {hydro}")
+                sys.exit(1)
+    if n_places != 11:
+        print(f"ERROR: expected 11 resolved places, got {n_places}")
+        sys.exit(1)
+    res_resolve = requests.post(f"{server_url}/places/resolve", params={"place": "honda"})
+    if res_resolve.status_code != 200:
+        print(f"ERROR: POST /places/resolve failed with {res_resolve.status_code}")
+        sys.exit(1)
+    entry = res_resolve.json().get("resolution", {})
+    if entry.get("hydro_point", {}).get("cell_p50_m3s") != 1900.0:
+        print(f"ERROR: honda fixture hydro p50 mismatch: {entry}")
+        sys.exit(1)
+    if requests.post(f"{server_url}/places/resolve", params={"place": "honda"}).json() != res_resolve.json():
+        print("ERROR: resolve fixture not deterministic")
+        sys.exit(1)
+    res_unknown = requests.post(f"{server_url}/places/resolve", params={"place": "atlantis"})
+    if res_unknown.status_code != 404:
+        print(f"ERROR: unknown place should 404, got {res_unknown.status_code}")
+        sys.exit(1)
+    print(f"Success: 11 places resolved with anchors + hydro points; resolve endpoint deterministic.")
+
 def run_regression():
     print("=====================================================================")
     print("                    STARTING REGRESSION SUITE                        ")
