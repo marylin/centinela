@@ -1866,7 +1866,7 @@ function renderSeismicFocusRail() {
                 aria-label="Exit seismic focus and return to the basin view">&times; Close</button>
       </div>
       <h3 class="drawer-muni-name seismic-focus-place">${escapeHtml(ev.place || "Unknown location")}</h3>
-      <div class="seismic-focus-tags">${sourceTag}</div>
+      <div class="seismic-focus-tags">${sourceTag}<span class="badge badge-seismic-focus" title="Flood and landslide telemetry is not modeled for this location.">SEISMIC-ONLY</span></div>
       <div class="seismic-focus-mag" style="color: ${sevMag.colorHex};">
         <span class="seismic-focus-mag-num tabular-nums">M ${mag.toFixed(1)}</span>
         <span class="seismic-focus-mag-label">magnitude</span>
@@ -1911,11 +1911,14 @@ function renderSeismicFocusRail() {
         <p>${escapeHtml(focus.narration)}</p>
       </div>` : ""}`}
       <p class="seismic-focus-note">${noteText}</p>
+      <button type="button" class="btn btn-sm seismic-focus-return" id="seismic-focus-return">Return to basin view</button>
     </div>
   `;
 
   const closeBtn = document.getElementById("seismic-focus-close");
   if (closeBtn) closeBtn.addEventListener("click", () => exitSeismicFocus());
+  const returnBtn = document.getElementById("seismic-focus-return");
+  if (returnBtn) returnBtn.addEventListener("click", () => exitSeismicFocus());
 }
 
 // Leave the transient focus view: drop the epicenter overlay and return the

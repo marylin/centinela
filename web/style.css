@@ -2697,6 +2697,37 @@ button.seismic-event-row:focus-visible {
 }
 
 /* Transient seismic-focus view in the detail rail */
+/* The rail is narrow: the drawer's auto-fit multi-column grid fragments the
+   focus content into cramped cells, so the focus uses one column. */
+.drawer-grid.seismic-focus-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.seismic-focus-rail .drawer-metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.seismic-focus-rail .drawer-metric .drawer-val {
+  text-align: right;
+}
+
+.seismic-focus-return {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+}
+
+.seismic-focus-return:hover {
+  background-color: rgba(255, 255, 255, 0.09);
+}
+
 .badge-seismic-focus {
   background-color: rgba(168, 85, 247, 0.12);
   color: #c084fc;
