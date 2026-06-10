@@ -638,6 +638,34 @@ setTimeout(async () => {
         sys.exit(1)
     print(f"Success: /watchlist returned 12 ranked candidates (top: {rows[0]['name']}), deterministic fixture verified.")
 
+    # 16. Per-group summaries (strip ordering by criticality)
+    print("\nStep 15: Verifying GET /group-summaries...")
+    res_sum = requests.get(f"{server_url}/group-summaries")
+    if res_sum.status_code != 200:
+        print(f"ERROR: GET /group-summaries failed with status {res_sum.status_code}")
+        sys.exit(1)
+    groups = res_sum.json().get("groups", [])
+    if len(groups) != 7:
+        print(f"ERROR: expected 7 group summaries, got {len(groups)}")
+        sys.exit(1)
+    worst = [g["worst_score"] for g in groups]
+    if worst != sorted(worst, reverse=True):
+        print(f"ERROR: group summaries not sorted by worst_score desc: {worst}")
+        sys.exit(1)
+    for g in groups:
+        for k in ("id", "name", "kind", "country", "worst_score", "worst_place"):
+            if k not in g:
+                print(f"ERROR: group summary {g.get('id')} missing field {k}")
+                sys.exit(1)
+    risk_now = {r["municipality"]: r["risk_score"]
+                for r in requests.get(f"{server_url}/risk").json()}
+    scoped = next((g for g in groups if g["worst_place"] in risk_now), None)
+    if scoped and risk_now[scoped["worst_place"]] != scoped["worst_score"]:
+        print(f"ERROR: summary worst_score for {scoped['worst_place']} ({scoped['worst_score']}) "
+              f"does not match /risk ({risk_now[scoped['worst_place']]})")
+        sys.exit(1)
+    print(f"Success: /group-summaries returned 7 groups sorted by criticality (top: {groups[0]['name']}).")
+
 def run_regression():
     print("=====================================================================")
     print("                    STARTING REGRESSION SUITE                        ")

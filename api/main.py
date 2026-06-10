@@ -1714,6 +1714,36 @@ def get_places():
     Same payload as /basins (kept as an alias for the frontend migration)."""
     return get_basins()
 
+@app.get("/group-summaries")
+def get_group_summaries():
+    """Worst model-index per group, for ordering the scope strip by current
+    criticality. Rides the per-group 60s index cache; rows are COPIED before
+    the demo merge (the index cache must never be polluted), so a simulated
+    spike reorders the strip honestly. No tick recording here: /risk owns
+    the timeline."""
+    groups = []
+    for b in BASINS:
+        rows = merge_demo_event_into_risk(
+            b["id"], [dict(r) for r in compute_base_risk(basin=b["id"])])
+        worst = None
+        for r in rows:
+            score = float(r.get("risk_score") or 0.0)
+            if worst is None or score > worst["score"]:
+                worst = {"score": score,
+                         "place": r.get("municipality"),
+                         "hazard": r.get("dominant_hazard")}
+        groups.append({
+            "id": b["id"],
+            "name": b["name"],
+            "kind": b.get("kind", "flood-watch"),
+            "country": b["country"],
+            "worst_score": round(worst["score"], 4) if worst else 0.0,
+            "worst_place": worst["place"] if worst else None,
+            "dominant_hazard": worst["hazard"] if worst else None,
+        })
+    groups.sort(key=lambda g: g["worst_score"], reverse=True)
+    return {"groups": groups}
+
 # --- Candidate watchlist: backend-scored, Firestore-cached, read-only -------
 # Scores the candidate pool (api/watchlist.py) from the USGS catalog and the
 # GloFAS reanalysis. Promotion into the registry stays a manual config step.

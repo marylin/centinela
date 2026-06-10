@@ -29,7 +29,8 @@ const database = {
     last_sync_time: "never",
     freshness: "unknown"
   },
-  alert: null
+  alert: null,
+  groupSummaries: null // id -> {worst_score, worst_place, dominant_hazard, rank}
 };
 
 // 2. Application State
@@ -434,6 +435,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   // on its own 10-minute interval, deliberately NOT part of the 5s poll.
   fetchWatchlist();
   setInterval(fetchWatchlist, 600000);
+
+  // Per-group worst-index summaries order the scope strip by criticality.
+  // The backend caches the index 60s per group, so a 60s interval is the
+  // natural cadence; deliberately NOT part of the 5s poll.
+  fetchGroupSummaries();
+  setInterval(fetchGroupSummaries, 60000);
 });
 
 window.onMapsReadyCallback = () => {
@@ -1778,17 +1785,31 @@ function renderScopeStrip() {
 
   // Keyed in-place update: nodes stay STABLE across polls. A wholesale rebuild
   // between a user's pointer-down and click made taps land on detached nodes
-  // and silently do nothing (the route "always Cali" bug).
+  // and silently do nothing (the route "always Cali" bug). Criticality
+  // ordering therefore happens via CSS flex `order` on those stable nodes,
+  // never by reordering the DOM.
+  const summaries = database.groupSummaries;
   const items = [
-    ...(appState.basins || []).map(g => ({
-      key: `group:${g.id}`, region: null, group: g.id, name: g.name,
-      meta: `${g.kind === "seismic-watch" ? "Seismic watch" : "Flood watch"} · ${g.country}`,
-      active: basinScoped && appState.selectedBasin === g.id, border: "" })),
-    ...liveRegions.map(r => {
+    ...(appState.basins || []).map((g, idx) => {
+      const s = summaries && summaries[g.id];
+      const sev = s ? getSeverityConfig(s.worst_score) : null;
+      const kindLabel = g.kind === "seismic-watch" ? "Seismic watch" : "Flood watch";
+      return {
+        key: `group:${g.id}`, region: null, group: g.id, name: g.name,
+        meta: sev
+          ? `${sev.label} · ${(s.worst_score * 100).toFixed(0)}% · ${g.country}`
+          : `${kindLabel} · ${g.country}`,
+        active: basinScoped && appState.selectedBasin === g.id,
+        border: sev ? sev.colorHex : "",
+        order: s ? s.rank : idx
+      };
+    }),
+    ...liveRegions.map((r, idx) => {
       const sev = getMagnitudeSeverity(r.maxMag);
       return { key: `region:${r.region}`, region: r.region, name: r.region,
         meta: `${r.count} live · max M ${r.maxMag.toFixed(1)}`,
-        active: appState.regionFilter === r.region, border: sev.colorHex };
+        active: appState.regionFilter === r.region, border: sev.colorHex,
+        order: 100 + idx };
     })
   ];
 
@@ -1809,6 +1830,7 @@ function renderScopeStrip() {
     el.classList.toggle("active", item.active);
     el.setAttribute("aria-pressed", String(item.active));
     if (item.border) el.style.borderLeftColor = item.border;
+    el.style.order = String(item.order);
     el.setAttribute("aria-label", item.region
       ? `${item.active ? "Clear the" : "Filter the live feed to the"} ${item.region} region`
       : `Scope the dashboard to ${item.name}`);
@@ -2327,6 +2349,7 @@ async function simulateDemoEvent() {
     setDemoStatus(`SIMULATED event injected for ${municipality}. It will appear on the next poll, labeled SIMULATED.`, false);
     initConsoleLog("SIMULATED event registered. Refreshing telemetry...", "warn");
     await fetchTelemetry();
+    fetchGroupSummaries(); // the simulated spike reorders the strip right away
   } catch (err) {
     setDemoStatus(`Simulation failed: ${err.message}. Demo endpoint may not be deployed yet.`, true);
     initConsoleLog(`SIMULATED event injection failed: ${err.message}`, "error");
@@ -2346,6 +2369,7 @@ async function clearDemoEvent() {
     setDemoStatus("Simulation cleared. Panel returns to live USGS data on the next poll.", false);
     initConsoleLog("SIMULATED events cleared. Refreshing telemetry...", "system");
     await fetchTelemetry();
+    fetchGroupSummaries(); // restore the live ordering right away
   } catch (err) {
     setDemoStatus(`Clear failed: ${err.message}. Demo endpoint may not be deployed yet.`, true);
     initConsoleLog(`SIMULATED event clear failed: ${err.message}`, "error");
@@ -3667,6 +3691,23 @@ function renderPublicView() {
 // Slow-moving by design: fetched on load + a 10-minute interval, never the
 // 5s telemetry poll. Promotion into the registry stays a manual config step.
 // ==========================================================================
+
+// Per-group worst-index summaries (strip ordering). Stored as a rank map so
+// the strip renderer can set CSS flex order on its stable nodes.
+async function fetchGroupSummaries() {
+  try {
+    const res = await fetch(`${API_BASE}/group-summaries`);
+    if (!res.ok) throw new Error(`group-summaries ${res.status}`);
+    const data = await res.json();
+    const map = {};
+    (data.groups || []).forEach((g, i) => { map[g.id] = { ...g, rank: i }; });
+    database.groupSummaries = map;
+    renderScopeStrip();
+  } catch (err) {
+    // Ordering is an enhancement: keep the registry order on failure.
+    console.error("Group summaries fetch failed:", err);
+  }
+}
 
 async function fetchWatchlist() {
   try {
