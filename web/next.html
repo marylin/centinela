@@ -60,8 +60,44 @@
       <div id="detail-main">
         <h2 id="detail-heading" tabindex="-1"></h2>
         <p id="detail-kind" class="detail-kind"></p>
-        <p class="empty-alerts">Detail view arrives in the next build phase. Selection, routing,
-          and the index grid are live; press Escape or use the back button to return.</p>
+
+        <section id="public-alert-card" class="card" aria-labelledby="alert-title" hidden>
+          <div class="card-header"><h3 id="alert-title">Public alert</h3></div>
+          <div class="card-body">
+            <div id="alert-status"></div>
+            <dl id="alert-fields" class="alert-fields"></dl>
+            <p id="alert-context" class="alert-context"></p>
+            <div id="alert-guidance"></div>
+            <div id="alert-advisories"></div>
+          </div>
+        </section>
+
+        <section class="card" aria-label="Map">
+          <div class="card-header"><h3>Map</h3><span class="tile-model-tag">anchor pin &middot; river monitoring point when flood is elevated</span></div>
+          <div id="google-map" class="detail-map"></div>
+        </section>
+
+        <div class="detail-columns">
+          <section class="card" aria-labelledby="components-title">
+            <div class="card-header"><h3 id="components-title">Hazard model</h3></div>
+            <div class="card-body" id="components-body"></div>
+          </section>
+          <section class="card" aria-labelledby="conditions-title">
+            <div class="card-header"><h3 id="conditions-title">Live conditions</h3><span id="conditions-scope" class="tile-model-tag"></span></div>
+            <div class="card-body" id="conditions-body"></div>
+          </section>
+        </div>
+
+        <div class="detail-columns">
+          <section class="card" id="risk-timeline-panel" aria-labelledby="timeline-title" hidden>
+            <div class="card-header"><h3 id="timeline-title">Risk timeline</h3><span class="tile-model-tag">MODEL &middot; server-recorded</span></div>
+            <div class="card-body" id="risk-timeline-body"></div>
+          </section>
+          <section class="card" id="trend-panel" aria-labelledby="trend-title" hidden>
+            <div class="card-header"><h3 id="trend-title">Rain &middot; river &middot; soil</h3><span class="tile-model-tag">observed + model series</span></div>
+            <div class="card-body" id="trend-body"></div>
+          </section>
+        </div>
       </div>
     </div>
   </main>

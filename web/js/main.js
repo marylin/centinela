@@ -8,11 +8,16 @@ import { renderTiles, setupTiles } from "./tiles.js";
 import { refreshRegistry, refreshIndexData, refreshWatchlist, startPolling } from "./poll.js";
 import { setupNotifications } from "./notify.js";
 import { setupDiagnostics } from "./diagnostics.js";
+import { setupRail } from "./rail.js";
+import { setupDetail } from "./detail.js";
+import { renderMap } from "./map.js";
 
 // Maps loader callback: modules are module-scoped, so the bootstrap callback
-// must be attached to window explicitly. The map itself arrives in Phase B;
-// the flag is kept so Phase B can initialize lazily.
-window.onMapsReadyCallback = () => { window.googleMapsReady = true; };
+// must be attached to window explicitly.
+window.onMapsReadyCallback = () => {
+  window.googleMapsReady = true;
+  if (state.selection) renderMap();
+};
 
 function applyView() {
   const app = document.getElementById("app");
@@ -74,6 +79,8 @@ function startClock() {
 document.addEventListener("DOMContentLoaded", async () => {
   setupOfflineBanner();
   setupTiles();
+  setupRail();
+  setupDetail();
   setupRouting();
   setupNotifications();
   setupDiagnostics();

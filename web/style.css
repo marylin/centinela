@@ -3098,3 +3098,38 @@ button.seismic-event-row:focus-visible {
 }
 .api-offline-banner.hidden { display: none; }
 #detail-view[hidden] { display: none; }
+/* Phase B: detail view panels */
+.detail-map { height: 380px; border-radius: 8px; }
+.detail-columns { display: flex; gap: 0.9rem; flex-wrap: wrap; margin-top: 0.9rem; }
+.detail-columns > .card { flex: 1; min-width: 300px; }
+#detail-main > .card { margin-top: 0.9rem; }
+.alert-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; margin: 0.7rem 0; }
+.alert-field dt { color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.alert-field dd { margin: 0; font-size: 0.9rem; }
+.alert-field-wide { grid-column: 1 / -1; }
+.alert-context { color: var(--text-muted); font-size: 0.8rem; }
+.alert-meaning { margin-left: 0.6rem; }
+.public-hero-status { font-size: 1.4rem; font-weight: 700; }
+.rail-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 6px;
+  width: 100%; padding: 0.45rem 0.6rem; margin-bottom: 4px; text-align: left;
+  background: rgba(255,255,255,0.03); color: inherit; cursor: pointer; font: inherit;
+  border: 1px solid var(--border-color); border-left-width: 3px; border-radius: 6px;
+}
+.rail-item.active { border-color: var(--border-color-glow); background: rgba(255,255,255,0.07); }
+.rail-candidate { opacity: 0.85; border-style: dashed; border-left-style: solid; }
+.rail-meta { color: var(--text-muted); font-size: 0.75rem; }
+#rail-list { display: flex; flex-direction: column; margin-top: 0.6rem; }
+.components-headline { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
+.component-row { display: grid; grid-template-columns: 64px 1fr 44px; gap: 0.5rem; align-items: center; margin-bottom: 6px; }
+.component-label { font-size: 0.8rem; }
+.component-bar { height: 7px; border-radius: 4px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.component-bar i { display: block; height: 100%; }
+.component-hint { grid-column: 2 / -1; color: var(--text-muted); font-size: 0.72rem; margin-top: -2px; }
+.component-raws { color: var(--text-muted); font-size: 0.75rem; margin-top: 0.6rem; }
+.candidate-honesty { color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border-color); padding-top: 0.6rem; margin-top: 0.8rem; }
+.conditions-row { display: grid; grid-template-columns: 130px 1fr; gap: 0.2rem 0.8rem; padding: 4px 0; font-size: 0.85rem; }
+.conditions-prov { grid-column: 2; color: var(--text-muted); font-size: 0.7rem; }
+.history-svg { width: 100%; height: auto; display: block; }
+.history-meta, .trend-label { color: var(--text-muted); font-size: 0.75rem; }
+.trend-row { margin-bottom: 0.7rem; }
