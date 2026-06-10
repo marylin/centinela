@@ -27,6 +27,13 @@ from api.hazard import (
     WEATHER_CACHE, INDEX_CACHE, INDEX_CACHE_TTL_S, DOMINANT_BY_COMPONENT,
 )
 from api.demo import merge_demo_event_into_risk
+from api.narration import (
+    CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, GENERATING_NARRATIONS,
+    FIRESTORE_MOCK_CACHE, LAST_GOOD_NARRATIVES, get_state_hash,
+    get_cached_narration, set_cached_narration, get_last_good_narration,
+    update_last_good_narration, get_fallback_narration,
+    generate_narration_in_background, get_alert_state_repr,
+)
 
 import os
 import asyncio
@@ -81,147 +88,6 @@ TOKEN_COOLDOWNS = {}  # token -> {state_repr: datetime}
 SENT_PUSH_HISTORY = []  # list of dicts for testing
 
 # Cache for alert data response to avoid redundant Gemini calls during polling
-CACHED_ALERT_RESPONSES = {}  # basin -> response_dict
-CACHED_RISK_DATA_JSONS = {}  # basin -> risk_json
-GENERATING_NARRATIONS = set()  # set of basins currently generating
-FIRESTORE_MOCK_CACHE = {}
-
-LAST_GOOD_NARRATIVES = {
-    "rio_cauca": {
-        "summary": "Monitoring Rio Cauca basin for compound flood and multi-hazard risks.",
-        "broadcast": "System active. No extreme weather alerts currently active for Rio Cauca."
-    },
-    "rio_magdalena": {
-        "summary": "Monitoring Rio Magdalena basin for compound flood and multi-hazard risks.",
-        "broadcast": "System active. No extreme weather alerts currently active for Rio Magdalena."
-    },
-    "lima_peru": {
-        "summary": "Monitoring Lima (Peru) for seismic hazard along the Pacific subduction margin.",
-        "broadcast": "System active. No major seismic alerts currently active for Lima."
-    },
-    "guatemala_city": {
-        "summary": "Monitoring Guatemala City for seismic hazard along the Central America (Cocos plate) margin.",
-        "broadcast": "System active. No major seismic alerts currently active for Guatemala City."
-    },
-    "santiago_chile": {
-        "summary": "Monitoring Santiago (Chile) for seismic hazard along the Nazca plate subduction margin.",
-        "broadcast": "System active. No major seismic alerts currently active for Santiago."
-    },
-    "mexico_city": {
-        "summary": "Monitoring Mexico City for seismic hazard along the Cocos plate subduction margin.",
-        "broadcast": "System active. No major seismic alerts currently active for Mexico City."
-    },
-    "port_au_prince": {
-        "summary": "Monitoring Port-au-Prince for seismic hazard along the Enriquillo-Plantain Garden fault zone.",
-        "broadcast": "System active. No major seismic alerts currently active for Port-au-Prince."
-    }
-}
-
-import hashlib
-
-def get_state_hash(basin: str, risk_data: list):
-    state_repr = get_alert_state_repr(risk_data)
-    full_string = f"{basin}:{state_repr}"
-    return hashlib.sha256(full_string.encode("utf-8")).hexdigest()
-
-def get_cached_narration(basin: str, risk_data: list):
-    state_hash = get_state_hash(basin, risk_data)
-    if db is not None:
-        try:
-            doc_ref = db.collection("basin_narrations").document(state_hash)
-            doc = doc_ref.get()
-            if doc.exists:
-                return doc.to_dict()
-        except Exception as e:
-            print(f"Error reading from Firestore: {e}", flush=True)
-    return FIRESTORE_MOCK_CACHE.get(state_hash)
-
-def set_cached_narration(basin: str, risk_data: list, summary: str, broadcast: str):
-    state_hash = get_state_hash(basin, risk_data)
-    data = {
-        "summary": summary,
-        "broadcast": broadcast,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-    if db is not None:
-        try:
-            db.collection("basin_narrations").document(state_hash).set(data)
-            print(f"Successfully wrote narration to Firestore for state_hash: {state_hash}", flush=True)
-        except Exception as e:
-            print(f"Error writing to Firestore: {e}", flush=True)
-    FIRESTORE_MOCK_CACHE[state_hash] = data
-
-def get_last_good_narration(basin: str):
-    if db is not None:
-        try:
-            doc_ref = db.collection("basin_narrations").document(f"last_good_{basin}")
-            doc = doc_ref.get()
-            if doc.exists:
-                return doc.to_dict()
-        except Exception as e:
-            print(f"Error reading last good from Firestore: {e}", flush=True)
-    return LAST_GOOD_NARRATIVES.get(basin)
-
-def update_last_good_narration(basin: str, summary: str, broadcast: str):
-    data = {
-        "summary": summary,
-        "broadcast": broadcast,
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
-    if db is not None:
-        try:
-            db.collection("basin_narrations").document(f"last_good_{basin}").set(data)
-            print(f"Successfully updated last good narration in Firestore for {basin}", flush=True)
-        except Exception as e:
-            print(f"Error writing last good to Firestore: {e}", flush=True)
-    LAST_GOOD_NARRATIVES[basin] = data
-
-def get_fallback_narration(basin: str, risk_data: list):
-    is_high_risk = bool(get_alert_state_repr(risk_data))
-    last_good = get_last_good_narration(basin)
-    
-    is_default_placeholder = False
-    if last_good:
-        broadcast_text = last_good.get("broadcast", "")
-        if "no extreme weather alerts" in broadcast_text.lower() or "no alerts active" in broadcast_text.lower():
-            is_default_placeholder = True
-            
-    if is_high_risk:
-        if not last_good or is_default_placeholder:
-            return {
-                "summary": f"A compound multi-hazard alert is currently active for the {basin.replace('_', ' ').title()} basin. Narrative details are being generated.",
-                "broadcast": "Urgent: Elevated risk detected. Detailed warning message is currently being generated. Please monitor local safety updates."
-            }
-        return last_good
-    else:
-        if last_good:
-            return last_good
-        return LAST_GOOD_NARRATIVES.get(basin)
-
-def generate_narration_in_background(basin: str, risk_data: list):
-    global GENERATING_NARRATIONS
-    try:
-        print(f"Background narration generation started for {basin}...", flush=True)
-        if TESTING:
-            narratives = {
-                "summary": f"Mock technical summary describing {basin} basin compound multi-hazard risk.",
-                "broadcast": f"Mock resident warning broadcast message mentioning affected municipalities in {basin}."
-            }
-        else:
-            narratives = run_narration_turn(basin, risk_data)
-            
-        summary = narratives.get("summary", "")
-        broadcast = narratives.get("broadcast", "")
-        
-        if summary and broadcast:
-            set_cached_narration(basin, risk_data, summary, broadcast)
-            update_last_good_narration(basin, summary, broadcast)
-            print(f"Background narration generation completed and saved to Firestore for {basin}!", flush=True)
-    except Exception as e:
-        print(f"Error in background narration generation: {e}", flush=True)
-    finally:
-        GENERATING_NARRATIONS.discard(basin)
-
 # Local simulation state in case Fivetran API is rate-limited (429)
 LOCAL_PAUSED_STATES = {}  # connector_id -> bool
 # MOCK_DB_STATE lives in api.core (from-imported above; mutated in place only).
@@ -527,24 +393,6 @@ def get_location_conditions(lat: float, lng: float):
     LOCATION_CONDITIONS_CACHE[cache_key] = (now_s + LOCATION_CONDITIONS_TTL_S, payload)
     return payload
 
-def get_alert_state_repr(risk_data):
-    active_alerts = []
-    for muni_risk in risk_data:
-        muni = muni_risk["municipality"]
-        score = muni_risk["risk_score"]
-        if score >= 0.8:
-            severity = "EXTREME"
-        elif score >= 0.6:
-            severity = "HIGH"
-        elif score >= 0.4:
-            severity = "MODERATE"
-        else:
-            severity = "LOW"
-        if severity in ["HIGH", "EXTREME"]:
-            active_alerts.append((muni, severity))
-    active_alerts.sort()
-    return ",".join(f"{m}:{s}" for m, s in active_alerts)
-
 def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
     print("DEBUG: check_and_trigger_push_sync started", flush=True)
     try:
@@ -677,7 +525,6 @@ def check_and_trigger_push_sync(risk_data, basin="rio_cauca"):
 @app.get("/alert")
 def get_alert(basin: str = "rio_cauca", background_tasks: BackgroundTasks = None):
     """Turns the current risk scores into graded alerts, incident report, and resident warning."""
-    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS, LAST_GOOD_NARRATIVES, GENERATING_NARRATIONS
 
     if core.REOPENED_INCIDENT_ID:
         incidents = get_incidents_list()
@@ -1365,7 +1212,6 @@ def get_incidents():
 @app.post("/incidents/{incident_id}/reopen")
 def reopen_incident(incident_id: str):
     """Reopens a past incident override to display on the dashboard."""
-    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
     incidents = get_incidents_list()
     matching = next((inc for inc in incidents if inc["id"] == incident_id), None)
     if not matching:
@@ -1378,7 +1224,6 @@ def reopen_incident(incident_id: str):
 @app.post("/incidents/clear-reopen")
 def clear_reopen():
     """Clears reopened incident override and resumes live data view."""
-    global CACHED_ALERT_RESPONSES, CACHED_RISK_DATA_JSONS
     core.REOPENED_INCIDENT_ID = None
     CACHED_ALERT_RESPONSES.clear()
     CACHED_RISK_DATA_JSONS.clear()
