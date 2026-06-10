@@ -145,7 +145,14 @@ def component_scores(discharge_stat, soil_latest, rain_mm_24h, quake_mag):
         p90 = float(discharge_stat["p90"])
         spread = max(p90 - p50, max(abs(p50) * 0.10, 0.001))
         ratio = (float(discharge_stat["latest"]) - p50) / spread
-        comps["flood"] = max(0.0, min(1.0, 0.6 * ratio))
+        flood = max(0.0, min(1.0, 0.6 * ratio))
+        # Creek-cell dampening (calibration, 2026-06-10): a relative spike on
+        # a tiny stream is real but must never read like a major river flood
+        # for a whole city. Cells with a sub-10 m3/s median get halved and
+        # capped at WARNING-band level; true river cells are untouched.
+        if p50 < 10.0:
+            flood = min(0.5, flood * 0.5)
+        comps["flood"] = flood
     if rain_mm_24h is not None:
         comps["rain"] = max(0.0, min(1.0, float(rain_mm_24h) / 50.0))
     if quake_mag is not None:
@@ -283,6 +290,114 @@ def compute_hazard_index(basin_config):
         comps = component_scores(dstat, raw["soil_latest"], raw["rain_mm"], raw["quake_mag"])
         rows.append(index_row(place, comps, raw))
     return rows
+
+
+def compute_hazard_index_all():
+    """Index rows for EVERY group in ONE warehouse pass: three bulk queries
+    across all places plus a single 48h events query whose per-group bbox
+    maxima are computed in Python. Fills the per-group cache, so the per-group
+    read path stays fast for a full TTL after one bulk call. This is what
+    keeps the index page at one-call latency as the registry grows."""
+    refresh_weather_records()
+
+    all_places = [(b, p) for b in BASINS for p in b["places"]]
+    ids_sql = ", ".join(f"'{p['id']}'" for _, p in all_places)
+    names_sql = ", ".join("'" + p["name"].replace("'", "\\'") + "'" for _, p in all_places)
+
+    discharge_stats, soil_latest, rain_24h = {}, {}, {}
+    events = []
+    client = bigquery.Client(project='centinela-498622')
+
+    try:
+        q = f"""
+        SELECT place_id,
+               ARRAY_AGG(discharge_m_3_s ORDER BY date DESC LIMIT 1)[OFFSET(0)] AS latest,
+               APPROX_QUANTILES(discharge_m_3_s, 100)[OFFSET(50)] AS p50,
+               APPROX_QUANTILES(discharge_m_3_s, 100)[OFFSET(90)] AS p90
+        FROM global_hydro.river_discharge
+        WHERE place_id IN ({ids_sql})
+          AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL 92 DAY)
+        GROUP BY place_id"""
+        for row in client.query(q).result():
+            d = dict(row)
+            discharge_stats[d["place_id"]] = d
+    except Exception as e:
+        print(f"Bulk discharge query failed: {e}", flush=True)
+
+    try:
+        q = f"""
+        SELECT place_id,
+               ARRAY_AGG(moisture_m_3_m_3 ORDER BY ts DESC LIMIT 1)[OFFSET(0)] AS latest
+        FROM global_hydro.soil_moisture
+        WHERE place_id IN ({ids_sql})
+        GROUP BY place_id"""
+        for row in client.query(q).result():
+            d = dict(row)
+            soil_latest[d["place_id"]] = d.get("latest")
+    except Exception as e:
+        print(f"Bulk soil query failed: {e}", flush=True)
+
+    try:
+        q = f"""
+        SELECT municipality, SUM(precipitation_mm) AS total
+        FROM unified_feeds.rainfall
+        WHERE municipality IN ({names_sql})
+          AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+        GROUP BY municipality"""
+        for row in client.query(q).result():
+            d = dict(row)
+            rain_24h[d["municipality"]] = float(d.get("total") or 0.0)
+    except Exception as e:
+        print(f"Bulk rainfall query failed: {e}", flush=True)
+
+    try:
+        q = f"""
+        SELECT latitude, longitude, magnitude
+        FROM {RAW_EVENTS_TABLE}
+        WHERE time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 48 HOUR)
+          AND magnitude IS NOT NULL"""
+        events = [dict(row) for row in client.query(q).result()]
+    except Exception as e:
+        print(f"Bulk seismic query failed: {e}", flush=True)
+
+    now_s = time.time()
+    out = {}
+    for b in BASINS:
+        bbox = group_seismic_bbox(b) or {}
+        quake_mag = None
+        if all(k in bbox for k in ("lat_min", "lat_max", "lng_min", "lng_max")):
+            in_box = [float(ev["magnitude"]) for ev in events
+                      if ev.get("latitude") is not None
+                      and bbox["lat_min"] <= float(ev["latitude"]) <= bbox["lat_max"]
+                      and bbox["lng_min"] <= float(ev["longitude"]) <= bbox["lng_max"]]
+            quake_mag = round(max(in_box), 1) if in_box else None
+        rows = []
+        for place in b["places"]:
+            dstat = discharge_stats.get(place["id"])
+            raw = {
+                "discharge_latest": round(float(dstat["latest"]), 1) if dstat and dstat.get("latest") is not None else None,
+                "discharge_p50": round(float(dstat["p50"]), 1) if dstat and dstat.get("p50") is not None else None,
+                "discharge_p90": round(float(dstat["p90"]), 1) if dstat and dstat.get("p90") is not None else None,
+                "soil_latest": round(float(soil_latest[place["id"]]), 3) if soil_latest.get(place["id"]) is not None else None,
+                "rain_mm": rain_24h.get(place["name"]),
+                "quake_mag": quake_mag
+            }
+            comps = component_scores(dstat, raw["soil_latest"], raw["rain_mm"], raw["quake_mag"])
+            rows.append(index_row(place, comps, raw))
+        INDEX_CACHE[b["id"]] = (now_s + INDEX_CACHE_TTL_S, rows)
+        out[b["id"]] = rows
+    return out
+
+
+def ensure_all_index_fresh():
+    """One bulk recompute when any group's cache is stale; serves every group
+    from cache for the rest of the TTL. TESTING never reaches this."""
+    now_s = time.time()
+    stale = [b for b in BASINS
+             if not (INDEX_CACHE.get(b["id"]) and INDEX_CACHE[b["id"]][0] > now_s)]
+    if stale:
+        compute_hazard_index_all()
+    return {b["id"]: INDEX_CACHE[b["id"]][1] for b in BASINS if INDEX_CACHE.get(b["id"])}
 
 
 def testing_index_rows(basin_config):

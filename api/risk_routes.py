@@ -11,7 +11,7 @@ import api.core as core
 from api.core import TESTING, MOCK_DB_STATE
 from api.config import BASINS, TELEMETRY_PROVENANCE, basin_municipalities
 from api.stores import get_incidents_list, record_risk_sample_tick, get_risk_sample_ticks
-from api.hazard import compute_base_risk
+from api.hazard import compute_base_risk, ensure_all_index_fresh, testing_index_rows
 from api.demo import merge_demo_event_into_risk
 from api.resolution import resolved_places
 
@@ -28,6 +28,27 @@ def get_risk(basin: str = "rio_cauca"):
     # history matches the lived dashboard.
     record_risk_sample_tick(basin, results)
     return results
+
+@router.get("/risk-all")
+def get_risk_all():
+    """Index rows for EVERY group in one call (one bulk warehouse pass server
+    side). This is the index page's data source; per-group /risk stays for the
+    detail poll. Demo events merge per group on copies; ticks record for all
+    groups under the standard once-a-minute throttle."""
+    if TESTING:
+        per_group = {b["id"]: testing_index_rows(b) for b in BASINS}
+    else:
+        per_group = ensure_all_index_fresh()
+    groups = []
+    for b in BASINS:
+        rows = [dict(r) for r in per_group.get(b["id"], [])]
+        rows = merge_demo_event_into_risk(b["id"], rows)
+        record_risk_sample_tick(b["id"], rows)
+        groups.append({
+            "id": b["id"], "name": b["name"], "kind": b.get("kind", "flood-watch"),
+            "country": b["country"], "rows": rows,
+        })
+    return {"groups": groups}
 
 @router.get("/risk-history")
 def get_risk_history(basin: str = "rio_cauca"):
@@ -165,6 +186,8 @@ def get_group_summaries():
     the demo merge (the index cache must never be polluted), so a simulated
     spike reorders the strip honestly. No tick recording here: /risk owns
     the timeline."""
+    if not TESTING:
+        ensure_all_index_fresh()  # one bulk pass instead of N serial computes
     groups = []
     for b in BASINS:
         rows = merge_demo_event_into_risk(

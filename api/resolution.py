@@ -35,6 +35,22 @@ TESTING_RESOLUTION = {
     "manaus":          {"anchor": {"lat": -3.10194, "lng": -60.025},  "p50": 177010.0},
     "bogota":          {"anchor": {"lat": 4.60971, "lng": -74.08175}, "p50": 55.6},
     "managua":         {"anchor": {"lat": 12.13282, "lng": -86.2504}, "p50": 26.2},
+    # Global expansion fixtures (fixed coords, fixture medians).
+    "jakarta":        {"anchor": {"lat": -6.2146, "lng": 106.8451}, "p50": 250.0},
+    "manila":         {"anchor": {"lat": 14.5995, "lng": 120.9842}, "p50": 80.0},
+    "dhaka":          {"anchor": {"lat": 23.8103, "lng": 90.4125}, "p50": 35000.0},
+    "kathmandu":      {"anchor": {"lat": 27.7172, "lng": 85.324}, "p50": 120.0},
+    "istanbul":       {"anchor": {"lat": 41.0082, "lng": 28.9784}, "p50": 5.0},
+    "tokyo":          {"anchor": {"lat": 35.6762, "lng": 139.6503}, "p50": 60.0},
+    "taipei":         {"anchor": {"lat": 25.033, "lng": 121.5654}, "p50": 90.0},
+    "wellington":     {"anchor": {"lat": -41.2866, "lng": 174.7756}, "p50": 15.0},
+    "tehran":         {"anchor": {"lat": 35.6892, "lng": 51.389}, "p50": 8.0},
+    "karachi":        {"anchor": {"lat": 24.8607, "lng": 67.0011}, "p50": 600.0},
+    "bangkok":        {"anchor": {"lat": 13.7563, "lng": 100.5018}, "p50": 700.0},
+    "hanoi":          {"anchor": {"lat": 21.0278, "lng": 105.8342}, "p50": 2500.0},
+    "athens":         {"anchor": {"lat": 37.9838, "lng": 23.7275}, "p50": 3.0},
+    "naples":         {"anchor": {"lat": 40.8518, "lng": 14.2681}, "p50": 12.0},
+    "nairobi":        {"anchor": {"lat": -1.2921, "lng": 36.8219}, "p50": 25.0},
 }
 
 def testing_resolution():

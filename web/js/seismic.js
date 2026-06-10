@@ -1,10 +1,10 @@
-// Seismic feed card: the global USGS feed scoped near the selection (with a
-// worldwide toggle), live region chips, and click-to-focus. A focused event
-// owns the map and shows a SEISMIC-ONLY content block; basin panels hide
-// (no flood model exists for arbitrary epicenters, so nothing honest could
-// render there).
+// Seismic events. Detail view: a NEARBY-only feed card (~800 km of the
+// selection) with click-to-focus; a focused event owns the map and shows a
+// SEISMIC-ONLY content block while basin panels hide. Index view: the
+// WORLDWIDE list; clicking an event opens the nearest place's detail with
+// that event focused.
 
-import { state, notify, placeByName, candidateByName } from "./state.js";
+import { state, notify, placeByName, candidateByName, selectPlace, selectCandidate } from "./state.js";
 import { getSeismicFocus } from "./api.js";
 import { getMagnitudeSeverity } from "./severity.js";
 import { escapeHtml, formatRelativeTime, haversineMeters } from "./util.js";
@@ -12,7 +12,6 @@ import { renderMap } from "./map.js";
 import { renderConditions } from "./conditions.js";
 
 const NEAR_RADIUS_M = 800000;
-let feedScope = "near"; // near | world
 
 function selectionCoords() {
   const sel = state.selection;
@@ -55,17 +54,13 @@ export function renderSeismicPanel() {
 
   const coords = selectionCoords();
   const all = (state.seismic.events || []).filter(ev => typeof ev.magnitude === "number");
-  const events = (feedScope === "near" && coords)
+  const events = coords
     ? all.filter(ev => typeof ev.latitude === "number" &&
         haversineMeters(coords, { lat: ev.latitude, lng: ev.longitude }) <= NEAR_RADIUS_M)
     : all;
 
-  const scopeBtnLabel = feedScope === "near" ? "Show worldwide" : "Show nearby only";
-  const scopeNote = feedScope === "near"
-    ? `within ~800 km of ${escapeHtml((state.selection || {}).name || "the selection")}`
-    : "worldwide";
-  const header = `<div class="seismic-filter-bar"><span>M 4.5+ events, last 48h, ${scopeNote}</span>
-    <button type="button" class="btn btn-sm" id="seismic-scope-toggle">${scopeBtnLabel}</button></div>`;
+  const scopeNote = `within ~800 km of ${escapeHtml((state.selection || {}).name || "the selection")}`;
+  const header = `<div class="seismic-filter-bar"><span>M 4.5+ events, last 48h, ${scopeNote}</span></div>`;
 
   const rows = events.slice(0, 10).map(ev => {
     const sev = getMagnitudeSeverity(ev.magnitude);
@@ -82,7 +77,7 @@ export function renderSeismicPanel() {
   }).join("");
 
   listEl.innerHTML = header + (rows ||
-    `<div class="empty-alerts">No magnitude 4.5+ earthquakes ${scopeNote} in the last 48 hours.</div>`);
+    `<div class="empty-alerts">No magnitude 4.5+ earthquakes ${scopeNote} in the last 48 hours. Worldwide activity is on the All-places page.</div>`);
 
   if (chipsEl) {
     const regions = (state.seismic.active_regions || []).slice(0, 6);
@@ -91,7 +86,14 @@ export function renderSeismicPanel() {
   }
 }
 
-async function focusEvent(id) {
+export async function focusEvent(id) {
+  // Immediate feedback: the focus fetch generates narration server-side and
+  // can take several seconds; a silent wait reads as a dead click.
+  const focusBox = document.getElementById("seismic-focus-content");
+  if (focusBox) {
+    focusBox.hidden = false;
+    focusBox.innerHTML = `<div class="empty-alerts">Loading event details…</div>`;
+  }
   try {
     const data = await getSeismicFocus(id);
     if (!data || !data.event) return;
@@ -105,7 +107,67 @@ async function focusEvent(id) {
     }
   } catch (err) {
     console.error("Seismic focus failed:", err);
+    if (focusBox) focusBox.innerHTML = `<div class="empty-alerts">Event details unavailable right now.</div>`;
   }
+}
+
+// --- Worldwide list (index page) -------------------------------------------
+
+function nearestPlaceTo(lat, lng) {
+  let best = null, bestDist = Infinity;
+  (state.groups || []).forEach(g => (g.places || []).forEach(p => {
+    if (!p.anchor) return;
+    const d = haversineMeters({ lat, lng }, { lat: p.anchor.lat, lng: p.anchor.lng });
+    if (d < bestDist) { bestDist = d; best = { kind: "place", name: p.name }; }
+  }));
+  (((state.watchlist || {}).results) || []).forEach(c => {
+    if (typeof c.lat !== "number") return;
+    const d = haversineMeters({ lat, lng }, { lat: c.lat, lng: c.lng });
+    if (d < bestDist) { bestDist = d; best = { kind: "candidate", name: c.name }; }
+  });
+  return best ? { ...best, km: Math.round(bestDist / 1000) } : null;
+}
+
+export function renderWorldwideEvents() {
+  const el = document.getElementById("world-events-body");
+  if (!el) return;
+  const events = (state.seismic.events || [])
+    .filter(ev => typeof ev.magnitude === "number")
+    .slice(0, 12);
+  if (!events.length) {
+    el.innerHTML = `<div class="empty-alerts">Loading the live USGS feed…</div>`;
+    return;
+  }
+  el.innerHTML = events.map(ev => {
+    const sev = getMagnitudeSeverity(ev.magnitude);
+    const near = (typeof ev.latitude === "number") ? nearestPlaceTo(ev.latitude, ev.longitude) : null;
+    const tag = ev.simulated ? '<span class="badge badge-simulated">SIMULATED</span>' : '<span class="seismic-source-tag">LIVE · USGS</span>';
+    return `
+      <button type="button" class="seismic-row" data-world-event="${escapeHtml(ev.id)}"
+              style="border-left:3px solid ${sev.colorHex};">
+        <span class="seismic-mag tabular-nums" style="color:${sev.colorHex}">M ${ev.magnitude.toFixed(1)}</span>
+        <span class="seismic-info">
+          <span>${escapeHtml(ev.place || "Unknown location")} ${tag}</span>
+          <span class="seismic-meta tabular-nums">${formatRelativeTime(ev.time)}${near ? ` · nearest: ${escapeHtml(near.name)} (${near.km.toLocaleString()} km)` : ""}</span>
+        </span>
+      </button>`;
+  }).join("");
+}
+
+export function setupWorldwideEvents() {
+  const card = document.getElementById("world-events-card");
+  if (!card) return;
+  card.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-world-event]");
+    if (!row) return;
+    const ev = (state.seismic.events || []).find(x => x.id === row.dataset.worldEvent);
+    if (!ev || typeof ev.latitude !== "number") return;
+    const near = nearestPlaceTo(ev.latitude, ev.longitude);
+    if (!near) return;
+    if (near.kind === "candidate") selectCandidate(near.name);
+    else selectPlace(near.name);
+    focusEvent(ev.id);
+  });
 }
 
 export function clearSeismicFocus() {
@@ -125,11 +187,6 @@ export function setupSeismicPanel() {
   const panel = document.getElementById("seismic-panel");
   if (!panel) return;
   panel.addEventListener("click", (e) => {
-    if (e.target.id === "seismic-scope-toggle") {
-      feedScope = feedScope === "near" ? "world" : "near";
-      renderSeismicPanel();
-      return;
-    }
     if (e.target.id === "seismic-focus-close" || e.target.closest("#seismic-focus-close")) {
       clearSeismicFocus();
       return;

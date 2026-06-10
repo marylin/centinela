@@ -87,6 +87,98 @@ BASINS = [
         "kind": "seismic-watch",
         "places": [{"id": "managua", "name": "Managua"}],
         "connectors": REAL_CONNECTORS
+    },
+    # Global expansion 2026-06-10 (user-directed; not LatAm-limited). All
+    # coordinates derive; adding a place stays one config row.
+    {
+        "id": "jakarta", "name": "Jakarta", "country": "Indonesia", "cc": "ID",
+        "kind": "flood-watch",
+        "places": [{"id": "jakarta", "name": "Jakarta"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "manila", "name": "Manila", "country": "Philippines", "cc": "PH",
+        "kind": "seismic-watch",
+        "places": [{"id": "manila", "name": "Manila"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "dhaka", "name": "Dhaka", "country": "Bangladesh", "cc": "BD",
+        "kind": "flood-watch",
+        "places": [{"id": "dhaka", "name": "Dhaka"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "kathmandu", "name": "Kathmandu", "country": "Nepal", "cc": "NP",
+        "kind": "seismic-watch",
+        "places": [{"id": "kathmandu", "name": "Kathmandu"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "istanbul", "name": "Istanbul", "country": "Türkiye", "cc": "TR",
+        "kind": "seismic-watch",
+        "places": [{"id": "istanbul", "name": "Istanbul"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "tokyo", "name": "Tokyo", "country": "Japan", "cc": "JP",
+        "kind": "seismic-watch",
+        "places": [{"id": "tokyo", "name": "Tokyo"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "taipei", "name": "Taipei", "country": "Taiwan", "cc": "TW",
+        "kind": "seismic-watch",
+        "places": [{"id": "taipei", "name": "Taipei"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "wellington", "name": "Wellington", "country": "New Zealand", "cc": "NZ",
+        "kind": "seismic-watch",
+        "places": [{"id": "wellington", "name": "Wellington"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "tehran", "name": "Tehran", "country": "Iran", "cc": "IR",
+        "kind": "seismic-watch",
+        "places": [{"id": "tehran", "name": "Tehran"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "karachi", "name": "Karachi", "country": "Pakistan", "cc": "PK",
+        "kind": "flood-watch",
+        "places": [{"id": "karachi", "name": "Karachi"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "bangkok", "name": "Bangkok", "country": "Thailand", "cc": "TH",
+        "kind": "flood-watch",
+        "places": [{"id": "bangkok", "name": "Bangkok"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "hanoi", "name": "Hanoi", "country": "Vietnam", "cc": "VN",
+        "kind": "flood-watch",
+        "places": [{"id": "hanoi", "name": "Hanoi"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "athens", "name": "Athens", "country": "Greece", "cc": "GR",
+        "kind": "seismic-watch",
+        "places": [{"id": "athens", "name": "Athens"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "naples", "name": "Naples", "country": "Italy", "cc": "IT",
+        "kind": "seismic-watch",
+        "places": [{"id": "naples", "name": "Naples"}],
+        "connectors": REAL_CONNECTORS
+    },
+    {
+        "id": "nairobi", "name": "Nairobi", "country": "Kenya", "cc": "KE",
+        "kind": "flood-watch",
+        "places": [{"id": "nairobi", "name": "Nairobi"}],
+        "connectors": REAL_CONNECTORS
     }
 ]
 

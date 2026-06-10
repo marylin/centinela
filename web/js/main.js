@@ -11,8 +11,8 @@ import { setupDiagnostics } from "./diagnostics.js";
 import { setupRail } from "./rail.js";
 import { setupDetail } from "./detail.js";
 import { renderMap } from "./map.js";
-import { setupSeismicPanel, clearSeismicFocus } from "./seismic.js";
-import { setupRouteCard } from "./routes.js";
+import { setupSeismicPanel, setupWorldwideEvents, renderWorldwideEvents, clearSeismicFocus } from "./seismic.js";
+import { onDetailShown } from "./map.js";
 
 // Maps loader callback: modules are module-scoped, so the bootstrap callback
 // must be attached to window explicitly.
@@ -32,6 +32,9 @@ function applyView() {
   if (detailView) detailView.hidden = !detail;
   if (indexView) indexView.hidden = detail;
   if (detail) {
+    // The map lives in this container: now that it is visible it must be
+    // resized and recentered or it paints glitched (hidden-init bug).
+    onDetailShown();
     const heading = document.getElementById("detail-heading");
     if (heading) {
       heading.textContent = state.selection.name;
@@ -83,21 +86,24 @@ function startClock() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   setupOfflineBanner();
+
+  // View switching subscribes FIRST: the detail renderers must only ever run
+  // against a visible container (the map cannot initialize while hidden).
+  subscribe((topic) => {
+    if (topic === "selection") applyView();
+    if (["registry", "index-data", "watchlist"].includes(topic)) { renderTiles(); renderWorldwideEvents(); }
+    if (topic === "demo-changed") refreshIndexData();
+  });
+
   setupTiles();
   setupRail();
   setupDetail();
   setupSeismicPanel();
-  setupRouteCard();
+  setupWorldwideEvents();
   setupRouting();
   setupNotifications();
   setupDiagnostics();
   startClock();
-
-  subscribe((topic) => {
-    if (topic === "selection") applyView();
-    if (["registry", "index-data", "watchlist"].includes(topic)) renderTiles();
-    if (topic === "demo-changed") refreshIndexData();
-  });
 
   await refreshRegistry();
   renderTiles();

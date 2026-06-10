@@ -21,7 +21,7 @@ export function renderRail() {
       <button type="button" class="rail-item${i.kind === "candidate" ? " rail-candidate" : ""}"
               data-kind="${i.kind}" data-name="${escapeHtml(i.name)}">
         <span class="rail-name"></span>
-        <span class="rail-meta tabular-nums"></span>
+        <span class="rail-meta tabular-nums"></span>${i.kind === "candidate" ? '<span class="badge tile-badge">watch</span>' : ""}
       </button>`).join("");
     list.dataset.keys = keys;
   }
@@ -35,12 +35,12 @@ export function renderRail() {
     if (item.kind === "place") {
       const row = (state.riskByGroup[item.groupId] || []).find(r => r.municipality === item.name);
       score = row ? Number(row.risk_score) || 0 : null;
-      // Severity ordering: worst first; monitored block stays above candidates.
+      // ONE merged list: everything orders by its score, worst first.
       el.style.order = String(score === null ? 1500 : 1000 - Math.round(score * 1000));
     } else {
       const r = (((state.watchlist || {}).results) || []).find(x => x.name === item.name);
       score = r ? Number(r.activity_score) || 0 : null;
-      el.style.order = String(score === null ? 4500 : 4000 - Math.round(score * 1000));
+      el.style.order = String(score === null ? 1500 : 1000 - Math.round(score * 1000));
     }
     const sev = score === null ? null : getSeverityConfig(score);
     el.style.borderLeftColor = sev ? sev.colorHex : "var(--border-color)";

@@ -16,8 +16,24 @@ let candidateMarker = null;
 let youAreHereMarker = null;
 let geoRequested = false;
 let centeredKey = null; // selection key the map last centered on
+let lastCenter = null;
+let lastZoom = null;
 
 function mapsReady() { return typeof google !== "undefined" && window.googleMapsReady; }
+
+// Call whenever the detail view becomes visible: a map created (or last
+// painted) inside a hidden container has zero size and renders glitched
+// until it gets an explicit resize + recenter.
+export function onDetailShown() {
+  if (!mapsReady()) return;
+  initMap();
+  if (!map) return;
+  google.maps.event.trigger(map, "resize");
+  if (lastCenter) {
+    map.setCenter(lastCenter);
+    if (lastZoom) map.setZoom(lastZoom);
+  }
+}
 
 export function initMap() {
   if (map || !mapsReady()) return;
@@ -41,6 +57,8 @@ function clearStore(store) {
 // Recenter only when the selection (or focus) actually changes; user zoom and
 // pan always win across polls (the hard-won zoom lesson).
 function centerOnce(key, pos, zoom) {
+  lastCenter = pos;
+  lastZoom = zoom;
   if (centeredKey === key) return;
   map.setCenter(pos);
   map.setZoom(zoom);

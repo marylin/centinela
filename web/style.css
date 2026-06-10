@@ -3154,3 +3154,7 @@ button.seismic-event-row:focus-visible {
 .route-steps li { margin-bottom: 3px; }
 /* The hidden attribute always wins, no matter what display a class sets. */
 [hidden] { display: none !important; }
+/* Skeleton tiles while the first data lands */
+.tile-skeleton { height: 96px; border-left-color: var(--border-color); animation: skeleton-pulse 1.2s ease-in-out infinite; pointer-events: none; }
+@keyframes skeleton-pulse { 0%,100% { opacity: 0.35; } 50% { opacity: 0.7; } }
+@media (prefers-reduced-motion: reduce) { .tile-skeleton { animation: none; opacity: 0.5; } }

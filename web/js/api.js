@@ -20,6 +20,7 @@ async function request(path, options) {
 
 export const getPlaces = () => request("/places");
 export const getRisk = (basin) => request(`/risk?basin=${encodeURIComponent(basin)}`);
+export const getRiskAll = () => request("/risk-all");
 export const getGroupSummaries = () => request("/group-summaries");
 export const getWatchlist = () => request("/watchlist");
 export const getAlert = (basin) => request(`/alert?basin=${encodeURIComponent(basin)}`);

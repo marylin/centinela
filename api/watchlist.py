@@ -24,7 +24,7 @@ ATTRIBUTION = "USGS FDSN catalog + GloFAS reanalysis (Open-Meteo)"
 # (geocoded anchor + strongest-discharge GloFAS cell). aqi_covered marks
 # VERIFIED Google AQI availability (probed 2026-06-10; unprobed = False, the
 # badge simply does not show). Bogotá / Managua / Manaus were promoted into
-# the monitored registry 2026-06-10; the pool is global, not LatAm-only.
+# the monitored registry 2026-06-10; the pool is global, not LatAm-only. The six global candidates were promoted same-day.
 CANDIDATES = [
     {"name": "Medellín", "country": "Colombia", "cc": "CO", "aqi_covered": True},
     {"name": "Quito", "country": "Ecuador", "cc": "EC", "aqi_covered": True},
@@ -35,12 +35,6 @@ CANDIDATES = [
     {"name": "Santo Domingo", "country": "Dominican Republic", "cc": "DO", "aqi_covered": False},
     {"name": "Kingston", "country": "Jamaica", "cc": "JM", "aqi_covered": False},
     {"name": "Buenos Aires", "country": "Argentina", "cc": "AR", "aqi_covered": True},
-    {"name": "Jakarta", "country": "Indonesia", "cc": "ID", "aqi_covered": False},
-    {"name": "Manila", "country": "Philippines", "cc": "PH", "aqi_covered": False},
-    {"name": "Dhaka", "country": "Bangladesh", "cc": "BD", "aqi_covered": False},
-    {"name": "Kathmandu", "country": "Nepal", "cc": "NP", "aqi_covered": False},
-    {"name": "Istanbul", "country": "Türkiye", "cc": "TR", "aqi_covered": False},
-    {"name": "Tokyo", "country": "Japan", "cc": "JP", "aqi_covered": False},
 ]
 
 

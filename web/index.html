@@ -31,15 +31,31 @@
       </div>
 
       <h2 class="grid-section-title">Monitored places <span class="badge scope-chip">MODEL INDEX</span></h2>
-      <div id="tile-grid-monitored" class="tile-grid"></div>
+      <div id="tile-grid-monitored" class="tile-grid">
+        <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
+        <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
+        <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
+      </div>
 
       <h2 class="grid-section-title">Watchlist candidates <span class="badge scope-chip">NOT MONITORED &middot; ACTIVITY MODEL</span></h2>
       <p class="watchlist-footnote">Activity model from the USGS FDSN catalog + GloFAS reanalysis
         (Open-Meteo), seasonal window &plusmn;1 month. Candidates are NOT monitored places;
         promotion into the registry is a manual configuration step.</p>
-      <div id="tile-grid-candidates" class="tile-grid tile-grid-candidates"></div>
+      <div id="tile-grid-candidates" class="tile-grid tile-grid-candidates">
+        <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
+        <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
+      </div>
 
-      <section class="card notification-panel" aria-labelledby="notif-title">
+      <section class="card" id="world-events-card" aria-labelledby="world-events-title">
+        <div class="card-header"><h2 id="world-events-title">Worldwide seismic events</h2>
+          <span class="badge badge-live-usgs">LIVE &middot; USGS</span></div>
+        <div class="card-body" id="world-events-body">
+          <div class="empty-alerts">Loading the live USGS feed…</div>
+        </div>
+        <p class="watchlist-footnote">Tap an event to open the nearest place with the event focused on its map.</p>
+      </section>
+
+      <section class="card notification-panel" aria-labelledby="notif-title" hidden>
         <div class="card-header"><h2 id="notif-title">Emergency push notifications</h2></div>
         <div class="card-body">
           <button type="button" id="enable-notifications-btn" class="btn">Enable notifications on this device</button>
@@ -100,22 +116,11 @@
           </section>
         </div>
 
-        <div class="detail-columns">
-          <section class="card" id="seismic-panel" aria-labelledby="seismic-title">
-            <div class="card-header"><h3 id="seismic-title">Seismic activity</h3><span id="seismic-region-chips"></span></div>
-            <div id="seismic-focus-content" class="seismic-focus-content" hidden></div>
-            <div class="card-body" id="seismic-feed-body"></div>
-          </section>
-          <section class="card" id="route-card" aria-labelledby="route-title" hidden>
-            <div class="card-header"><h3 id="route-title">Safe route</h3></div>
-            <div class="card-body">
-              <p id="route-uphill" class="alert-context" hidden></p>
-              <button type="button" id="route-find-btn" class="btn">Find a safe point and walking route</button>
-              <p id="route-status" class="diag-status"></p>
-              <ol id="route-steps" class="route-steps"></ol>
-            </div>
-          </section>
-        </div>
+        <section class="card" id="seismic-panel" aria-labelledby="seismic-title">
+          <div class="card-header"><h3 id="seismic-title">Nearby seismic events</h3><span id="seismic-region-chips"></span></div>
+          <div id="seismic-focus-content" class="seismic-focus-content" hidden></div>
+          <div class="card-body" id="seismic-feed-body"></div>
+        </section>
       </div>
     </div>
   </main>

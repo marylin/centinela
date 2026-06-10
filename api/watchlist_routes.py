@@ -118,12 +118,6 @@ TESTING_CANDIDATE_FIXTURE = {
     "Santo Domingo": {"lat": 18.4861, "lng": -69.9312, "p50": 64.3},
     "Kingston":      {"lat": 17.9712, "lng": -76.7936, "p50": 0.5},
     "Buenos Aires":  {"lat": -34.6037, "lng": -58.3816, "p50": 20.0},
-    "Jakarta":       {"lat": -6.2146, "lng": 106.8451, "p50": 250.0},
-    "Manila":        {"lat": 14.5995, "lng": 120.9842, "p50": 80.0},
-    "Dhaka":         {"lat": 23.8103, "lng": 90.4125, "p50": 35000.0},
-    "Kathmandu":     {"lat": 27.7172, "lng": 85.3240, "p50": 120.0},
-    "Istanbul":      {"lat": 41.0082, "lng": 28.9784, "p50": 5.0},
-    "Tokyo":         {"lat": 35.6762, "lng": 139.6503, "p50": 60.0},
 }
 
 def testing_watchlist_rows():

@@ -55,8 +55,8 @@ def run_tests():
     if res.status_code != 200:
         fail(f"GET /places returned {res.status_code}")
     groups = {b["id"]: b for b in res.json()}
-    if len(groups) != 10:
-        fail(f"Expected 10 groups, got {sorted(groups.keys())}")
+    if len(groups) != 25:
+        fail(f"Expected 25 groups, got {sorted(groups.keys())}")
     for gid, g in groups.items():
         if "simulated" in g:
             fail(f"{gid} still carries a simulated flag: {g}")

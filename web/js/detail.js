@@ -13,7 +13,6 @@ import { renderAlertCard } from "./alert-card.js";
 import { renderConditions } from "./conditions.js";
 import { renderRiskTimeline, renderTrend } from "./charts.js";
 import { renderSeismicPanel } from "./seismic.js";
-import { renderRouteCard } from "./routes.js";
 import { CADENCE } from "./poll.js";
 
 let detailTimer = null;
@@ -128,9 +127,12 @@ async function onSelectionChange() {
   show("risk-timeline-panel", monitored);
   show("trend-panel", monitored);
   renderSeismicPanel();
-  renderRouteCard();
 
   if (monitored) {
+    const tl = document.getElementById("risk-timeline-body");
+    const tr = document.getElementById("trend-body");
+    if (tl) tl.innerHTML = '<div class="empty-alerts">Loading recorded history…</div>';
+    if (tr) tr.innerHTML = '<div class="empty-alerts">Loading telemetry series…</div>';
     renderComponentsCard();    // instant from cache
     renderAlertCard(lastAlert);
     renderMap();
@@ -166,7 +168,6 @@ export function setupDetail() {
       show("public-alert-card", monitored && !focused);
       show("risk-timeline-panel", monitored && !focused);
       show("trend-panel", monitored && !focused);
-      renderRouteCard();
     }
   });
 }

@@ -18,20 +18,14 @@ export async function refreshRegistry() {
 
 export async function refreshIndexData() {
   try {
-    const [summaries, seismic] = await Promise.all([
-      api.getGroupSummaries(),
+    // ONE bulk call for every group's index rows (one warehouse pass server
+    // side) + the seismic feed. This is what keeps first paint fast.
+    const [all, seismic] = await Promise.all([
+      api.getRiskAll(),
       api.getSeismicEvents(),
     ]);
-    const map = {};
-    (summaries.groups || []).forEach((g, i) => { map[g.id] = { ...g, rank: i }; });
-    state.groupSummaries = map;
+    (all.groups || []).forEach(g => { state.riskByGroup[g.id] = g.rows || []; });
     if (seismic && Array.isArray(seismic.events)) state.seismic = seismic;
-
-    // Per-group risk rows: the backend caches the index 60s per group, so
-    // seven parallel calls are cheap and keep every tile honest.
-    const ids = (state.groups || []).map(g => g.id);
-    const rows = await Promise.all(ids.map(id => api.getRisk(id).catch(() => null)));
-    ids.forEach((id, i) => { if (rows[i]) state.riskByGroup[id] = rows[i]; });
     notify("index-data");
   } catch (err) {
     console.error("Index refresh failed:", err);
