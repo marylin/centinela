@@ -1992,6 +1992,9 @@ function conditionsBlockHtml(eventId) {
   if (d.soil_moisture) {
     lines.push(`<div class="condition-line"><span>Soil moisture: <strong class="tabular-nums">${d.soil_moisture.latest_m3m3.toFixed(2)} m&sup3;/m&sup3;</strong></span><span class="condition-source">${escapeHtml(prov.soil_moisture || "")}</span></div>`);
   }
+  if (d.air_quality) {
+    lines.push(`<div class="condition-line"><span>Air quality: <strong class="tabular-nums">${d.air_quality.aqi}</strong> ${escapeHtml(d.air_quality.category || "")}</span><span class="condition-source">${escapeHtml(prov.air_quality || "")}</span></div>`);
+  }
   return `
     <div class="epicenter-conditions">
       <span class="drawer-label">Conditions at the epicenter</span>

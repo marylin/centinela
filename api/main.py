@@ -1438,10 +1438,23 @@ def fetch_location_soil(lat: float, lng: float):
     return {"latest_m3m3": round(values[-1], 3),
             "min_48h": round(min(values), 3), "max_48h": round(max(values), 3)}
 
+def fetch_location_aqi(lat: float, lng: float, api_key: str):
+    url = "https://airquality.googleapis.com/v1/currentConditions:lookup"
+    resp = requests.post(url, json={"location": {"latitude": lat, "longitude": lng}},
+                         headers={"X-Goog-Api-Key": api_key}, timeout=6.0)
+    if resp.status_code != 200:
+        raise RuntimeError(f"air quality status {resp.status_code}")
+    indexes = resp.json().get("indexes") or []
+    uaqi = next((i for i in indexes if i.get("code") == "uaqi"), indexes[0] if indexes else None)
+    if not uaqi:
+        return None
+    return {"aqi": int(uaqi.get("aqi") or 0), "category": uaqi.get("category") or ""}
+
 LOCATION_CONDITIONS_PROVENANCE = {
     "rainfall": "observed · Google Weather",
     "river_discharge": "model · GloFAS via Open-Meteo",
-    "soil_moisture": "model · ECMWF via Open-Meteo"
+    "soil_moisture": "model · ECMWF via Open-Meteo",
+    "air_quality": "observed · Google Air Quality"
 }
 
 @app.get("/location-conditions")
@@ -1459,6 +1472,7 @@ def get_location_conditions(lat: float, lng: float):
             "river_discharge": {"latest_m3s": 1234.5, "direction": "rising",
                                  "daily": [{"date": f"2026-06-0{d}", "m3s": 1000.0 + d * 30} for d in range(1, 9)]},
             "soil_moisture": {"latest_m3m3": 0.312, "min_48h": 0.298, "max_48h": 0.33},
+            "air_quality": {"aqi": 82, "category": "Good air quality"},
             "provenance": LOCATION_CONDITIONS_PROVENANCE
         }
 
@@ -1469,7 +1483,7 @@ def get_location_conditions(lat: float, lng: float):
         return cached[1]
 
     payload = {"latitude": lat, "longitude": lng, "rainfall": None,
-               "river_discharge": None, "soil_moisture": None,
+               "river_discharge": None, "soil_moisture": None, "air_quality": None,
                "provenance": LOCATION_CONDITIONS_PROVENANCE}
     api_key = os.environ.get("GOOGLE_WEATHER_API_KEY")
     if api_key:
@@ -1477,6 +1491,10 @@ def get_location_conditions(lat: float, lng: float):
             payload["rainfall"] = fetch_location_rainfall_history(lat, lng, api_key)
         except Exception as e:
             print(f"location-conditions rainfall failed: {e}", flush=True)
+        try:
+            payload["air_quality"] = fetch_location_aqi(lat, lng, api_key)
+        except Exception as e:
+            print(f"location-conditions air quality failed: {e}", flush=True)
     try:
         payload["river_discharge"] = fetch_location_discharge(lat, lng)
     except Exception as e:
