@@ -190,26 +190,10 @@ function getMarkerIconUrl(color, hazard) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg.trim())}`;
 }
 
-// 3. Municipality Coordinates for Google Maps
-const municipalityCoords = {
-  "Cali": { lat: 3.4516, lng: -76.5320 },
-  "Yumbo": { lat: 3.5855, lng: -76.4952 },
-  "Jamundí": { lat: 3.2610, lng: -76.5394 },
-  "Neiva": { lat: 2.9273, lng: -75.2819 },
-  "Girardot": { lat: 4.3009, lng: -74.8061 },
-  "Honda": { lat: 5.2045, lng: -74.7411 },
-  "Lima": { lat: -12.046, lng: -77.043 },
-  "Callao": { lat: -12.056, lng: -77.118 },
-  "Chorrillos": { lat: -12.168, lng: -77.022 },
-  "Guatemala City": { lat: 14.6349, lng: -90.5069 },
-  "Mixco": { lat: 14.6333, lng: -90.6064 },
-  "Villa Nueva": { lat: 14.5269, lng: -90.5969 },
-  "Alto Pass": { lat: 3.4600, lng: -76.5100 },
-  "Oak Creek": { lat: 3.4800, lng: -76.5200 },
-  "Silver Valley": { lat: 3.5000, lng: -76.5300 },
-  "Pine Ridge": { lat: 3.4000, lng: -76.5000 },
-  "Riverdale": { lat: 3.4200, lng: -76.4900 }
-};
+// 3. Coordinates for Google Maps: NOTHING hardcoded. Both maps fill from the
+// resolved registry (geocoded anchors + derived river cells) in loadBasins.
+const municipalityCoords = {};
+const hydroPointCoords = {}; // name -> {lat, lng, cell_p50_m3s, cell_scale}
 
 // ==========================================================================
 // Public Alert content (fixed, plain-language, authoritative copy)
@@ -243,6 +227,8 @@ const COMPASS_8 = ["north", "northeast", "east", "southeast", "south", "southwes
 let publicMap = null;
 let publicMarkers = {};
 let publicZoneCircle = null;
+let floodHazardMarkers = {};       // ops map: name -> river-cell marker
+let publicFloodHazardMarkers = {}; // public map: same, separate instance
 let publicEventMarker = null; // epicenter marker for the public event view
 let youAreHereMarker = null;
 let elevationService = null;
@@ -257,7 +243,8 @@ let safeRouteBusy = false; // guards against overlapping searches
 const COMPASS_DEGREES = { north: 0, northeast: 45, east: 90, southeast: 135, south: 180, southwest: 225, west: 270, northwest: 315 };
 
 // Offline fallback used only if GET /basins fails or returns empty, so the UI
-// never breaks. Mirrors the original two hardcoded basins.
+// never breaks. Names only (no coordinates anywhere in the frontend); markers
+// are honestly absent until the registry endpoint is reachable.
 const FALLBACK_BASINS = [
   { id: "rio_cauca", name: "Rio Cauca", country: "Colombia", municipalities: ["Cali", "Yumbo", "Jamundí"] },
   { id: "rio_magdalena", name: "Rio Magdalena", country: "Colombia", municipalities: ["Neiva", "Girardot", "Honda"] }
@@ -287,10 +274,16 @@ async function loadBasins() {
 
     appState.basins = data;
     appState.selectedBasin = data[0].id;
-    // Registry coordinates take precedence over the built-in fallback map.
+    // Derived coordinates: anchor drives pins/routes, the river cell drives
+    // the flood hazard marker. Unresolved places simply have no coords yet.
     data.forEach(b => (b.places || []).forEach(p => {
-      if (p && p.name && typeof p.lat === "number") {
+      if (p && p.name && p.anchor && typeof p.anchor.lat === "number") {
+        municipalityCoords[p.name] = { lat: p.anchor.lat, lng: p.anchor.lng };
+      } else if (p && p.name && typeof p.lat === "number") {
         municipalityCoords[p.name] = { lat: p.lat, lng: p.lng };
+      }
+      if (p && p.name && p.hydro_point && typeof p.hydro_point.lat === "number") {
+        hydroPointCoords[p.name] = p.hydro_point;
       }
     }));
     initConsoleLog(`Loaded ${data.length} monitored groups from the registry.`, "telemetry");
@@ -477,16 +470,22 @@ function initMap() {
 // ==========================================================================
 // Public Alert Map ("This is your area")
 // ==========================================================================
-const BASIN_CENTERS = {
-  rio_cauca: { lat: 3.43, lng: -76.51, zoom: 11 },
-  rio_magdalena: { lat: 4.14, lng: -74.94, zoom: 8 }
-};
+// Map center derived from the scoped group's resolved anchors (no hardcoded
+// centers). Neutral wide view until the registry loads.
+function basinCenter(basinId) {
+  const munis = getBasinMunis(basinId);
+  const coords = munis.map(m => municipalityCoords[m]).filter(Boolean);
+  if (!coords.length) return { lat: 4.5, lng: -74.0, zoom: 5 };
+  const lat = coords.reduce((s, c) => s + c.lat, 0) / coords.length;
+  const lng = coords.reduce((s, c) => s + c.lng, 0) / coords.length;
+  return { lat, lng, zoom: coords.length > 1 ? 9 : 11 };
+}
 
 function initPublicMap() {
   const el = document.getElementById("public-map");
   if (!el || typeof google === "undefined" || publicMap) return;
 
-  const c = BASIN_CENTERS[appState.selectedBasin] || BASIN_CENTERS.rio_cauca;
+  const c = basinCenter(appState.selectedBasin);
   publicMap = new google.maps.Map(el, {
     center: { lat: c.lat, lng: c.lng },
     zoom: c.zoom,
@@ -575,10 +574,12 @@ function renderPublicMap(selectedMuni) {
   // Center once per basin; do not re-fit on every poll.
   if (selCoords && appState.publicCenteredBasin !== appState.selectedBasin) {
     publicMap.setCenter(selCoords);
-    const c = BASIN_CENTERS[appState.selectedBasin] || BASIN_CENTERS.rio_cauca;
-    publicMap.setZoom(c.zoom);
+    publicMap.setZoom(basinCenter(appState.selectedBasin).zoom);
     appState.publicCenteredBasin = appState.selectedBasin;
   }
+
+  // Flood hazard markers sit where the river actually is (derived cell).
+  syncFloodHazardMarkers(publicMap, publicFloodHazardMarkers, basinRisk);
 
   requestGeolocationOnce();
 }
@@ -2509,6 +2510,9 @@ function renderMapMarkers() {
   // Choropleth-style risk zones follow the same render cycle as the markers.
   syncRiskZones(basinRiskData);
 
+  // Flood hazard markers at the derived river cells (event location honesty).
+  syncFloodHazardMarkers(map, floodHazardMarkers, basinRiskData);
+
   // Keep details drawer updated if the selected muni is in the current basin.
   // A live seismic focus owns the rail until it is closed — the poll must not
   // overwrite it with municipality details.
@@ -2534,6 +2538,52 @@ function renderMapMarkers() {
   } else if (appState.lastFetchedBasin === appState.selectedBasin) {
     setMapLoadingState("nodata");
   }
+}
+
+// Flood hazard markers: when a place's flood component is elevated, mark the
+// RIVER (the derived strongest-discharge GloFAS cell) where the anomaly is
+// actually happening, not the city pin. Skipped when the river cell is within
+// ~0.02° of the anchor (same cell, a second marker would just overlap).
+function syncFloodHazardMarkers(mapObj, store, rows) {
+  if (!mapObj || typeof google === "undefined") return;
+  const wanted = {};
+  (rows || []).forEach(muni => {
+    const hp = hydroPointCoords[muni.municipality];
+    const flood = Number(muni.flood_score) || 0;
+    if (!hp || flood < 0.4) return;
+    const anchor = municipalityCoords[muni.municipality];
+    if (anchor && Math.abs(hp.lat - anchor.lat) < 0.02 && Math.abs(hp.lng - anchor.lng) < 0.02) return;
+    wanted[muni.municipality] = { hp, flood };
+  });
+
+  Object.keys(store).forEach(name => {
+    if (!wanted[name]) {
+      store[name].setMap(null);
+      delete store[name];
+    }
+  });
+
+  Object.entries(wanted).forEach(([name, w]) => {
+    const sev = getSeverityConfig(w.flood);
+    const icon = {
+      url: getMarkerIconUrl(sev.colorHex, "FLOOD"),
+      size: new google.maps.Size(36, 36),
+      scaledSize: new google.maps.Size(30, 30),
+      anchor: new google.maps.Point(15, 29)
+    };
+    const title = `River monitoring point — ${name} (${(hydroPointCoords[name].cell_p50_m3s || 0).toLocaleString()} m³/s median)`;
+    if (store[name]) {
+      store[name].setPosition({ lat: w.hp.lat, lng: w.hp.lng });
+      store[name].setIcon(icon);
+      store[name].setTitle(title);
+      store[name].setMap(mapObj);
+    } else {
+      store[name] = new google.maps.Marker({
+        position: { lat: w.hp.lat, lng: w.hp.lng },
+        map: mapObj, icon, title, zIndex: 800
+      });
+    }
+  });
 }
 
 // Map overlay state machine: "loading" (spinner), "nodata", or "hide".
