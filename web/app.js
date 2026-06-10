@@ -1700,25 +1700,48 @@ function renderScopeStrip() {
   });
   const liveRegions = Object.values(counts).sort((a, b) => (b.maxMag - a.maxMag) || (b.count - a.count));
 
-  strip.innerHTML = `
-    <button type="button" class="scope-item scope-basin ${basinScoped ? "active" : ""}"
-            data-scope-basin="1" aria-pressed="${basinScoped}">
-      <span class="scope-item-name">${escapeHtml(basinName)}</span>
-      <span class="scope-item-meta">Monitored basin &middot; ${basinSimulated ? "SIMULATED" : "live pipeline"}</span>
-    </button>
-    ${liveRegions.map(r => {
+  // Keyed in-place update: nodes stay STABLE across polls. A wholesale rebuild
+  // between a user's pointer-down and click made taps land on detached nodes
+  // and silently do nothing (the route "always Cali" bug).
+  const items = [
+    { key: "basin", region: null, name: basinName,
+      meta: `Monitored basin · ${basinSimulated ? "SIMULATED" : "live pipeline"}`,
+      active: basinScoped, border: "" },
+    ...liveRegions.map(r => {
       const sev = getMagnitudeSeverity(r.maxMag);
-      const active = appState.regionFilter === r.region;
-      return `
-      <button type="button" class="scope-item ${active ? "active" : ""}"
-              data-region="${escapeHtml(r.region)}" aria-pressed="${active}"
-              style="border-left-color: ${sev.colorHex};">
-        <span class="scope-item-name">${escapeHtml(r.region)}</span>
-        <span class="scope-item-meta tabular-nums">${r.count} live &middot; max M ${r.maxMag.toFixed(1)}</span>
-      </button>`;
-    }).join("")}`;
+      return { key: `region:${r.region}`, region: r.region, name: r.region,
+        meta: `${r.count} live · max M ${r.maxMag.toFixed(1)}`,
+        active: appState.regionFilter === r.region, border: sev.colorHex };
+    })
+  ];
 
-  // Basin-scoped panels carry an explicit scope chip and collapse while a
+  const desiredKeys = items.map(i => i.key).join("|");
+  if (strip.dataset.keys !== desiredKeys) {
+    strip.innerHTML = items.map(i => `
+      <button type="button" class="scope-item${i.region ? "" : " scope-basin"}"
+              ${i.region ? `data-region="${escapeHtml(i.region)}"` : `data-scope-basin="1"`}>
+        <span class="scope-item-name"></span>
+        <span class="scope-item-meta tabular-nums"></span>
+      </button>`).join("");
+    strip.dataset.keys = desiredKeys;
+  }
+
+  Array.from(strip.children).forEach((el, idx) => {
+    const item = items[idx];
+    if (!item) return;
+    el.classList.toggle("active", item.active);
+    el.setAttribute("aria-pressed", String(item.active));
+    if (item.border) el.style.borderLeftColor = item.border;
+    el.setAttribute("aria-label", item.region
+      ? `${item.active ? "Clear the" : "Filter the live feed to the"} ${item.region} region`
+      : "Return to the monitored basin view");
+    const nameEl = el.querySelector(".scope-item-name");
+    const metaEl = el.querySelector(".scope-item-meta");
+    if (nameEl && nameEl.textContent !== item.name) nameEl.textContent = item.name;
+    if (metaEl && metaEl.textContent !== item.meta) metaEl.textContent = item.meta;
+  });
+
+  // Basin-scoped panels carry an explicit scope chip and hide while a
   // seismic scope owns the page (G2).
   document.querySelectorAll("[data-scope-chip]").forEach(chip => {
     chip.textContent = `${basinName.toUpperCase()} BASIN${basinSimulated ? " · SIMULATED" : ""}`;
@@ -3105,18 +3128,31 @@ function populateMuniDropdown() {
 function renderPublicAreaStrip(munis) {
   const strip = document.getElementById("public-area-strip");
   if (!strip) return;
-  strip.innerHTML = (munis || []).map(name => {
+  const list = munis || [];
+
+  // Same stable-node treatment as the scope strip (tap race fix).
+  const desiredKeys = list.join("|");
+  if (strip.dataset.keys !== desiredKeys) {
+    strip.innerHTML = list.map(name => `
+      <button type="button" class="scope-item public-area-item" data-public-area="${escapeHtml(name)}">
+        <span class="scope-item-name">${escapeHtml(name)}</span>
+        <span class="scope-item-meta"></span>
+      </button>`).join("");
+    strip.dataset.keys = desiredKeys;
+  }
+
+  Array.from(strip.children).forEach(el => {
+    const name = el.dataset.publicArea;
     const risk = database.risk.find(r => r.municipality === name);
     const sev = risk ? getSeverityConfig(risk.risk_score) : null;
-    const active = appState.selectedMuni && appState.selectedMuni.municipality === name;
-    return `
-      <button type="button" class="scope-item public-area-item ${active ? "active" : ""}"
-              data-public-area="${escapeHtml(name)}" aria-pressed="${active}"
-              style="border-left-color: ${sev ? sev.colorHex : "var(--border-color)"};">
-        <span class="scope-item-name">${escapeHtml(name)}</span>
-        <span class="scope-item-meta">${sev ? `${escapeHtml(sev.label)} &middot; ${(risk.risk_score * 100).toFixed(0)}%` : "&mdash;"}</span>
-      </button>`;
-  }).join("");
+    const active = !!(appState.selectedMuni && appState.selectedMuni.municipality === name);
+    el.classList.toggle("active", active);
+    el.setAttribute("aria-pressed", String(active));
+    el.style.borderLeftColor = sev ? sev.colorHex : "var(--border-color)";
+    const metaEl = el.querySelector(".scope-item-meta");
+    const txt = sev ? `${sev.label} · ${(risk.risk_score * 100).toFixed(0)}%` : "—";
+    if (metaEl && metaEl.textContent !== txt) metaEl.textContent = txt;
+  });
 }
 
 // Public area selection (cards or map markers): the route, hero, alert card,
