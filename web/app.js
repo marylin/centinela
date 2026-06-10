@@ -240,6 +240,7 @@ const COMPASS_8 = ["north", "northeast", "east", "southeast", "south", "southwes
 let publicMap = null;
 let publicMarkers = {};
 let publicZoneCircle = null;
+let publicEventMarker = null; // epicenter marker for the public event view
 let youAreHereMarker = null;
 let elevationService = null;
 const elevationDirCache = {}; // municipality -> "north".."northwest" (only SUCCESSFUL results cached)
@@ -3080,13 +3081,160 @@ function setupDiagnosticsSlideout() {
   });
 }
 
+// Plain-language wording for earthquake strength (kept simple and honest).
+function magnitudeWord(mag) {
+  if (mag >= 7) return "Great";
+  if (mag >= 6) return "Major";
+  if (mag >= 5) return "Strong";
+  return "Moderate";
+}
+
+// Public seismic layer: the same real feed, read-only, in plain language.
+function renderPublicSeismicList() {
+  const listEl = document.getElementById("public-seismic-list");
+  if (!listEl) return;
+  const events = (database.seismicEvents.events || []).slice(0, 8);
+  if (!events.length) {
+    listEl.innerHTML = `<div class="empty-alerts">No magnitude 4.5+ earthquakes detected in the last 48 hours.</div>`;
+    return;
+  }
+  listEl.innerHTML = events.map(ev => {
+    const mag = Number(ev.magnitude) || 0;
+    const sev = getMagnitudeSeverity(mag);
+    const tag = ev.simulated === true ? " · SIMULATED (demo)" : "";
+    const depth = (typeof ev.depth_km === "number") ? `, ${ev.depth_km.toFixed(0)} km deep` : "";
+    return `
+      <div class="plain-warning-card" style="border-left: 3px solid ${sev.colorHex};">
+        <span class="plain-warning-title">${magnitudeWord(mag)} earthquake (M ${mag.toFixed(1)}) &middot; ${escapeHtml(ev.place || "Unknown location")}</span>
+        <span class="plain-warning-body">${formatRelativeTime(ev.time)}${depth}${tag}</span>
+      </div>`;
+  }).join("");
+}
+
+// Show/hide the basin-specific public sections (irrelevant when the page is
+// aligned to a remote seismic event).
+function setPublicBasinSectionsVisible(visible) {
+  ["safe-route-card", "public-advisories-card"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !visible;
+  });
+  const ctx = document.getElementById("public-alert-context");
+  if (ctx) ctx.hidden = !visible;
+  const mapTitle = document.getElementById("public-map-title");
+  if (mapTitle) mapTitle.textContent = visible ? "This is your area" : "Event location";
+}
+
+// Cross-mode alignment: an event selected in Operations renders as a
+// plain-language public event view (seismic-only, honestly labeled).
+function renderPublicEventView(focus) {
+  const ev = focus.event;
+  const heroContainer = document.getElementById("public-status-hero");
+  const guidanceList = document.getElementById("public-guidance-list");
+  if (!heroContainer || !ev) return;
+
+  setPublicBasinSectionsVisible(false);
+
+  const mag = Number(ev.magnitude) || 0;
+  const simulated = ev.simulated === true;
+  const sevRisk = focus.severity
+    ? getSeverityConfigByLabel(focus.severity)
+    : getMagnitudeSeverity(mag);
+  const statusWord = (focus.severity || sevRisk.label || "").toUpperCase() || "EVENT";
+  const rel = formatRelativeTime(ev.time);
+  const whenLocal = new Date(ev.time).toLocaleString();
+  const source = simulated ? "Centinela demo (SIMULATED event)" : "U.S. Geological Survey (USGS)";
+
+  const alertCard = document.getElementById("public-alert-card");
+  if (alertCard) alertCard.style.borderLeft = `4px solid ${sevRisk.colorHex}`;
+  const fieldsEl = document.getElementById("public-alert-fields");
+  if (fieldsEl) {
+    fieldsEl.innerHTML = `
+      <div class="alert-field">
+        <dt class="alert-field-label">Hazard</dt>
+        <dd class="alert-field-value">Earthquake${simulated ? " (SIMULATED)" : ""}</dd>
+      </div>
+      <div class="alert-field">
+        <dt class="alert-field-label">Where</dt>
+        <dd class="alert-field-value">${escapeHtml(ev.place || "Unknown location")}</dd>
+      </div>
+      <div class="alert-field alert-field-wide">
+        <dt class="alert-field-label">Action</dt>
+        <dd class="alert-field-value">${HAZARD_ACTIONS.SEISMIC}</dd>
+      </div>
+      <div class="alert-field">
+        <dt class="alert-field-label">When</dt>
+        <dd class="alert-field-value">${escapeHtml(whenLocal)} (${rel})</dd>
+      </div>
+      <div class="alert-field">
+        <dt class="alert-field-label">Source</dt>
+        <dd class="alert-field-value">${source}</dd>
+      </div>`;
+  }
+  const uphill = document.getElementById("public-alert-uphill");
+  if (uphill) uphill.hidden = true;
+
+  const depthText = (typeof ev.depth_km === "number") ? ` at a depth of ${ev.depth_km.toFixed(0)} km` : "";
+  heroContainer.innerHTML = `
+    <div class="public-hero-title">Selected event status</div>
+    <div class="public-hero-status" style="color: ${sevRisk.colorHex}">${statusWord}</div>
+    <p class="public-hero-desc">A ${magnitudeWord(mag).toLowerCase()} earthquake (magnitude ${mag.toFixed(1)}) occurred ${escapeHtml(ev.place || "at an unknown location")}, ${rel}${depthText}. This view is seismic-only: flood and landslide conditions are not modeled for this location.</p>
+    <div class="public-hero-timestamp">Last updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+  `;
+
+  if (guidanceList) {
+    guidanceList.innerHTML = [
+      HAZARD_ACTIONS.SEISMIC,
+      "Expect aftershocks. Each one is a reminder to stay clear of damaged structures.",
+      "Check official sources for tsunami guidance if you are near the coast.",
+      "Follow instructions from your local civil protection authorities."
+    ].map(item => `
+      <div class="guidance-item">
+        <span class="guidance-item-bullet">&bull;</span>
+        <span>${item}</span>
+      </div>`).join("");
+  }
+
+  // Event location on the public map.
+  initPublicMap();
+  if (publicMap && typeof google !== "undefined" &&
+      typeof ev.latitude === "number" && typeof ev.longitude === "number") {
+    const pos = { lat: ev.latitude, lng: ev.longitude };
+    if (!publicEventMarker) {
+      publicEventMarker = new google.maps.Marker({ map: publicMap, zIndex: 2000 });
+    }
+    publicEventMarker.setPosition(pos);
+    publicEventMarker.setIcon({
+      url: getMarkerIconUrl(sevRisk.colorHex, "SEISMIC"),
+      size: new google.maps.Size(36, 36),
+      scaledSize: new google.maps.Size(48, 48),
+      anchor: new google.maps.Point(24, 46)
+    });
+    publicEventMarker.setMap(publicMap);
+    publicMap.setCenter(pos);
+    publicMap.setZoom(6);
+    appState.publicCenteredBasin = null; // re-center on return to basin view
+  }
+}
+
 function renderPublicView() {
   const heroContainer = document.getElementById("public-status-hero");
   const guidanceList = document.getElementById("public-guidance-list");
   const warningsList = document.getElementById("public-warnings-list");
-  
+
   if (!heroContainer) return;
-  
+
+  // The public seismic layer renders in both views.
+  renderPublicSeismicList();
+
+  // Cross-mode alignment: a seismic event selected in Operations owns the
+  // public page too.
+  if (appState.seismicFocus && appState.seismicFocus.event) {
+    renderPublicEventView(appState.seismicFocus);
+    return;
+  }
+  setPublicBasinSectionsVisible(true);
+  if (publicEventMarker) publicEventMarker.setMap(null);
+
   const selectedMuni = appState.selectedMuni || (database.risk.length > 0 ? database.risk[0] : null);
   if (!selectedMuni) {
     heroContainer.innerHTML = `<div>No area data available.</div>`;
