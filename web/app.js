@@ -1858,6 +1858,7 @@ async function focusSeismicEvent(eventId, opts = {}) {
   if (known) {
     appState.seismicFocus = { event: known, pending: true };
     renderSeismicFocusRail();
+    renderScopeStrip(); // hide basin-only panels with the selection, instantly
     placeSeismicFocusOnMap(opts.keepMapView);
     const mapPanel = document.getElementById("risk-map-container");
     if (mapPanel && typeof mapPanel.scrollIntoView === "function") {
