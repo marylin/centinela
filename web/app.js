@@ -915,9 +915,13 @@ async function findSafeRoute() {
       return;
     }
 
-    // Draw the real route on the public map.
+    // Draw the real route on the public map. Very short routes otherwise
+    // fit-zoom past the styled tiles into a featureless canvas, so clamp.
     directionsRenderer.setMap(publicMap);
     directionsRenderer.setDirections(result);
+    google.maps.event.addListenerOnce(publicMap, "idle", () => {
+      if (publicMap.getZoom() > 16) publicMap.setZoom(16);
+    });
 
     // Honest destination labeling — never "official shelter".
     const destEl = document.getElementById("safe-route-dest");
