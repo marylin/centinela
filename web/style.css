@@ -3097,3 +3097,4 @@ button.seismic-event-row:focus-visible {
   padding: 0.4rem; font-size: 0.85rem;
 }
 .api-offline-banner.hidden { display: none; }
+#detail-view[hidden] { display: none; }
