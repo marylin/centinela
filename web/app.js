@@ -1337,13 +1337,34 @@ function renderTelemetryTrend() {
   const summaryEl = document.getElementById("telemetry-trend-summary");
   if (!chartEl) return;
   const hist = database.telemetryHistory;
-  const river = (hist && Array.isArray(hist.river)) ? hist.river.filter(r => r && r.time) : [];
-  const rain = (hist && Array.isArray(hist.rainfall)) ? hist.rainfall.filter(r => r && r.time) : [];
+  const allRiver = (hist && Array.isArray(hist.river)) ? hist.river.filter(r => r && r.time) : [];
+  const allRain = (hist && Array.isArray(hist.rainfall)) ? hist.rainfall.filter(r => r && r.time) : [];
 
-  if (river.length < 2 && rain.length < 2) {
-    chartEl.innerHTML = `<div class="risk-timeline-empty">Not enough telemetry history yet. The series grows as live readings accumulate.</div>`;
-    if (summaryEl) summaryEl.textContent = "Telemetry history is still accumulating.";
-    renderTelemetryTrendTable(river, rain);
+  // Minimum-data rule: a series under 3 points is dropped from the chart and
+  // reported as a text KPI instead — never a lone floating dot.
+  const MIN_POINTS = 3;
+  const riverOk = allRiver.length >= MIN_POINTS;
+  const rainOk = allRain.length >= MIN_POINTS;
+  const river = riverOk ? allRiver : [];
+  const rain = rainOk ? allRain : [];
+
+  const kpiNotes = [];
+  if (!riverOk && allRiver.length) {
+    const last = allRiver[allRiver.length - 1];
+    kpiNotes.push(`River level: ${(Number(last.river_level_m) || 0).toFixed(1)} m vs ${(Number(last.threshold_m) || 0).toFixed(1)} m threshold (${allRiver.length} reading${allRiver.length === 1 ? "" : "s"} in window; too sparse to chart)`);
+  }
+  if (!rainOk && allRain.length) {
+    const last = allRain[allRain.length - 1];
+    kpiNotes.push(`Rainfall: ${(Number(last.precipitation_mm) || 0).toFixed(1)} mm/h latest (${allRain.length} reading${allRain.length === 1 ? "" : "s"} in window; too sparse to chart)`);
+  }
+  const kpiHtml = kpiNotes.length
+    ? `<div class="trend-kpi-notes">${kpiNotes.map(n => `<span>${escapeHtml(n)}</span>`).join("")}</div>`
+    : "";
+
+  if (!riverOk && !rainOk) {
+    chartEl.innerHTML = `<div class="risk-timeline-empty">Not enough telemetry history to chart yet. The series grows as live readings accumulate.${kpiHtml}</div>`;
+    if (summaryEl) summaryEl.textContent = "Telemetry history is still accumulating. " + kpiNotes.join(" ");
+    renderTelemetryTrendTable(allRiver, allRain);
     return;
   }
 
@@ -1410,7 +1431,7 @@ function renderTelemetryTrend() {
     <div class="trend-time-axis tabular-nums" aria-hidden="true">
       <span>${fmtTick(minT)}</span>
       <span>${fmtTick(maxT)}</span>
-    </div>`;
+    </div>${kpiHtml}`;
 
   if (summaryEl) {
     const latestRiver = river.length ? Number(river[river.length - 1].river_level_m) || 0 : null;
@@ -1420,10 +1441,11 @@ function renderTelemetryTrend() {
       `${rain.length} hourly rainfall readings totaling ${totalRain.toFixed(1)} mm. ` +
       (latestRiver !== null
         ? `Latest river level ${latestRiver.toFixed(1)} m against a ${threshold.toFixed(1)} m threshold; ${breaches} reading${breaches === 1 ? "" : "s"} above threshold.`
-        : `No river readings in the window.`);
+        : `No charted river readings in the window.`) +
+      (kpiNotes.length ? " " + kpiNotes.join(" ") : "");
   }
 
-  renderTelemetryTrendTable(river, rain);
+  renderTelemetryTrendTable(allRiver, allRain);
 }
 
 // C3: data-table fallback for the trend chart.

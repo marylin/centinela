@@ -2431,6 +2431,21 @@ span.skeleton-block {
   display: inline-block;
 }
 
+.trend-kpi-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.telemetry-trend-chart .trend-kpi-notes {
+  position: absolute;
+  left: 10px;
+  bottom: 18px;
+}
+
 .trend-time-axis {
   position: absolute;
   bottom: 4px;
