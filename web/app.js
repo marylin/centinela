@@ -1869,6 +1869,13 @@ async function focusSeismicEvent(eventId, opts = {}) {
   const stillFocused = () =>
     appState.seismicFocus && appState.seismicFocus.event && appState.seismicFocus.event.id === eventId;
 
+  // Real conditions at the epicenter (rainfall observed, discharge + soil
+  // modeled) load in parallel with the assessment.
+  const evForConditions = known;
+  if (evForConditions && typeof evForConditions.latitude === "number" && typeof evForConditions.longitude === "number") {
+    fetchLocationConditions(eventId, evForConditions.latitude, evForConditions.longitude);
+  }
+
   try {
     const res = await fetch(`${API_BASE}/seismic-focus?id=${encodeURIComponent(eventId)}`);
     if (!res.ok) throw new Error(`Status ${res.status}`);
@@ -1888,6 +1895,9 @@ async function focusSeismicEvent(eventId, opts = {}) {
       if (mapPanel && typeof mapPanel.scrollIntoView === "function") {
         mapPanel.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "nearest" });
       }
+      if (typeof ev.latitude === "number" && typeof ev.longitude === "number") {
+        fetchLocationConditions(eventId, ev.latitude, ev.longitude);
+      }
     }
   } catch (err) {
     initConsoleLog(`Seismic focus failed: ${err.message}. The /seismic-focus endpoint may not be deployed yet.`, "error");
@@ -1897,6 +1907,61 @@ async function focusSeismicEvent(eventId, opts = {}) {
       renderSeismicFocusRail();
     }
   }
+}
+
+// Conditions at the epicenter: keyed by event id so stale responses for a
+// previous focus never render into the current one.
+async function fetchLocationConditions(eventId, lat, lng) {
+  appState.locationConditions = { eventId: eventId, pending: true };
+  try {
+    const res = await fetch(`${API_BASE}/location-conditions?lat=${lat}&lng=${lng}`);
+    if (!res.ok) throw new Error(`Status ${res.status}`);
+    const data = await res.json();
+    if (!appState.locationConditions || appState.locationConditions.eventId !== eventId) return;
+    appState.locationConditions = { eventId: eventId, pending: false, data: data };
+  } catch (err) {
+    if (!appState.locationConditions || appState.locationConditions.eventId !== eventId) return;
+    appState.locationConditions = { eventId: eventId, pending: false, data: null };
+  }
+  if (appState.seismicFocus && appState.seismicFocus.event && appState.seismicFocus.event.id === eventId) {
+    renderSeismicFocusRail();
+    if (appState.mode === "public") renderPublicView();
+  }
+}
+
+// Markup for the conditions block (rail flavor). Returns "" when there is
+// nothing to show; skeletons while pending.
+function conditionsBlockHtml(eventId) {
+  const lc = appState.locationConditions;
+  if (!lc || lc.eventId !== eventId) return "";
+  if (lc.pending) {
+    return `
+      <div class="epicenter-conditions" aria-busy="true">
+        <span class="drawer-label">Conditions at the epicenter &middot; loading&hellip;</span>
+        <span class="skeleton-block" style="width: 90%; height: 11px; margin-top: 6px;" aria-hidden="true"></span>
+        <span class="skeleton-block" style="width: 75%; height: 11px; margin-top: 5px;" aria-hidden="true"></span>
+      </div>`;
+  }
+  const d = lc.data;
+  if (!d || (!d.rainfall && !d.river_discharge && !d.soil_moisture)) return "";
+  const prov = d.provenance || {};
+  const lines = [];
+  if (d.rainfall) {
+    lines.push(`<div class="condition-line"><span>Rain, last 24h: <strong class="tabular-nums">${(d.rainfall.total_24h_mm).toFixed(1)} mm</strong></span><span class="condition-source">${escapeHtml(prov.rainfall || "")}</span></div>`);
+  }
+  if (d.river_discharge) {
+    const dir = d.river_discharge.direction;
+    const arrow = dir === "rising" ? "&#9650;" : dir === "falling" ? "&#9660;" : "&#9654;";
+    lines.push(`<div class="condition-line"><span>River discharge: <strong class="tabular-nums">${d.river_discharge.latest_m3s.toLocaleString()} m&sup3;/s</strong> ${arrow} ${dir}</span><span class="condition-source">${escapeHtml(prov.river_discharge || "")}</span></div>`);
+  }
+  if (d.soil_moisture) {
+    lines.push(`<div class="condition-line"><span>Soil moisture: <strong class="tabular-nums">${d.soil_moisture.latest_m3m3.toFixed(2)} m&sup3;/m&sup3;</strong></span><span class="condition-source">${escapeHtml(prov.soil_moisture || "")}</span></div>`);
+  }
+  return `
+    <div class="epicenter-conditions">
+      <span class="drawer-label">Conditions at the epicenter</span>
+      ${lines.join("")}
+    </div>`;
 }
 
 function placeSeismicFocusOnMap(keepMapView = false) {
@@ -2028,6 +2093,7 @@ function renderSeismicFocusRail() {
         <span class="drawer-label">Narration</span>
         <p>${escapeHtml(focus.narration)}</p>
       </div>` : ""}`}
+      ${conditionsBlockHtml(ev.id)}
       <p class="seismic-focus-note">${noteText}</p>
       <button type="button" class="btn btn-sm seismic-focus-return" id="seismic-focus-return">Close event focus &middot; back to the monitored basin</button>
     </div>
@@ -3185,6 +3251,7 @@ function renderPublicEventView(focus) {
     <div class="public-hero-title">Selected event status</div>
     <div class="public-hero-status" style="color: ${sevRisk.colorHex}">${statusWord}</div>
     <p class="public-hero-desc">A ${magnitudeWord(mag).toLowerCase()} earthquake (magnitude ${mag.toFixed(1)}) occurred ${escapeHtml(ev.place || "at an unknown location")}, ${rel}${depthText}. This view is seismic-only: flood and landslide conditions are not modeled for this location.</p>
+    ${conditionsBlockHtml(ev.id)}
     <div class="public-hero-timestamp">Last updated: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
   `;
 

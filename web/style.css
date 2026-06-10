@@ -2926,6 +2926,34 @@ button.seismic-event-row:focus-visible {
   color: var(--text-muted);
 }
 
+/* Conditions at the epicenter (focus rail + public event view). */
+.epicenter-conditions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: rgba(255, 255, 255, 0.02);
+  text-align: left;
+}
+
+.condition-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--text-main);
+}
+
+.condition-source {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
 @media (prefers-reduced-motion: reduce) {
   button.seismic-event-row {
     transition: none;
