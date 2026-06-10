@@ -160,6 +160,11 @@ def score_place(candidate, today, months):
     if days_ex or ratio:
         flood = min(1.0, 0.6 * min(1.0, days_ex / 15.0)
                     + 0.4 * min(1.0, max(0.0, ratio - 0.8) / 0.6))
+        # Same creek-cell dampening as the monitored model: a relative spike
+        # on a sub-10 m3/s stream must not dominate the activity board.
+        cell_p50 = rec.get("cell_p50_m3s")
+        if cell_p50 is not None and cell_p50 < 10.0:
+            flood = min(0.5, flood * 0.5)
     rec["seismic_score"] = round(seismic, 2)
     rec["flood_score"] = round(flood, 2)
     rec["activity_score"] = round(max(seismic, flood), 2)
