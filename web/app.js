@@ -1351,14 +1351,20 @@ function renderTelemetryTrend() {
   const hist = database.telemetryHistory;
   const allRiver = (hist && Array.isArray(hist.river)) ? hist.river.filter(r => r && r.time) : [];
   const allRain = (hist && Array.isArray(hist.rainfall)) ? hist.rainfall.filter(r => r && r.time) : [];
+  // GloFAS model discharge: chart only the recent window so the 31-day series
+  // does not stretch the x-domain away from the 48h rainfall bars.
+  const allDischarge = (hist && Array.isArray(hist.discharge)) ? hist.discharge.filter(r => r && r.date) : [];
+  const chartDischarge = allDischarge.slice(-8);
 
   // Minimum-data rule: a series under 3 points is dropped from the chart and
   // reported as a text KPI instead — never a lone floating dot.
   const MIN_POINTS = 3;
   const riverOk = allRiver.length >= MIN_POINTS;
   const rainOk = allRain.length >= MIN_POINTS;
+  const dischargeOk = chartDischarge.length >= MIN_POINTS;
   const river = riverOk ? allRiver : [];
   const rain = rainOk ? allRain : [];
+  const discharge = dischargeOk ? chartDischarge : [];
 
   const kpiNotes = [];
   if (!riverOk && allRiver.length) {
@@ -1369,19 +1375,24 @@ function renderTelemetryTrend() {
     const last = allRain[allRain.length - 1];
     kpiNotes.push(`Rainfall: ${(Number(last.precipitation_mm) || 0).toFixed(1)} mm/h latest (${allRain.length} reading${allRain.length === 1 ? "" : "s"} in window; too sparse to chart)`);
   }
+  if (!dischargeOk && allDischarge.length) {
+    const last = allDischarge[allDischarge.length - 1];
+    kpiNotes.push(`River discharge (GloFAS model): ${(Number(last.discharge_m3s) || 0).toLocaleString()} m³/s latest (${allDischarge.length} day${allDischarge.length === 1 ? "" : "s"}; too sparse to chart)`);
+  }
   const kpiHtml = kpiNotes.length
     ? `<div class="trend-kpi-notes">${kpiNotes.map(n => `<span>${escapeHtml(n)}</span>`).join("")}</div>`
     : "";
 
-  if (!riverOk && !rainOk) {
+  if (!riverOk && !rainOk && !dischargeOk) {
     chartEl.innerHTML = `<div class="risk-timeline-empty">Not enough telemetry history to chart yet. The series grows as live readings accumulate.${kpiHtml}</div>`;
     if (summaryEl) summaryEl.textContent = "Telemetry history is still accumulating. " + kpiNotes.join(" ");
-    renderTelemetryTrendTable(allRiver, allRain);
+    renderTelemetryTrendTable(allRiver, allRain, allDischarge);
     return;
   }
 
   const W = 300, H = 100, PAD = 4;
-  const times = [...river.map(r => Date.parse(r.time)), ...rain.map(r => Date.parse(r.time))].filter(t => !isNaN(t));
+  const times = [...river.map(r => Date.parse(r.time)), ...rain.map(r => Date.parse(r.time)),
+                 ...discharge.map(r => Date.parse(r.date))].filter(t => !isNaN(t));
   const minT = Math.min(...times), maxT = Math.max(...times);
   const spanT = Math.max(1, maxT - minT);
   const x = t => PAD + ((t - minT) / spanT) * (W - 2 * PAD);
@@ -1422,6 +1433,19 @@ function renderTelemetryTrend() {
     }
   }
 
+  // GloFAS discharge line: own scale, distinct color, always-dashed so the
+  // model series is visually distinct from the (gauge-style) river level.
+  let dischargeLine = "";
+  if (discharge.length) {
+    const vals = discharge.map(r => Number(r.discharge_m3s) || 0);
+    const dLo = Math.min(...vals) * 0.95, dHi = Math.max(...vals) * 1.05;
+    const dy = v => H - PAD - ((v - dLo) / Math.max(0.001, dHi - dLo)) * (H * 0.55);
+    const pts = discharge.map(r => `${x(Date.parse(r.date)).toFixed(1)},${dy(Number(r.discharge_m3s) || 0).toFixed(1)}`);
+    dischargeLine = `<polyline points="${pts.join(" ")}" fill="none" stroke="#34d399" stroke-width="1.4"
+      stroke-dasharray="5 3" stroke-linejoin="round" stroke-linecap="round" opacity="0.9">
+      <title>River discharge (GloFAS model), m³/s</title></polyline>`;
+  }
+
   // Time orientation: a gridline every 12h plus start/end labels (G5).
   let timeTicks = "";
   const TICK_MS = 12 * 3600 * 1000;
@@ -1433,11 +1457,12 @@ function renderTelemetryTrend() {
 
   chartEl.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" focusable="false" class="telemetry-trend-svg">
-      ${timeTicks}${rainBars}${thresholdLine}${riverLine}${breachMarks}
+      ${timeTicks}${rainBars}${thresholdLine}${riverLine}${dischargeLine}${breachMarks}
     </svg>
     <div class="trend-legend" aria-hidden="true">
       <span class="trend-legend-item"><span class="trend-swatch trend-swatch-river"></span>River level (m)</span>
       <span class="trend-legend-item"><span class="trend-swatch trend-swatch-rain"></span>Rainfall (mm/h)</span>
+      <span class="trend-legend-item"><span class="trend-swatch trend-swatch-discharge"></span>Discharge (GloFAS model)</span>
       <span class="trend-legend-item"><span class="trend-swatch trend-swatch-threshold"></span>Alert threshold</span>
     </div>
     <div class="trend-time-axis tabular-nums" aria-hidden="true">
@@ -1449,19 +1474,21 @@ function renderTelemetryTrend() {
     const latestRiver = river.length ? Number(river[river.length - 1].river_level_m) || 0 : null;
     const totalRain = rain.reduce((acc, r) => acc + (Number(r.precipitation_mm) || 0), 0);
     const breaches = threshold > 0 ? river.filter(r => (Number(r.river_level_m) || 0) > threshold).length : 0;
+    const latestDischarge = allDischarge.length ? Number(allDischarge[allDischarge.length - 1].discharge_m3s) || 0 : null;
     summaryEl.textContent =
       `${rain.length} hourly rainfall readings totaling ${totalRain.toFixed(1)} mm. ` +
       (latestRiver !== null
-        ? `Latest river level ${latestRiver.toFixed(1)} m against a ${threshold.toFixed(1)} m threshold; ${breaches} reading${breaches === 1 ? "" : "s"} above threshold.`
-        : `No charted river readings in the window.`) +
+        ? `Latest river level ${latestRiver.toFixed(1)} m against a ${threshold.toFixed(1)} m threshold; ${breaches} reading${breaches === 1 ? "" : "s"} above threshold. `
+        : `No charted river readings in the window. `) +
+      (latestDischarge !== null ? `Latest modeled river discharge ${latestDischarge.toLocaleString()} m³/s (GloFAS).` : "") +
       (kpiNotes.length ? " " + kpiNotes.join(" ") : "");
   }
 
-  renderTelemetryTrendTable(allRiver, allRain);
+  renderTelemetryTrendTable(allRiver, allRain, allDischarge);
 }
 
 // C3: data-table fallback for the trend chart.
-function renderTelemetryTrendTable(river, rain) {
+function renderTelemetryTrendTable(river, rain, discharge) {
   const tableEl = document.getElementById("telemetry-trend-table");
   if (!tableEl || tableEl.hidden) return;
   const riverRows = (river || []).slice(-10).reverse().map(r => `<tr>
@@ -1483,6 +1510,14 @@ function renderTelemetryTrendTable(river, rain) {
       <caption>Hourly rainfall (live recorded)</caption>
       <thead><tr><th scope="col">Hour</th><th scope="col">Rainfall</th></tr></thead>
       <tbody>${rainRows || `<tr><td colspan="2">No readings in the window.</td></tr>`}</tbody>
+    </table>
+    <table class="chart-table">
+      <caption>Daily river discharge (GloFAS model)</caption>
+      <thead><tr><th scope="col">Date</th><th scope="col">Discharge</th></tr></thead>
+      <tbody>${(discharge || []).slice(-10).reverse().map(r => `<tr>
+        <td class="tabular-nums">${escapeHtml(r.date)}</td>
+        <td class="tabular-nums">${(Number(r.discharge_m3s) || 0).toLocaleString()} m³/s</td>
+      </tr>`).join("") || `<tr><td colspan="2">No model data yet.</td></tr>`}</tbody>
     </table>`;
 }
 

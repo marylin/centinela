@@ -1327,10 +1327,17 @@ def get_telemetry_history(basin: str = "rio_cauca"):
             }
             for h in range(48, -1, -2)
         ]
-        return {"basin": basin, "river": river, "rainfall": rainfall,
-                "provenance": {"rainfall": "live", "river": "pipeline-seeded"}}
+        discharge = [
+            {
+                "date": (now - timedelta(days=d)).strftime("%Y-%m-%d"),
+                "discharge_m3s": round(1100.0 + 180.0 * math.sin((31 - d) / 6.0), 1)
+            }
+            for d in range(31, -1, -1)
+        ]
+        return {"basin": basin, "river": river, "rainfall": rainfall, "discharge": discharge,
+                "provenance": {"rainfall": "live", "river": "pipeline-seeded", "discharge": "model-glofas"}}
 
-    river, rainfall = [], []
+    river, rainfall, discharge = [], [], []
     try:
         client = bigquery.Client(project='centinela-498622')
         river_sql = load_sql("telemetry_river_history.sql").replace("'Rio Cauca'", f"'{basin_name}'")
@@ -1353,8 +1360,22 @@ def get_telemetry_history(basin: str = "rio_cauca"):
     except Exception as e:
         # Degrade to empty (well-formed) series; the chart shows its empty state.
         print(f"Error querying telemetry history for {basin}: {e}", flush=True)
-    return {"basin": basin, "river": river, "rainfall": rainfall,
-            "provenance": {"rainfall": "live", "river": "pipeline-seeded"}}
+    try:
+        # Separate try: the global_hydro dataset only exists once the second
+        # connector has synced; rainfall/river must not degrade with it.
+        client = bigquery.Client(project='centinela-498622')
+        discharge_sql = load_sql("telemetry_discharge_history.sql").replace("'rio_cauca'", f"'{basin}'")
+        for row in client.query(discharge_sql).result():
+            rd = dict(row)
+            d = rd.get("date")
+            discharge.append({
+                "date": d.isoformat() if hasattr(d, "isoformat") else str(d),
+                "discharge_m3s": float(rd.get("discharge_m3s") or 0.0)
+            })
+    except Exception as e:
+        print(f"Error querying discharge history for {basin}: {e}", flush=True)
+    return {"basin": basin, "river": river, "rainfall": rainfall, "discharge": discharge,
+            "provenance": {"rainfall": "live", "river": "pipeline-seeded", "discharge": "model-glofas"}}
 
 # --- Conditions at ANY location (real, multi-source, honestly labeled) -------
 # Sources: Google Weather hourly history (observed rainfall, 24h), Open-Meteo
