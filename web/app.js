@@ -3297,17 +3297,27 @@ function renderPublicSeismicList() {
   const listEl = document.getElementById("public-seismic-list");
   if (!listEl) return;
   // Residents see earthquakes near THEIR area, not the other hemisphere.
+  // When a seismic focus owns the public page (event view), the list follows
+  // the EVENT's location instead of the previously selected municipality:
+  // aftershocks and regional context, with the focused event itself excluded
+  // (it is already the hero).
+  const focusEv = appState.seismicFocus && appState.seismicFocus.event;
+  const eventScoped = !!(focusEv && typeof focusEv.latitude === "number");
   const muniName = appState.selectedMuni && appState.selectedMuni.municipality;
-  const coords = muniName ? municipalityCoords[muniName] : null;
+  const coords = eventScoped
+    ? { lat: focusEv.latitude, lng: focusEv.longitude }
+    : (muniName ? municipalityCoords[muniName] : null);
+  const scopeLabel = eventScoped ? "this event" : (muniName || "your area");
   const headingEl = document.getElementById("public-seismic-heading");
-  if (headingEl && muniName) headingEl.textContent = `Earthquakes near ${muniName}`;
-  const all = database.seismicEvents.events || [];
+  if (headingEl) headingEl.textContent = `Earthquakes near ${scopeLabel}`;
+  const all = (database.seismicEvents.events || [])
+    .filter(ev => !(eventScoped && ev.id === focusEv.id));
   const events = (coords
     ? all.filter(ev => typeof ev.latitude === "number" &&
         haversineMeters(coords, { lat: ev.latitude, lng: ev.longitude }) <= 800000)
     : all).slice(0, 8);
   if (!events.length) {
-    listEl.innerHTML = `<div class="empty-alerts">No magnitude 4.5+ earthquakes within ~800 km of ${escapeHtml(muniName || "your area")} in the last 48 hours.</div>`;
+    listEl.innerHTML = `<div class="empty-alerts">No ${eventScoped ? "other " : ""}magnitude 4.5+ earthquakes within ~800 km of ${escapeHtml(scopeLabel)} in the last 48 hours.</div>`;
     return;
   }
   listEl.innerHTML = events.map(ev => {
