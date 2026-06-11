@@ -62,3 +62,9 @@ docs/
 .claude/
 .playwright-mcp/
 build-log.md
+
+# Scratch and runtime artifacts (local only, never commit)
+*.log
+/package-lock.json
+/soil_saturation.csv
+/tmp*
