@@ -1,7 +1,5 @@
 # Centinela - Multi-Hazard Monitoring
 
-<!-- TODO: add CI badge once the public GitHub repo exists -->
-
 Centinela watches natural hazards (floods, heavy rain, unstable ground, and earthquakes) in 29 cities around the world, plus 9 more it keeps an eye on, and turns real measurements into one plain risk level per place: Low, Warning, Danger, or Critical. Everything on the map comes from real data: a global river model, weather services, and the United States Geological Survey. When the risk for a city rises, residents who subscribed get a push notification, can read the advice in their own language, and can listen to it spoken aloud.
 
 Behind the map, an autonomous DataOps agent keeps the data pipeline healthy: when a connector goes stale, the agent forces a re-sync through the Fivetran MCP server, with retries and an auditable action history, and never silently hides a degraded pipeline.
@@ -141,8 +139,8 @@ rapid-agent/
 ## Quick Start
 
 ```bash
-# 1. Clone (placeholder until the public repo exists)
-# git clone <your-repo-url> && cd rapid-agent
+# 1. Clone
+git clone https://github.com/marylin/centinela.git && cd centinela
 
 # 2. Python deps
 python -m venv .venv
@@ -163,8 +161,8 @@ See [QUICKGUIDE.md](QUICKGUIDE.md) for full setup, GCP configuration, deployment
 - **App (frontend + API):** https://centinela-v1-765013283380.us-central1.run.app
 - **API docs:** https://centinela-v1-765013283380.us-central1.run.app/docs
 - **CAP v1.2 feed:** https://centinela-v1-765013283380.us-central1.run.app/cap.xml
+- **Source repo:** https://github.com/marylin/centinela
 - **Demo video:** _TODO: link to be added_
-- **Source repo:** _TODO: public repository URL to be added_
 
 ## How It Works
 

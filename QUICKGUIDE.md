@@ -17,8 +17,8 @@ You do not need any of the Google Cloud services to run the app locally. With `T
 ## 2. Clone and Install
 
 ```bash
-# git clone <your-repo-url>   # TODO: public repo URL to be added
-cd rapid-agent
+git clone https://github.com/marylin/centinela.git
+cd centinela
 
 python -m venv .venv
 . .venv/Scripts/activate         # Windows
