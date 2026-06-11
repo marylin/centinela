@@ -80,8 +80,10 @@
     <h2>Reaching people</h2>
     <p>Alert content is translated with Cloud Translation (cached per string, human-correctable),
     spoken with Cloud Text-to-Speech, and pushed through Firebase Cloud Messaging topics: one
-    topic per place, one message per severity change. The site installs as a web app. A
-    standards-compliant CAP v1.2 feed is available for emergency-management systems.</p>
+    topic per place, one message per severity change. The site is an installable PWA: a service
+    worker precaches the app shell and serves it network-first, so it installs to the home screen
+    and still opens offline (showing the last data seen). A standards-compliant CAP v1.2 feed is
+    available for emergency-management systems.</p>
     <h2>Where it runs</h2>
     <p>The backend is FastAPI on Google Cloud Run; state lives in Firestore; the frontend is
     plain JavaScript modules with Google Maps. The whole stack re-deploys from source in one
