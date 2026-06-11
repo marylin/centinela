@@ -10,9 +10,9 @@
 
 **[Watch the demo](https://youtu.be/dYvGX69SiUY)**  ·  **[Open the live app](https://centinela-v1-765013283380.us-central1.run.app)**  ·  **[Devpost](https://devpost.com/software/centinela-nivb7o)**  ·  **[API docs](https://centinela-v1-765013283380.us-central1.run.app/docs)**  ·  **[The story behind it](JOURNEY.md)**
 
-[![Watch the Centinela demo on YouTube](https://img.youtube.com/vi/dYvGX69SiUY/maxresdefault.jpg)](https://youtu.be/dYvGX69SiUY)
-
-![Every monitored city with its live risk level, plus a worldwide seismic feed](assets/screenshots/all-places.png)
+<p align="center">
+  <a href="https://youtu.be/dYvGX69SiUY"><img src="https://img.youtube.com/vi/dYvGX69SiUY/maxresdefault.jpg" alt="Watch the Centinela demo on YouTube" width="640"></a>
+</p>
 
 Centinela watches natural hazards (floods, heavy rain, unstable ground, and earthquakes) in 29 cities around the world, plus 9 more it keeps an eye on, and turns real measurements into one plain risk level per place: Low, Warning, Danger, or Critical. Everything on the map comes from real data: a global river model, weather services, and the United States Geological Survey. When the risk for a city rises, residents who subscribed get a push notification, can read the advice in their own language, and can listen to it spoken aloud.
 
@@ -147,17 +147,30 @@ rapid-agent/
 
 ### A look at it
 
-A monitored city's public alert, translated into the resident's language, with controls to read or listen in either language:
+Every monitored city with its live risk level, plus a worldwide seismic feed:
 
-![Translated public alert for a monitored city, with read and listen language controls](assets/screenshots/feature-alert-card.png)
+<p align="center">
+  <img src="assets/screenshots/all-places.png" alt="All monitored cities with live risk levels and a worldwide seismic feed" width="600">
+</p>
 
-Live history for that place: observed rain, modeled river discharge, and soil moisture, with labeled axes and point values:
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/screenshots/feature-alert-card.png" alt="Translated public alert with read and listen controls" width="100%">
+      <br><sub>A monitored city's alert, translated, with controls to read or listen in either language.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/screenshots/feature-trends.png" alt="Rain, river, and soil history with labeled axes and values" width="100%">
+      <br><sub>That place's rain, river discharge, and soil history, with labeled axes and values.</sub>
+    </td>
+  </tr>
+</table>
 
-![Rain, river discharge, and soil moisture history with labeled axes and values](assets/screenshots/feature-trends.png)
+<p align="center">
+  <img src="assets/screenshots/feature-nam-detail.png" alt="A not-actively-monitored place with an activity score from public records" width="320">
+</p>
 
-A place we only keep an eye on (N.A.M.): an activity score from public earthquake and river records, clearly labeled as history, with no alerts:
-
-![A not-actively-monitored place showing an activity score derived from public records](assets/screenshots/feature-nam-detail.png)
+A place we only keep an eye on (N.A.M.): an activity score from public earthquake and river records, labeled as history, with no alerts.
 
 More views, including the full city detail, the map, the worldwide seismic feed, and the self-healing diagnostics panel, are in [SCREENSHOTS.md](SCREENSHOTS.md).
 
