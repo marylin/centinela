@@ -89,6 +89,38 @@ function setupOfflineBanner() {
   });
 }
 
+function setupServiceWorker() {
+  // Register the worker on every load (not only when notifications are enabled)
+  // so the page is controlled from first visit, satisfying PWA install criteria
+  // and enabling the offline shell. Registration is idempotent; the
+  // notifications flow reuses this same registration for its push token.
+  if (!("serviceWorker" in navigator)) return;
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/firebase-messaging-sw.js").catch(() => {});
+  });
+}
+
+let deferredInstallPrompt = null;
+function setupInstallPrompt() {
+  const btn = document.getElementById("install-app-btn");
+  if (!btn) return;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    // Android/desktop: stash the event and surface our own button. iOS never
+    // fires this (install stays manual via Share > Add to Home Screen).
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    btn.hidden = false;
+  });
+  btn.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    btn.hidden = true;
+  });
+  window.addEventListener("appinstalled", () => { btn.hidden = true; });
+}
+
 function startClock() {
   const el = document.getElementById("system-time");
   if (!el) return;
@@ -120,6 +152,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupNotifications();
   setupDiagnostics();
   setupPages();
+  setupServiceWorker();
+  setupInstallPrompt();
   startClock();
 
   await refreshRegistry();
