@@ -1,6 +1,6 @@
-# Global agent rules (Antigravity)
+# Global agent rules
 
-These are always-on instructions, ported from a working Claude Code setup. A workspace GEMINI.md overrides this global file. Keep this concise so it does not bloat context.
+These are always-on instructions. A workspace GEMINI.md overrides this global file. Keep this concise so it does not bloat context.
 
 ## Response style
 - Default to 1 to 3 sentences. Stop and wait for follow-ups. Add detail only when asked "why" or "show me".
@@ -32,7 +32,7 @@ These are always-on instructions, ported from a working Claude Code setup. A wor
 
 ## Model use (contest project)
 - This is a Gemini-only build for a hackathon. Use Gemini 3.1 Pro (High) for the decisive steps and Gemini Flash for cheap extraction and routing.
-- Do not select Claude or GPT models for any submission work, even though the IDE offers them.
+- Use only the approved Gemini models for any submission work.
 
 ## Loop and quota discipline (this runs on a limited plan)
 - Never repeat the same tool call or the same thought more than twice. If two attempts make no real progress (no file changed, no new information), stop and report what is stuck. Do not keep re-planning.
@@ -64,7 +64,7 @@ These are always-on instructions, ported from a working Claude Code setup. A wor
 ## Commits
 - Make one logical commit per unit, not a single commit for everything. Group related files; keep throwaway artifacts (screenshots, captured pages, scratch tests) out of the repo.
 
-## Repo conventions (match the Claude workflow)
+## Repo conventions
 - The docs folder is local working space: read and write it freely, but it stays gitignored and is never committed or staged. The same applies to .env and .env.* (secrets) and the virtual environment.
 - Root-level markdown is limited to README and this rules file. Working notes go under the docs folder.
 - CRITICAL: the docs folder is gitignored, so anything placed there will NOT be committed or shipped. Source code, SQL, queries, and any deliverable the submission or the deployed agent needs must live in a tracked path OUTSIDE docs (for example a sql/ directory or the agent package). After committing, verify the file is actually tracked, not silently ignored.

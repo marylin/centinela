@@ -59,4 +59,6 @@ fivetran_keys/
 # Local working space (read/write freely, never commit)
 docs/
 .gstack/
+.claude/
+.playwright-mcp/
 build-log.md
