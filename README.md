@@ -147,7 +147,21 @@ rapid-agent/
 - **Autonomous DataOps agent** (Google ADK on Gemini) watches the Fivetran connectors. If one goes stale (no successful sync in 5 minutes, or setup never completed), the agent uses the Fivetran MCP write tools to force a re-sync and raise the sync frequency, with bounded retries and a visible, auditable heal history. It never silences a degraded pipeline.
 - **Diagnostics slideout** in the UI shows connector freshness, autonomous heals, and incident history, plus demo controls to simulate an outage or inject a SIMULATED event.
 
-![A monitored city in detail: a translated public alert, the map, the hazard breakdown, and rain, river, and soil history](assets/screenshots/place-detail.png)
+### A look at it
+
+A monitored city's public alert, translated into the resident's language, with controls to read or listen in either language:
+
+![Translated public alert for a monitored city, with read and listen language controls](assets/screenshots/feature-alert-card.png)
+
+Live history for that place: observed rain, modeled river discharge, and soil moisture, with labeled axes and point values:
+
+![Rain, river discharge, and soil moisture history with labeled axes and values](assets/screenshots/feature-trends.png)
+
+A place we only keep an eye on (N.A.M.): an activity score from public earthquake and river records, clearly labeled as history, with no alerts:
+
+![A not-actively-monitored place showing an activity score derived from public records](assets/screenshots/feature-nam-detail.png)
+
+More views, including the full city detail, the map, the worldwide seismic feed, and the self-healing diagnostics panel, are in [SCREENSHOTS.md](SCREENSHOTS.md).
 
 ## Quick Start
 
@@ -194,6 +208,7 @@ See [QUICKGUIDE.md](QUICKGUIDE.md) for full setup, GCP configuration, deployment
 - [SCALING.md](SCALING.md) - Scaling strategy and cost drivers
 - [QUICKGUIDE.md](QUICKGUIDE.md) - Setup, deployment, and troubleshooting
 - [DEMO.md](DEMO.md) - Guided walkthrough of the live app for reviewers
+- [SCREENSHOTS.md](SCREENSHOTS.md) - Full screenshot gallery
 - [JOURNEY.md](JOURNEY.md) - The non-technical story: goals, blockers, and lessons
 - [GEMINI.md](GEMINI.md) - Project context (architecture, commands, structure)
 - [.env.example](.env.example) - Environment variable template
