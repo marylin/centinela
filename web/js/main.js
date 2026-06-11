@@ -59,6 +59,14 @@ function setupRouting() {
   });
   const back = document.getElementById("back-to-grid");
   if (back) back.addEventListener("click", () => clearSelection());
+  const railToggle = document.getElementById("rail-toggle");
+  const rail = document.getElementById("side-rail");
+  if (railToggle && rail) {
+    railToggle.addEventListener("click", () => {
+      const open = rail.classList.toggle("rail-open");
+      railToggle.setAttribute("aria-expanded", String(open));
+    });
+  }
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !state.selection) return;
     // Escape peels back one layer: focus first, then the selection.

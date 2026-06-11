@@ -73,6 +73,7 @@
 
     <!-- VIEW 2: detail (Phase B fills the panels; the shell is honest now) -->
     <div id="detail-view" hidden>
+      <button type="button" id="rail-toggle" class="btn btn-sm rail-toggle" aria-expanded="false">&#9776; Places</button>
       <aside id="side-rail" aria-label="Places">
         <button type="button" id="back-to-grid" class="btn btn-sm">&larr; All places</button>
         <div id="rail-list"></div>
@@ -123,7 +124,7 @@
         </div>
 
         <section class="card" id="seismic-panel" aria-labelledby="seismic-title">
-          <div class="card-header"><h3 id="seismic-title">Nearby seismic events</h3><span id="seismic-region-chips"></span></div>
+          <div class="card-header"><h3 id="seismic-title">Nearby seismic events</h3></div>
           <div id="seismic-focus-content" class="seismic-focus-content" hidden></div>
           <div class="card-body" id="seismic-feed-body"></div>
         </section>

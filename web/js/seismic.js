@@ -26,8 +26,7 @@ function selectionCoords() {
 
 export function renderSeismicPanel() {
   const listEl = document.getElementById("seismic-feed-body");
-  const chipsEl = document.getElementById("seismic-region-chips");
-  if (!listEl) return;
+    if (!listEl) return;
 
   const focus = state.seismicFocus;
   const focusBox = document.getElementById("seismic-focus-content");
@@ -43,7 +42,7 @@ export function renderSeismicPanel() {
         <div class="focus-head">
           <strong>M ${mag.toFixed(1)} ${escapeHtml(ev.place || "event")}</strong>
           ${ev.simulated ? '<span class="badge badge-simulated">SIMULATED</span>' : '<span class="badge scope-chip">LIVE · USGS</span>'}
-          <button type="button" class="btn btn-sm" id="seismic-focus-close">Close</button>
+          <button type="button" class="btn btn-sm focus-close" id="seismic-focus-close" aria-label="Close event view">&times;</button>
         </div>
         <p class="focus-body">${formatRelativeTime(ev.time)}${depth}. ${escapeHtml(focus.narration || "")}</p>
         <p class="focus-note">SEISMIC-ONLY view: flood and landslide conditions are not modeled for this location.</p>`;
@@ -79,11 +78,6 @@ export function renderSeismicPanel() {
   listEl.innerHTML = header + (rows ||
     `<div class="empty-alerts">No magnitude 4.5+ earthquakes ${scopeNote} in the last 48 hours. Worldwide activity is on the All-places page.</div>`);
 
-  if (chipsEl) {
-    const regions = (state.seismic.active_regions || []).slice(0, 6);
-    chipsEl.innerHTML = regions.map(r =>
-      `<span class="badge scope-chip">${escapeHtml(r.region)} · ${r.count}</span>`).join("");
-  }
 }
 
 export async function focusEvent(id) {

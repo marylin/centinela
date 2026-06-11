@@ -82,7 +82,9 @@ function renderCandidateCard() {
       <span class="component-hint">${typeof c.days_above_seasonal_p90_last60 === "number" ? `${c.days_above_seasonal_p90_last60} days above seasonal p90 in the last 60` : "discharge n/a"}${c.cell_scale ? ` · ${c.cell_scale} cell` : ""}</span></div>
     <p class="candidate-honesty">This place is a watchlist candidate: it has NO model hazard index and is not
       monitored. The numbers above come from public archives, not live monitoring. Promotion into the
-      registry is a one-row configuration change (coordinates derive automatically).</p>`;
+      registry is a one-row configuration change (coordinates derive automatically).
+      Alert narration, audio, and push notifications exist for monitored places only:
+      a candidate has no model index, so there is nothing honest to alert on yet.</p>`;
 }
 
 async function refreshMonitoredDetail() {
