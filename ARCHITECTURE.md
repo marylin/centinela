@@ -49,6 +49,19 @@ flowchart LR
 3. **Soil** - soil wetness, used as an amplifier rather than a standalone hazard.
 4. **Seismic** - the strongest recent earthquake within the place's bounding box (USGS).
 
+```mermaid
+flowchart LR
+  R["River discharge<br/>vs place's 92-day baseline"] --> B{"Blend<br/>strongest hazard dominates,<br/>co-occurring raise it"}
+  P["Observed 24h rain"] --> B
+  S["Soil wetness<br/>(amplifier)"] --> B
+  Q["Strongest recent<br/>earthquake nearby"] --> B
+  B --> IDX["Risk index 0 to 1<br/>(labeled MODEL)"]
+  IDX --> L["Low"]
+  IDX --> W["Warning"]
+  IDX --> D["Danger"]
+  IDX --> C["Critical"]
+```
+
 Design rules:
 
 - **Strongest hazard dominates.** The index takes the leading hazard and lets co-occurring hazards raise it further, rather than averaging signals into mush.

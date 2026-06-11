@@ -22,6 +22,19 @@ Both run on Gemini via Vertex AI. The first is the autonomous operator; the seco
 - **Guardrails:** writes are idempotent and non-destructive; retries are bounded (about 2s then 4s, up to 3 attempts); failures are surfaced as "pipeline degraded," never silenced.
 - **Output:** an auditable heal record per action, exposed at `/autonomous-heals` and in the incident history.
 
+```mermaid
+flowchart TD
+  A["Check connector freshness"] --> B{"Stale?<br/>no success in 5 min,<br/>or never succeeded"}
+  B -->|"no"| A
+  B -->|"yes"| C["Force re-sync + raise frequency<br/>(Fivetran MCP write)"]
+  C --> D{"Recovered?"}
+  D -->|"yes"| E["Record heal (auditable)"]
+  D -->|"no"| F{"Retries left?<br/>up to 3"}
+  F -->|"yes"| G["Backoff (sleep 2s, then 4s)"]
+  G --> C
+  F -->|"no"| H["Surface pipeline degraded<br/>(never silenced)"]
+```
+
 ### Agent: Narration agent
 
 - **Framework:** Gemini (Vertex AI) narration loop.
