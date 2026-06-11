@@ -2,7 +2,10 @@
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js');
 
-// Initialize Firebase app in the service worker
+// Initialize Firebase app in the service worker. Public Firebase web config:
+// these identifiers are meant to ship in the client and are not secrets. The
+// API key is HTTP-referrer restricted to the deployment domain in the Google
+// Cloud console.
 firebase.initializeApp({
   apiKey: "AIzaSyCD5dZslaW5oKA2chzr5BNyJzHODf4LW04",
   authDomain: "centinela-498622.firebaseapp.com",

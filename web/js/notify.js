@@ -5,6 +5,9 @@
 
 import { registerToken, subscribePlace as apiSubscribePlace, unsubscribePlace as apiUnsubscribePlace } from "./api.js";
 
+// Public Firebase web config: these identifiers are meant to ship in the
+// client and are not secrets. The API key is additionally HTTP-referrer
+// restricted to the deployment domain in the Google Cloud console.
 const firebaseConfig = {
   apiKey: "AIzaSyCD5dZslaW5oKA2chzr5BNyJzHODf4LW04",
   authDomain: "centinela-498622.firebaseapp.com",

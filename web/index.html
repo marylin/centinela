@@ -209,7 +209,10 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-messaging-compat.js"></script>
 
-  <!-- Google Maps -->
+  <!-- Google Maps. The key below is a client-side browser key (it is visible in
+       every visitor's page by design). It is locked down with an HTTP-referrer
+       restriction to the deployment domain in the Google Cloud console, so it is
+       safe to commit and cannot be reused from other origins. -->
   <script>
     window.googleMapsReady = false;
     function onGoogleMapsLoad() {
