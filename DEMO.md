@@ -36,10 +36,7 @@ A standards-compliant OASIS CAP v1.2 feed is available at **/cap.xml**, with Eng
 
 ## What to look for
 
-- **Real data, honestly labeled.** River, rain, soil, and earthquake signals are real; the blended index is always marked MODEL; anything generated for the demo is marked SIMULATED.
-- **Per-place baselines.** A city is judged against its own recent history, not a global threshold, so wet and dry regions are treated fairly.
-- **Reach.** Translated text, spoken audio, per-place push, an installable offline app, and a CAP feed, all from one backend.
-- **Autonomy with guardrails.** The pipeline heals itself, but the agent's writes are bounded and auditable, and a pipeline it cannot fix is surfaced as degraded, never hidden.
+The signals under the map are real, and the app says so plainly: river, rain, soil, and earthquake readings are genuine, the blended index is always marked as our own model, and anything created for the demo is marked SIMULATED. Each city is judged against its own recent history rather than a single global threshold, so a wet region and a dry one are read on their own terms. The same alert reaches people several ways, as translated text, spoken audio, a phone notification, an installable offline app, and a standards feed for agencies. And the pipeline looks after itself: the agent repairs stale data within tight limits, logs what it did, and when it cannot fix something it shows the problem rather than hiding it.
 
 ## Links
 

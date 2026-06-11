@@ -62,6 +62,7 @@ docs/
 .claude/
 .playwright-mcp/
 build-log.md
+ui-log.md
 
 # Scratch and runtime artifacts (local only, never commit)
 *.log
