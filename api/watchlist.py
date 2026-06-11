@@ -3,9 +3,8 @@
 Pure module: candidate pool config + activity scoring from two public sources
 (USGS FDSN catalog, Open-Meteo flood API / GloFAS reanalysis). No network,
 Firestore, or FastAPI work at import time; the caller (api.main) owns caching,
-the background refresh, and the endpoint. Ported from the validated one-off
-run in scripts/activity_scoring.py (results: docs/02-Requirements/
-centinela-activity-scoring.md); composite weights kept identical.
+the background refresh, and the endpoint. Composite weights match the validated
+activity-scoring run.
 """
 import time
 from datetime import date, timedelta

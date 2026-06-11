@@ -47,7 +47,7 @@ The DataOps agent is the only component that can change the pipeline, so its bla
 - **Local secrets.** Development keys go once into a gitignored env file at the repo root and are never committed.
 - **Public client keys.** The Google Maps JavaScript key and the Firebase web config ship to the browser by necessity. The Maps key is HTTP-referrer restricted to the deployment domain; the Firebase web config is a public app identifier. Both are documented in code as intentionally public.
 - **Repo hygiene.** `.gitignore` excludes env files, credential filenames, the local virtual environment, working-notes directories, and runtime logs. History has been verified free of secrets and credential files.
-- **Log hygiene.** Secret values are never written to logs or commit messages; the project convention is to confirm a value exists or redact it rather than print it.
+- **Log hygiene.** Secret values are never written to logs or commit messages; a value is confirmed to exist or redacted rather than printed.
 
 ## 5. Data Protection and Responsible AI (Layer 4)
 
@@ -77,4 +77,4 @@ Automated suites guard the behavior that matters for safety and correctness:
 - `test_history_endpoints.py` - risk and telemetry history endpoints.
 - `test_seismic_events.py` - the worldwide and nearby seismic feeds.
 
-Tests run against in-memory fallbacks (`TESTING=true`), so they need no live GCP credentials and cannot touch production state. On a branch, the convention is to run the targeted suites plus lint and typecheck rather than a full deploy-time run.
+Tests run against in-memory fallbacks (`TESTING=true`), so they need no live GCP credentials and cannot touch production state.

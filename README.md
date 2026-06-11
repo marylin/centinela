@@ -182,7 +182,9 @@ See [QUICKGUIDE.md](QUICKGUIDE.md) for full setup, GCP configuration, deployment
 - [SECURITY.md](SECURITY.md) - Security and responsible-AI architecture
 - [SCALING.md](SCALING.md) - Scaling strategy and cost drivers
 - [QUICKGUIDE.md](QUICKGUIDE.md) - Setup, deployment, and troubleshooting
-- [GEMINI.md](GEMINI.md) - Agent rules and project context
+- [DEMO.md](DEMO.md) - Guided walkthrough of the live app for reviewers
+- [GEMINI.md](GEMINI.md) - Project context (architecture, commands, structure)
+- [.env.example](.env.example) - Environment variable template
 
 ## License
 

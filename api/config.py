@@ -66,8 +66,7 @@ BASINS = [
         "places": [{"id": "port_au_prince", "name": "Port-au-Prince"}],
         "connectors": REAL_CONNECTORS
     },
-    # Promoted from the watchlist 2026-06-10 (evidence in
-    # docs/02-Requirements/centinela-activity-scoring.md): Manaus rides the
+    # Promoted from the watchlist 2026-06-10 by activity score: Manaus rides the
     # Amazon's June peak, Bogotá is flood-active, Managua anchors the active
     # Cocos margin. Coordinates derive like everywhere else.
     {

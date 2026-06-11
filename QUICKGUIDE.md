@@ -51,7 +51,7 @@ What you can do locally:
 TESTING=true python -m pytest test_regression.py test_demo_endpoints.py test_history_endpoints.py test_seismic_events.py -v
 ```
 
-Tests use in-memory fallbacks and never touch live cloud state. On a branch, run the targeted suites plus lint and typecheck rather than a full run.
+Tests use in-memory fallbacks and never touch live cloud state.
 
 ---
 
