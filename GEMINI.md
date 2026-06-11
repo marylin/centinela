@@ -72,3 +72,42 @@ These are always-on instructions. A workspace GEMINI.md overrides this global fi
 
 ## Platform
 - Windows. Prefer the integrated terminal. Never broadly kill node processes. Restart dev servers by port.
+
+## Project context (Centinela)
+
+### Project
+Centinela is real-data multi-hazard monitoring (floods, heavy rain, unstable ground, earthquakes) for 29 actively monitored cities plus 9 N.A.M. watched places. A FastAPI backend on Google Cloud Run serves both the JSON API and the static PWA. Built for a Gemini-only hackathon.
+
+### Architecture
+- Backend: FastAPI on Cloud Run; modular routers under `api/`; composition root is `api/main.py` (import `api.core` first, it runs dotenv + Firebase/Firestore init before module-level env reads).
+- Data: two Fivetran connectors load into BigQuery (USGS earthquakes, GloFAS discharge via Open-Meteo, ECMWF soil); observed rain and air quality come from Google Weather and Air Quality. BigQuery is read over REST with a cached access token.
+- State: Firestore in production; in-memory fallbacks under `TESTING=true`.
+- Agents: `rapid_agent/agent.py` is the DataOps self-heal agent (ADK `LlmAgent` on Vertex Gemini, Fivetran MCP write tools). `rapid_agent/centinela_agent.py` and `rapid_agent/narrate.py` handle plain-language narration.
+- Risk model: `api/hazard.py`, four signals against a per-place 92-day baseline; strongest hazard dominates; labeled MODEL everywhere.
+- Alerts: Cloud Translation (cached, human-correctable) plus Cloud Text-to-Speech (resident language + English) plus FCM per-place topics plus a CAP v1.2 feed at `/cap.xml`.
+- Frontend: plain JavaScript ES modules in `web/js/`, Google Maps, PWA (one service worker handles push and caches the app shell), site pages in `web/pages/`.
+
+### Key patterns
+- `api.core` is imported first so the environment and clients are ready before other modules read them.
+- One router per surface; durable state goes to Firestore, never in-memory on Cloud Run.
+- Cache by content: narration per (place, severity), translation per string, audio per (text, language, voice).
+- DataOps agent: stale = no successful sync in 5 minutes; bounded retries (`sleep` 2s then 4s, up to 3); never silence a degraded pipeline; record every heal.
+- Query BigQuery via REST with a cached token; no per-query `bq`/`gcloud` shell-outs.
+
+### Commands
+- Local run: `TESTING=true python -m uvicorn api.main:app --port 8000` (serve on 8000 so the HTTP-referrer-restricted Maps key works).
+- Tests: `TESTING=true python -m pytest test_regression.py test_demo_endpoints.py test_history_endpoints.py test_seismic_events.py -v`.
+- Deploy: `gcloud run deploy centinela-v1 --source . --project=centinela-498622 --region=us-central1 --allow-unauthenticated --quiet`.
+
+### Rules
+- Honest labeling is mandatory: model output is marked MODEL, demonstrations are marked SIMULATED, and alerts defer to the local civil protection authority.
+- Never commit secrets. Fivetran keys live in Secret Manager; GCP access uses the runtime service account. The client Maps and Firebase keys are public and HTTP-referrer restricted, and are documented as such in code.
+- Verify live after deploying, and hard-reload long-lived tabs so the service worker updates.
+
+### File organization
+```
+api/            FastAPI routers + hazard model + clients/state (composition root api/main.py)
+rapid_agent/    DataOps self-heal agent + narration
+web/            index.html, style.css, js/ (ES modules), pages/, manifest, service worker
+test_*.py       regression, demo endpoints, history endpoints, seismic events
+```
