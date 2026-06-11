@@ -13,6 +13,7 @@ import { setupDetail, setupSubscribeButton, setupListenButton, setupAlertLanguag
 import { renderMap } from "./map.js";
 import { setupSeismicPanel, setupWorldwideEvents, renderWorldwideEvents, clearSeismicFocus } from "./seismic.js";
 import { onDetailShown } from "./map.js";
+import { setupPages } from "./pages.js";
 
 // Maps loader callback: modules are module-scoped, so the bootstrap callback
 // must be attached to window explicitly.
@@ -70,6 +71,9 @@ function setupRouting() {
   }
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !state.selection) return;
+    // A site-page modal owns Escape while it is open; don't also peel the view.
+    const pageModal = document.getElementById("page-modal");
+    if (pageModal && pageModal.classList.contains("open")) return;
     // Escape peels back one layer: focus first, then the selection.
     if (state.seismicFocus) clearSeismicFocus();
     else clearSelection();
@@ -115,6 +119,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupRouting();
   setupNotifications();
   setupDiagnostics();
+  setupPages();
   startClock();
 
   await refreshRegistry();

@@ -34,7 +34,7 @@
         <span id="grid-status" aria-live="polite" class="visually-hidden"></span>
       </div>
 
-      <h2 class="grid-section-title">Monitored places <span class="badge scope-chip">MODEL INDEX</span></h2>
+      <h2 class="grid-section-title">Monitored places <span class="badge scope-chip">RISK CHECKED ALL DAY</span></h2>
       <div id="tile-grid-monitored" class="tile-grid">
         <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
         <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
@@ -142,6 +142,17 @@
       <a href="/glossary">Glossary</a>
     </nav>
   </footer>
+
+  <!-- Site pages as in-page modals (no reload; browser Back just closes them) -->
+  <div id="page-modal" class="page-modal" role="dialog" aria-modal="true" aria-labelledby="page-modal-title">
+    <div class="page-modal-overlay"></div>
+    <div class="page-modal-panel">
+      <button type="button" id="page-modal-close" class="page-modal-close" aria-label="Close">&times;</button>
+      <div id="page-modal-body" class="page-modal-body">
+        <h1 id="page-modal-title" class="visually-hidden">Page</h1>
+      </div>
+    </div>
+  </div>
 
   <!-- Diagnostics slideout -->
   <div id="diagnostics-overlay" class="diagnostics-overlay"></div>

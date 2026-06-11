@@ -3195,6 +3195,52 @@ button.seismic-event-row:focus-visible {
 .footer-links a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; }
 .footer-links a:hover { color: inherit; text-decoration: underline; }
 .app-footer { display: flex; flex-direction: column; }
+
+/* Site pages as in-page modals (about/technology/privacy/terms/glossary). */
+.page-modal { position: fixed; inset: 0; z-index: 1100; display: none; }
+.page-modal.open { display: block; }
+.page-modal-overlay {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+}
+.page-modal-panel {
+  position: relative;
+  max-width: 760px;
+  margin: 4vh auto;
+  max-height: 92vh;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.page-modal-close {
+  position: absolute;
+  top: 0.55rem; right: 0.7rem;
+  width: 2rem; height: 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  font-size: 1.2rem; line-height: 1;
+  cursor: pointer;
+}
+.page-modal-close:hover { color: inherit; }
+.page-modal-body { padding: 1.6rem 1.8rem 2.2rem; line-height: 1.65; }
+.page-modal-body h1 { font-size: 1.4rem; margin: 0 2rem 0 0; }
+.page-modal-body h2 { font-size: 1.05rem; margin-top: 1.6rem; }
+.page-modal-body a { color: #38bdf8; }
+
+/* Inline explanatory figures on the Technology page (work standalone + modal). */
+.tech-fig { margin: 1.1rem 0 0.4rem; }
+.tech-fig svg { width: 100%; height: auto; display: block; }
+.tech-fig figcaption { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem; }
+@media (max-width: 760px) {
+  .page-modal-panel { margin: 0; max-height: 100vh; border-radius: 0; min-height: 100vh; }
+  .page-modal-body { padding: 1.3rem 1.2rem 2rem; }
+}
+
 /* Mobile: two tiles per row, tighter */
 @media (max-width: 760px) {
   .tile { width: calc(50% - 0.45rem); padding: 0.55rem 0.6rem; }

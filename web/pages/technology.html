@@ -35,6 +35,51 @@
     strongest recent earthquake nearby. The strongest hazard dominates; co-occurring hazards
     raise it further. Small streams are dampened so a creek cannot read like a major river
     flood. The index is our own model and is labeled as such everywhere.</p>
+
+    <figure class="tech-fig">
+      <svg viewBox="0 0 320 150" role="img" aria-label="Illustrative bar chart of the four
+        hazard signals that combine into one risk level: river, rain, soil and earthquake.">
+        <!-- River -->
+        <text x="0" y="30" fill="#cbd5e1" font-size="11">River</text>
+        <rect x="60" y="18" width="6" height="16" fill="#a78bfa" opacity="0.25"/>
+        <rect x="60" y="18" width="148" height="16" rx="3" fill="#a78bfa"/>
+        <!-- Rain -->
+        <text x="0" y="62" fill="#cbd5e1" font-size="11">Rain</text>
+        <rect x="60" y="50" width="92" height="16" rx="3" fill="#38bdf8"/>
+        <!-- Soil -->
+        <text x="0" y="94" fill="#cbd5e1" font-size="11">Soil</text>
+        <rect x="60" y="82" width="62" height="16" rx="3" fill="#f59e0b"/>
+        <!-- Earthquake -->
+        <text x="0" y="126" fill="#cbd5e1" font-size="11">Quake</text>
+        <rect x="60" y="114" width="174" height="16" rx="3" fill="#f87171"/>
+        <text x="262" y="126" fill="#94a3b8" font-size="10">strongest → drives the level</text>
+      </svg>
+      <figcaption>Illustrative weights. Each place reads its own four signals; the strongest one
+        sets the level, and others can push it higher.</figcaption>
+    </figure>
+
+    <p>Why a baseline instead of a fixed number? A river that is normal in Bangladesh would be a
+    once-a-decade flood somewhere dry. So every place is compared against its own recent history,
+    not a global threshold.</p>
+
+    <figure class="tech-fig">
+      <svg viewBox="0 0 320 130" role="img" aria-label="Illustrative line of river discharge
+        rising over time and crossing the place's own normal-high baseline into warning.">
+        <line x1="8" y1="70" x2="312" y2="70" stroke="#475569" stroke-width="1"
+              stroke-dasharray="4 4"/>
+        <text x="8" y="64" fill="#94a3b8" font-size="10">this place's normal-high baseline</text>
+        <polyline points="8,100 38,98 68,95 98,92 128,86 158,78 188,70 218,58 248,44 278,34 308,30"
+                  fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linejoin="round"/>
+        <text x="214" y="116" fill="#f87171" font-size="10">above baseline → warning rises</text>
+      </svg>
+      <figcaption>Illustrative. When a place's river runs well above its own normal high, the flood
+        part of its risk climbs.</figcaption>
+    </figure>
+
+    <h2>How often it updates</h2>
+    <p>Earthquakes arrive within minutes of the USGS publishing them. River, rain and soil readings
+    refresh on their providers' cadence (hourly to daily), and the risk level for every place is
+    recomputed each cycle, so what you see is current rather than a stored snapshot.</p>
     <h2>Reaching people</h2>
     <p>Alert content is translated with Cloud Translation (cached per string, human-correctable),
     spoken with Cloud Text-to-Speech, and pushed through Firebase Cloud Messaging topics: one
