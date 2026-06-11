@@ -35,32 +35,27 @@ Nothing is seeded or hand-entered. Even coordinates are derived, by geocoding ea
 
 ## Architecture
 
-```
-        Real data sources
-  USGS  GloFAS/Open-Meteo  ECMWF  Google Weather + Air Quality
-     \        |              |            /
-      +-------v--------------v-----------+
-      |   2 custom Fivetran connectors   |
-      +----------------+-----------------+
-                       | load
-              +--------v---------+
-              | Google BigQuery  |
-              +--------+---------+
-                       | REST (cached token)
-              +--------v------------------------------+
-              |  FastAPI backend  (Google Cloud Run)  |
-              |  hazard model + per-surface routers   |
-              +--+------------+-----------+-----------++
-                 |            |           |           |
-        +--------v--+  +------v-----+  +--v-------+  +-v-----------+
-        | Firestore |  |  DataOps   |  |  Cloud   |  |  Frontend   |
-        |  (state)  |  |  agent     |  | Translate|  |  plain JS   |
-        +-----------+  | (ADK/Gemini)| | + TTS    |  |  PWA + Maps |
-                       |    |        |  +--+-------+  +-------------+
-                       | Fivetran MCP|     |
-                       | (auto-heal) |  Firebase Cloud Messaging
-                       +------------+   (per-place push topics)
-                                          + CAP v1.2 feed (/cap.xml)
+```mermaid
+flowchart TD
+  subgraph SRC["Real data sources"]
+    USGS["USGS earthquakes"]
+    GLO["GloFAS (Open-Meteo)"]
+    ECM["ECMWF soil"]
+    GWA["Google Weather + Air Quality"]
+  end
+  USGS --> FT["2 custom Fivetran connectors"]
+  GLO --> FT
+  ECM --> FT
+  FT -->|"load"| BQ[("Google BigQuery")]
+  BQ -->|"REST, cached token"| BE["FastAPI backend on Google Cloud Run<br/>hazard model + per-surface routers"]
+  GWA -->|"recorded continuously"| BE
+  BE <--> FS[("Firestore: state")]
+  BE <--> DA["DataOps agent<br/>ADK / Gemini"]
+  DA <-->|"auto-heal"| MCP["Fivetran MCP write tools"]
+  BE --> TTS["Cloud Translation + Text-to-Speech"]
+  TTS --> FCM["Firebase Cloud Messaging<br/>per-place push topics"]
+  BE --> CAP["CAP v1.2 feed at /cap.xml"]
+  BE --> FE["Frontend: plain JS PWA + Maps"]
 ```
 
 ## Tech Stack

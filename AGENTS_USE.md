@@ -33,25 +33,18 @@ Both run on Gemini via Vertex AI. The first is the autonomous operator; the seco
 
 ### Diagram
 
-```
-            connector telemetry (Fivetran)
-                       |
-              +--------v---------+        on staleness        +------------------+
-              | DataOps agent    |  --- force re-sync ----->  | Fivetran MCP     |
-              | (ADK / Gemini)   |  <-- result / retry -----  | (write tools)    |
-              +--------+---------+                            +------------------+
-                       | heal record
-                       v
-                  Firestore  ---> /connector-status, /autonomous-heals, incidents
-                       
-            severity change (hazard model)
-                       |
-              +--------v---------+      +-------------+     +-----------------+
-              | Narration agent  | ---> | Translation | --> | Text-to-Speech  |
-              | (Gemini)         |      | (cached)    |     | (local + EN)    |
-              +--------+---------+      +-------------+     +-----------------+
-                       |
-                       +--> FCM publish (place topic) + CAP v1.2 feed
+```mermaid
+flowchart TD
+  TEL["Connector telemetry (Fivetran)"] --> DA["DataOps agent<br/>ADK / Gemini"]
+  DA -->|"force re-sync"| MCP["Fivetran MCP write tools"]
+  MCP -->|"result / retry"| DA
+  DA -->|"heal record"| FS[("Firestore")]
+  FS --> EP["connector-status, autonomous-heals, incidents"]
+
+  SC["Severity change (hazard model)"] --> NA["Narration agent<br/>Gemini"]
+  NA --> TR["Translation (cached)"]
+  TR --> TTS["Text-to-Speech<br/>local + English"]
+  TTS --> OUT["FCM publish to place topic<br/>+ CAP v1.2 feed"]
 ```
 
 ### Orchestration approach

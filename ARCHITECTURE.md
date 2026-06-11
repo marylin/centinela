@@ -24,11 +24,15 @@ The composition root is `api/main.py`: it imports `api.core` first (which runs `
 
 ## 2. Data Pipeline
 
-```
-USGS feed ----\
-GloFAS (Open-Meteo) --> Fivetran connector(s) --> BigQuery tables --> backend (REST)
-ECMWF soil ---/
-Google Weather + Air Quality --> recorded continuously by the backend --> Firestore/BigQuery
+```mermaid
+flowchart LR
+  USGS["USGS feed"] --> FT["Fivetran connectors"]
+  GLO["GloFAS (Open-Meteo)"] --> FT
+  ECM["ECMWF soil"] --> FT
+  FT --> BQ[("BigQuery tables")]
+  BQ -->|"REST"| BE["Backend"]
+  GWA["Google Weather + Air Quality"] -->|"recorded continuously"| BE
+  BE --> ST[("Firestore / BigQuery")]
 ```
 
 - **Two custom Fivetran connectors** load the data Centinela does not poll itself: the global USGS earthquake feed, and daily river discharge (GloFAS via Open-Meteo) plus soil moisture (ECMWF) for every place.
@@ -99,14 +103,14 @@ Optional capabilities fail soft. If translation, speech, or push are unavailable
 
 ## 7. Alert Flow
 
-```
-severity change detected
-   -> render canonical English guidance (Gemini narration, cached)
-   -> Cloud Translation -> resident-language text (cached, human-correctable)
-   -> Cloud Text-to-Speech -> /alert-audio (local + English)
-   -> FCM publish to the place topic (one message per severity change)
-   -> CAP v1.2 document available at /cap.xml
-   -> web app renders the public alert card (read + listen controls)
+```mermaid
+flowchart TD
+  A["Severity change detected"] --> B["Render canonical English guidance<br/>Gemini narration, cached"]
+  B --> C["Cloud Translation<br/>resident-language text, cached, human-correctable"]
+  C --> D["Cloud Text-to-Speech<br/>/alert-audio, local + English"]
+  D --> E["FCM publish to the place topic<br/>one message per severity change"]
+  E --> F["CAP v1.2 document at /cap.xml"]
+  F --> G["Web app renders the public alert card<br/>read + listen controls"]
 ```
 
 ## 8. Frontend Architecture
