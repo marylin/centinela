@@ -3132,7 +3132,16 @@ button.seismic-event-row:focus-visible {
 .conditions-prov { grid-column: 2; color: var(--text-muted); font-size: 0.7rem; }
 .history-svg { width: 100%; height: auto; display: block; }
 .history-meta, .trend-label { color: var(--text-muted); font-size: 0.75rem; }
-.trend-row { margin-bottom: 0.7rem; }
+.history-meta { margin-top: 0.35rem; }
+.history-scale { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.65rem; margin-top: 1px; }
+.trend-row { margin-bottom: 0.55rem; }
+.trend-row:last-child { margin-bottom: 0; }
+.trend-head { display: flex; justify-content: space-between; align-items: baseline; }
+.trend-latest { font-size: 0.8rem; font-weight: 700; }
+.trend-prov { color: var(--text-muted); font-size: 0.65rem; }
+/* These history panels hug their content instead of stretching to match the
+   taller sibling card (which left a large dead area under the timeline). */
+#risk-timeline-panel, #trend-panel { align-self: flex-start; }
 /* Phase C: seismic feed + route card */
 .seismic-row {
   display: flex; gap: 0.7rem; align-items: center; width: 100%;
@@ -3231,11 +3240,53 @@ button.seismic-event-row:focus-visible {
 .page-modal-body h1 { font-size: 1.4rem; margin: 0 2rem 0 0; }
 .page-modal-body h2 { font-size: 1.05rem; margin-top: 1.6rem; }
 .page-modal-body a { color: #38bdf8; }
+/* Scrollbar styled to match the dark theme (default chrome looked out of place). */
+.page-modal-panel { scrollbar-width: thin; scrollbar-color: var(--border-color-glow) transparent; }
+.page-modal-panel::-webkit-scrollbar { width: 10px; }
+.page-modal-panel::-webkit-scrollbar-track { background: transparent; }
+.page-modal-panel::-webkit-scrollbar-thumb {
+  background: var(--border-color); border-radius: 8px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+.page-modal-panel::-webkit-scrollbar-thumb:hover { background: var(--border-color-glow); }
+/* Definition lists (glossary) read formatted inside the modal, not just on the
+   standalone page where the inline <style> applies. */
+.page-modal-body dl { margin: 0.6rem 0 0; }
+.page-modal-body dt {
+  font-weight: 700; color: var(--text-main); margin-top: 0.9rem;
+  border-top: 1px solid var(--border-color); padding-top: 0.9rem;
+}
+.page-modal-body dt:first-of-type { border-top: none; padding-top: 0; }
+.page-modal-body dd { margin: 0.25rem 0 0; color: var(--text-muted); }
 
-/* Inline explanatory figures on the Technology page (work standalone + modal). */
-.tech-fig { margin: 1.1rem 0 0.4rem; }
+/* Inline explanatory figures on the Technology page (work standalone + modal).
+   Capped so they read as small diagrams instead of stretching the full column. */
+.tech-fig { margin: 1.1rem 0 0.4rem; max-width: 440px; }
 .tech-fig svg { width: 100%; height: auto; display: block; }
-.tech-fig figcaption { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem; }
+.tech-fig figcaption { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem; line-height: 1.45; }
+
+/* Worldwide seismic events: pack multiple cards per row instead of one-per-row. */
+#world-events-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.5rem;
+}
+#world-events-body .seismic-row { margin-bottom: 0; }
+
+/* The alert-card header controls (Listen / Listen in English / English version)
+   read as plain text without chrome; give them a real button appearance. */
+#public-alert-card .card-header { flex-wrap: wrap; gap: 0.4rem; }
+#public-alert-card .card-header .btn {
+  border-color: var(--border-color);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+#public-alert-card .card-header .btn:hover {
+  background-color: rgba(255, 255, 255, 0.09);
+  border-color: var(--border-color-glow);
+}
+
+/* Separate the per-place warning cards from the guidance text above them. */
+#alert-advisories { margin-top: 0.9rem; }
 @media (max-width: 760px) {
   .page-modal-panel { margin: 0; max-height: 100vh; border-radius: 0; min-height: 100vh; }
   .page-modal-body { padding: 1.3rem 1.2rem 2rem; }
