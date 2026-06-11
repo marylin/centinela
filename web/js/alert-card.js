@@ -14,13 +14,29 @@ const BASIN_HISTORY = {
   rio_magdalena: "The Río Magdalena basin experiences seasonal flooding during Colombia's rainy seasons.",
 };
 
-let englishOverride = false; // "English version" toggle, reset per selection
+let englishOverride = false; // written-language toggle, reset per selection
 
 export function resetAlertLanguage() { englishOverride = false; }
 
 export function toggleAlertEnglish() { englishOverride = !englishOverride; }
 
+export function setAlertEnglish(v) { englishOverride = !!v; }
+
 export function isAlertEnglish() { return englishOverride; }
+
+// The resident language's own name (autonym), capitalized, for the segmented
+// Read/Listen labels. Falls back to the uppercased code if unknown.
+function langName(code) {
+  const c = code || "en";
+  try {
+    const n = new Intl.DisplayNames([c], { type: "language" }).of(c);
+    return n ? n.charAt(0).toUpperCase() + n.slice(1) : c.toUpperCase();
+  } catch (e) {
+    return c.toUpperCase();
+  }
+}
+
+const PLAY = "▶"; // ▶
 
 const bundles = {};       // lang -> bundle (client cache)
 let bundleFetching = {};  // lang -> promise
@@ -86,23 +102,39 @@ export async function renderAlertCard(alertData) {
       <div class="alert-field alert-field-wide"><dt>${escapeHtml(b.ui.source)}</dt><dd>${escapeHtml(b.ui.source_value)}</dd></div>`;
   }
 
-  // Listen buttons: the local one is labeled in the resident language and
-  // speaks that language; the English one only shows for non-English places.
+  const isEnglishPlace = nativeLang === "en";
+  const nativeName = langName(nativeLang);
+
+  // Read group: a segmented local/English toggle for the written content.
+  // English-native places have nothing to toggle, so the whole row hides.
+  const readRow = document.getElementById("alert-read-row");
+  const readLocalBtn = document.getElementById("alert-read-local-btn");
+  const readEnBtn = document.getElementById("alert-read-en-btn");
+  if (readRow) readRow.hidden = isEnglishPlace;
+  if (!isEnglishPlace && readLocalBtn && readEnBtn) {
+    readLocalBtn.textContent = nativeName;
+    readEnBtn.textContent = "English";
+    readLocalBtn.classList.toggle("seg-active", !englishOverride);
+    readEnBtn.classList.toggle("seg-active", englishOverride);
+    readLocalBtn.setAttribute("aria-pressed", String(!englishOverride));
+    readEnBtn.setAttribute("aria-pressed", String(englishOverride));
+  }
+
+  // Listen group: local-language narration plus an always-English one for
+  // visitors and responders. Labeled with the language name and a play glyph.
   const listenBtn = document.getElementById("alert-listen-btn");
   const listenEnBtn = document.getElementById("alert-listen-en-btn");
-  if (listenBtn && listenBtn.dataset.playing !== "true") {
-    listenBtn.textContent = b.ui.listen;
-  }
+  const localListenLabel = isEnglishPlace ? `${PLAY} ${b.ui.listen}` : `${PLAY} ${nativeName}`;
   if (listenBtn) {
-    listenBtn.dataset.idleLabel = b.ui.listen;
+    if (listenBtn.dataset.playing !== "true") listenBtn.textContent = localListenLabel;
+    listenBtn.dataset.idleLabel = localListenLabel;
     listenBtn.dataset.stopLabel = b.ui.stop;
     listenBtn.dataset.loadingLabel = b.ui.loading_audio;
   }
-  if (listenEnBtn) listenEnBtn.hidden = nativeLang === "en";
-  const langBtn = document.getElementById("alert-lang-btn");
-  if (langBtn) {
-    langBtn.hidden = nativeLang === "en";
-    langBtn.textContent = englishOverride ? b.ui.show_in_local : b.ui.show_in_english;
+  if (listenEnBtn) {
+    listenEnBtn.hidden = isEnglishPlace;
+    if (listenEnBtn.dataset.playing !== "true") listenEnBtn.textContent = `${PLAY} English`;
+    listenEnBtn.dataset.idleLabel = `${PLAY} English`;
   }
 
   const ctx = document.getElementById("alert-context");

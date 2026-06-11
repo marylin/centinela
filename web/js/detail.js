@@ -9,7 +9,7 @@ import { getSeverityConfig, HAZARD_ICONS } from "./severity.js";
 import { escapeHtml } from "./util.js";
 import { renderMap } from "./map.js";
 import { renderRail } from "./rail.js";
-import { renderAlertCard, resetAlertLanguage, toggleAlertEnglish } from "./alert-card.js";
+import { renderAlertCard, resetAlertLanguage, setAlertEnglish } from "./alert-card.js";
 import { renderConditions } from "./conditions.js";
 import { renderRiskTimeline, renderTrend } from "./charts.js";
 import { renderSeismicPanel } from "./seismic.js";
@@ -288,10 +288,9 @@ export function setupListenButton() {
 }
 
 export function setupAlertLanguageToggle() {
-  const btn = document.getElementById("alert-lang-btn");
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    toggleAlertEnglish();
-    renderAlertCard(lastAlert);
-  });
+  const local = document.getElementById("alert-read-local-btn");
+  const en = document.getElementById("alert-read-en-btn");
+  const apply = (english) => { setAlertEnglish(english); renderAlertCard(lastAlert); };
+  if (local) local.addEventListener("click", () => apply(false));
+  if (en) en.addEventListener("click", () => apply(true));
 }

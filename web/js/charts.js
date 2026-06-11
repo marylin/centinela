@@ -45,6 +45,17 @@ function spark(points, color, w, h, opts = {}) {
   return grid + area + line + dots;
 }
 
+// Wraps a sparkline SVG with subtle y-axis ticks (top/bottom) and x-axis
+// endpoints, so each series shows the metric and time window it covers.
+function chartBlock(svg, yTop, yBottom, xLeft, xRight) {
+  return `<div class="chart">
+    <div class="chart-yaxis tabular-nums"><span>${escapeHtml(yTop)}</span><span>${escapeHtml(yBottom)}</span></div>
+    <div class="chart-main">${svg}
+      <div class="chart-xaxis"><span>${escapeHtml(xLeft)}</span><span>${escapeHtml(xRight)}</span></div>
+    </div>
+  </div>`;
+}
+
 export async function renderRiskTimeline() {
   const el = document.getElementById("risk-timeline-body");
   const sel = state.selection;
@@ -62,12 +73,13 @@ export async function renderRiskTimeline() {
     const sev = getSeverityConfig(latest);
     // Fixed 0..1 risk domain with gridlines at the band edges, so the latest
     // dot's height is meaningful rather than auto-scaled noise.
-    el.innerHTML = `
-      <svg viewBox="0 0 320 64" class="history-svg" role="img"
+    const svg = `<svg viewBox="0 0 320 64" class="history-svg" role="img"
            aria-label="Risk index over the recorded window, latest ${(latest * 100).toFixed(0)} percent">
         ${spark(points, sev.colorHex, 320, 64, { domain: [0, 1], gridlines: [0.25, 0.5, 0.75] })}
-      </svg>
-      <div class="history-scale tabular-nums"><span>0%</span><span>50%</span><span>100%</span></div>
+      </svg>`;
+    el.innerHTML = `
+      <div class="chart-axis-title">Risk index (%)</div>
+      ${chartBlock(svg, "100", "0", "older", "now")}
       <div class="history-meta tabular-nums">latest <strong style="color:${sev.colorHex}">${(latest * 100).toFixed(0)}%</strong> · ${points.length} ticks · server-recorded</div>`;
   } catch (err) {
     el.innerHTML = `<div class="empty-alerts">Risk history unavailable.</div>`;
@@ -84,20 +96,28 @@ export async function renderTrend() {
 
     const rows = [
       { series: (data.rainfall || []).map(r => ({ v: Number(r.precipitation_mm) || 0 })),
-        color: "#38bdf8", label: "Rain", prov: "observed · 48h", unit: " mm" },
+        color: "#38bdf8", label: "Rain", unit: "mm", prov: "observed · Google Weather",
+        window: "48h ago", yUnit: "mm" },
       { series: (data.discharge || []).map(r => ({ v: Number(r.discharge_m3s) || 0 })),
-        color: "#a78bfa", label: "River discharge", prov: "model · GloFAS · 31d", unit: " m³/s" },
+        color: "#a78bfa", label: "River discharge", unit: "m³/s", prov: "model · GloFAS",
+        window: "31d ago", yUnit: "m³/s" },
       { series: (data.soil || []).map(r => ({ v: Number(r.moisture_m3m3) || 0 })),
-        color: "#f59e0b", label: "Soil moisture", prov: "model · ECMWF · 72h", unit: "" },
+        color: "#f59e0b", label: "Soil moisture", unit: "m³/m³", prov: "model · ECMWF",
+        window: "72h ago", yUnit: "m³/m³" },
     ];
 
+    const fmt = v => (v >= 100 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2));
     const sections = rows.filter(r => r.series.length > 1).map(r => {
+      const vals = r.series.map(p => p.v);
+      const hi = Math.max(...vals), lo = Math.min(...vals);
       const latest = r.series[r.series.length - 1].v;
-      const latestTxt = r.unit ? `${latest.toFixed(latest >= 100 ? 0 : 1)}${r.unit}` : latest.toFixed(2);
+      const latestTxt = `${fmt(latest)} ${r.unit}`;
+      const svg = `<svg viewBox="0 0 320 38" class="history-svg" role="img"
+        aria-label="${escapeHtml(r.label)} in ${escapeHtml(r.yUnit)}, latest ${escapeHtml(latestTxt)}">${spark(r.series, r.color, 320, 38)}</svg>`;
       return `<div class="trend-row">
-        <div class="trend-head"><span class="trend-label">${r.label}</span>
+        <div class="trend-head"><span class="trend-label">${r.label} <span class="trend-unit">(${r.yUnit})</span></span>
           <span class="trend-latest tabular-nums" style="color:${r.color}">${latestTxt}</span></div>
-        <svg viewBox="0 0 320 38" class="history-svg">${spark(r.series, r.color, 320, 38)}</svg>
+        ${chartBlock(svg, fmt(hi), fmt(lo), r.window, "now")}
         <span class="trend-prov">${r.prov}</span>
       </div>`;
     });

@@ -3133,12 +3133,19 @@ button.seismic-event-row:focus-visible {
 .history-svg { width: 100%; height: auto; display: block; }
 .history-meta, .trend-label { color: var(--text-muted); font-size: 0.75rem; }
 .history-meta { margin-top: 0.35rem; }
-.history-scale { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.65rem; margin-top: 1px; }
-.trend-row { margin-bottom: 0.55rem; }
+.trend-row { margin-bottom: 0.7rem; }
 .trend-row:last-child { margin-bottom: 0; }
 .trend-head { display: flex; justify-content: space-between; align-items: baseline; }
 .trend-latest { font-size: 0.8rem; font-weight: 700; }
+.trend-unit { color: var(--text-muted); font-weight: 400; font-size: 0.7rem; }
 .trend-prov { color: var(--text-muted); font-size: 0.65rem; }
+/* Chart frame: subtle y ticks (top/bottom) + x endpoints around the sparkline. */
+.chart { display: grid; grid-template-columns: auto 1fr; gap: 0.35rem; }
+.chart-axis-title { color: var(--text-muted); font-size: 0.65rem; margin-bottom: 1px; }
+.chart-yaxis { display: flex; flex-direction: column; justify-content: space-between;
+  text-align: right; color: var(--text-muted); font-size: 0.6rem; padding: 1px 0; min-width: 1.7rem; }
+.chart-main { min-width: 0; }
+.chart-xaxis { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 0.6rem; margin-top: 1px; }
 /* These history panels hug their content instead of stretching to match the
    taller sibling card (which left a large dead area under the timeline). */
 #risk-timeline-panel, #trend-panel { align-self: flex-start; }
@@ -3273,17 +3280,26 @@ button.seismic-event-row:focus-visible {
 }
 #world-events-body .seismic-row { margin-bottom: 0; }
 
-/* The alert-card header controls (Listen / Listen in English / English version)
-   read as plain text without chrome; give them a real button appearance. */
-#public-alert-card .card-header { flex-wrap: wrap; gap: 0.4rem; }
-#public-alert-card .card-header .btn {
-  border-color: var(--border-color);
-  background-color: rgba(255, 255, 255, 0.04);
+/* Alert-card controls: two labeled rows (Read / Listen), each a segmented
+   local-vs-English pair, sitting below the title instead of crowding it. */
+.alert-controls { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.1rem 0 0.2rem; }
+.alert-control-row { display: flex; align-items: center; gap: 0.6rem; }
+.alert-control-label {
+  color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 0.07em; min-width: 3rem;
 }
-#public-alert-card .card-header .btn:hover {
-  background-color: rgba(255, 255, 255, 0.09);
-  border-color: var(--border-color-glow);
+.seg-group { display: inline-flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.seg-group .seg-btn {
+  border: none; border-radius: 0; min-height: 38px; padding: 0.35rem 0.85rem;
+  background-color: rgba(255, 255, 255, 0.03); color: var(--text-muted); font-weight: 600;
 }
+.seg-group .seg-btn + .seg-btn { border-left: 1px solid var(--border-color); }
+.seg-group .seg-btn:hover { background-color: rgba(255, 255, 255, 0.09); color: var(--text-main); }
+.seg-group .seg-btn.seg-active {
+  background-color: var(--primary-glow); color: var(--text-main);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+.seg-group .seg-btn[data-playing="true"] { color: var(--text-main); background-color: rgba(255, 255, 255, 0.09); }
 
 /* Separate the per-place warning cards from the guidance text above them. */
 #alert-advisories { margin-top: 0.9rem; }

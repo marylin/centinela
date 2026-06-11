@@ -86,7 +86,23 @@
 
         <div class="detail-columns">
           <section id="public-alert-card" class="card" aria-labelledby="alert-title" hidden>
-            <div class="card-header"><h3 id="alert-title">Public alert</h3><button type="button" id="alert-listen-btn" class="btn btn-sm">Listen</button><button type="button" id="alert-listen-en-btn" class="btn btn-sm" hidden>Listen in English</button><button type="button" id="alert-lang-btn" class="btn btn-sm" hidden>English version</button></div>
+            <div class="card-header"><h3 id="alert-title">Public alert</h3></div>
+            <div class="alert-controls">
+              <div class="alert-control-row" id="alert-read-row" hidden>
+                <span class="alert-control-label">Read</span>
+                <div class="seg-group" role="group" aria-label="Reading language">
+                  <button type="button" id="alert-read-local-btn" class="btn btn-sm seg-btn"></button>
+                  <button type="button" id="alert-read-en-btn" class="btn btn-sm seg-btn">English</button>
+                </div>
+              </div>
+              <div class="alert-control-row" id="alert-listen-row">
+                <span class="alert-control-label">Listen</span>
+                <div class="seg-group" role="group" aria-label="Listen language">
+                  <button type="button" id="alert-listen-btn" class="btn btn-sm seg-btn">Listen</button>
+                  <button type="button" id="alert-listen-en-btn" class="btn btn-sm seg-btn" hidden>English</button>
+                </div>
+              </div>
+            </div>
             <div class="card-body">
               <div id="alert-status"></div>
               <dl id="alert-fields" class="alert-fields"></dl>
