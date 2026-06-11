@@ -9,7 +9,7 @@ import { getSeverityConfig, HAZARD_ICONS } from "./severity.js";
 import { escapeHtml } from "./util.js";
 import { renderMap } from "./map.js";
 import { renderRail } from "./rail.js";
-import { renderAlertCard } from "./alert-card.js";
+import { renderAlertCard, resetAlertLanguage, toggleAlertEnglish } from "./alert-card.js";
 import { renderConditions } from "./conditions.js";
 import { renderRiskTimeline, renderTrend } from "./charts.js";
 import { renderSeismicPanel } from "./seismic.js";
@@ -69,8 +69,8 @@ function renderCandidateCard() {
   el.innerHTML = `
     <div class="components-headline">
       <span class="public-hero-status" style="color:${sev.colorHex}">${act.toFixed(2)}</span>
-      <span class="badge tile-badge">NOT MONITORED</span>
-      <span class="tile-model-tag">ACTIVITY MODEL (USGS catalog + GloFAS reanalysis)</span>
+      <span class="badge tile-badge" title="Not Actively Monitored">N.A.M.</span>
+      <span class="tile-model-tag">activity from public records</span>
     </div>
     <div class="component-row"><span class="component-label">Seismic</span>
       <span class="component-bar"><i style="width:${Math.round((Number(c.seismic_score) || 0) * 100)}%; background:${getSeverityConfig(Number(c.seismic_score) || 0).colorHex}"></i></span>
@@ -80,13 +80,22 @@ function renderCandidateCard() {
       <span class="component-bar"><i style="width:${Math.round((Number(c.flood_score) || 0) * 100)}%; background:${getSeverityConfig(Number(c.flood_score) || 0).colorHex}"></i></span>
       <span class="tabular-nums">${(Number(c.flood_score) || 0).toFixed(2)}</span>
       <span class="component-hint">${typeof c.days_above_seasonal_p90_last60 === "number" ? `${c.days_above_seasonal_p90_last60} days above seasonal p90 in the last 60` : "discharge n/a"}${c.cell_scale ? ` · ${c.cell_scale} cell` : ""}</span></div>
-    <p class="candidate-honesty">This place is a watchlist candidate: it has NO model hazard index and is not
-      monitored. The numbers above come from public archives, not live monitoring. Promotion into the
-      registry is a one-row configuration change (coordinates derive automatically).
-      Alert narration, audio, and push notifications exist for monitored places only:
-      a candidate has no model index, so there is nothing honest to alert on yet.</p>`;
+    <p class="candidate-honesty" id="candidate-honesty">We keep an eye on this place using public
+      records. We do not measure its risk around the clock yet, so there are no alerts here.</p>`;
+  fillCandidateExplain(c.lang);
 }
 
+
+async function fillCandidateExplain(lang) {
+  try {
+    const { getUiStrings } = await import("./api.js");
+    const data = await getUiStrings(lang || "en");
+    const el = document.getElementById("candidate-honesty");
+    if (el && data.bundle && data.bundle.candidate_explain) {
+      el.textContent = data.bundle.candidate_explain;
+    }
+  } catch (err) { /* the English fallback text stays */ }
+}
 async function refreshMonitoredDetail() {
   const sel = state.selection;
   if (!sel || sel.kind !== "place") return;
@@ -116,6 +125,7 @@ let lastAlertGroup = null;
 async function onSelectionChange() {
   stopDetailPoll();
   stopAlertAudio();
+  resetAlertLanguage();
   const sel = state.selection;
   if (!sel) return;
   // Alert payloads are per group: never let another group's narration or
@@ -275,4 +285,13 @@ export function setupListenButton() {
     en.dataset.loadingLabel = "Loading audio";
     wireListen(en, "en");
   }
+}
+
+export function setupAlertLanguageToggle() {
+  const btn = document.getElementById("alert-lang-btn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    toggleAlertEnglish();
+    renderAlertCard(lastAlert);
+  });
 }

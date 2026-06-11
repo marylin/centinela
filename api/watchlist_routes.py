@@ -15,6 +15,7 @@ from api.watchlist import (
     compute_watchlist, season_months,
 )
 from api.places_resolver import cell_scale_for, resolve_entries
+from api.i18n import lang_for_cc
 from api.resolution import RESOLUTION_CACHE, RESOLUTION_LOCK, read_resolution_doc, write_resolution_doc
 
 router = APIRouter()
@@ -75,6 +76,7 @@ def resolved_watchlist_candidates():
         hydro = entry.get("hydro_point") or {}
         rows.append({
             **c,
+            "lang": lang_for_cc(c.get("cc")),
             "lat": anchor["lat"], "lng": anchor["lng"],
             "hydro_lat": hydro.get("lat", anchor["lat"]),
             "hydro_lng": hydro.get("lng", anchor["lng"]),
@@ -129,6 +131,7 @@ def testing_watchlist_rows():
     for i, candidate in enumerate(WATCHLIST_CANDIDATES):
         fx = TESTING_CANDIDATE_FIXTURE[candidate["name"]]
         row = dict(candidate)
+        row["lang"] = lang_for_cc(candidate.get("cc"))
         row.update({
             "lat": fx["lat"], "lng": fx["lng"],
             "hydro_lat": fx["lat"], "hydro_lng": fx["lng"],

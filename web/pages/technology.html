@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .page { max-width: 760px; margin: 0 auto; padding: 1.2rem 1.4rem 3rem; line-height: 1.65; }
+    .page h1 { font-size: 1.4rem; } .page h2 { font-size: 1.05rem; margin-top: 1.6rem; }
+    .page a { color: #38bdf8; }
+  </style>
+  <title>Technology · Centinela</title>
+</head>
+<body>
+  <main class="page">
+    <p><a href="/">&larr; Back to the map</a></p>
+    <h1>How Centinela works</h1>
+    <p>This page is for the technically curious. The rest of the site avoids jargon; here it is
+    allowed.</p>
+    <h2>Data pipeline</h2>
+    <p>Two custom Fivetran connectors load data into Google BigQuery: one syncs the global USGS
+    earthquake feed, the other pulls daily river discharge (GloFAS, via Open-Meteo) and soil
+    moisture (ECMWF) for every monitored place. Observed rainfall and air quality come from the
+    Google Weather and Air Quality APIs and are recorded continuously. Nothing is seeded or
+    hand-entered: even coordinates are derived, by geocoding each place name and probing the
+    river-model grid for the strongest channel nearby.</p>
+    <h2>The agent</h2>
+    <p>A DataOps agent built with Google Cloud Agent Builder (ADK) on Gemini watches the
+    pipeline itself. If a connector goes stale, the agent uses the Fivetran MCP server,
+    including its write tools, to force a re-sync and restore data freshness, with retries and
+    an auditable action history. A second agent writes the plain-language alert narration.</p>
+    <h2>The risk model</h2>
+    <p>The risk index of each place blends four signals: river discharge against that same
+    place's 92-day baseline, observed 24-hour rain, soil wetness as an amplifier, and the
+    strongest recent earthquake nearby. The strongest hazard dominates; co-occurring hazards
+    raise it further. Small streams are dampened so a creek cannot read like a major river
+    flood. The index is our own model and is labeled as such everywhere.</p>
+    <h2>Reaching people</h2>
+    <p>Alert content is translated with Cloud Translation (cached per string, human-correctable),
+    spoken with Cloud Text-to-Speech, and pushed through Firebase Cloud Messaging topics: one
+    topic per place, one message per severity change. The site installs as a web app. A
+    standards-compliant CAP v1.2 feed is available for emergency-management systems.</p>
+    <h2>Where it runs</h2>
+    <p>The backend is FastAPI on Google Cloud Run; state lives in Firestore; the frontend is
+    plain JavaScript modules with Google Maps. The whole stack re-deploys from source in one
+    command.</p>
+  </main>
+</body>
+</html>

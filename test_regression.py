@@ -714,6 +714,11 @@ try {
     if res_audio_en.headers.get("x-spoken-lang") != "en":
         print(f"ERROR: voice=en override should speak en, got {res_audio_en.headers.get('x-spoken-lang')}")
         sys.exit(1)
+    for page in ("about", "technology", "privacy", "terms", "glossary"):
+        rp = requests.get(f"{server_url}/{page}")
+        if rp.status_code != 200 or "<h1>" not in rp.text:
+            print(f"ERROR: site page /{page} failed: {rp.status_code}")
+            sys.exit(1)
     res_cap = requests.get(f"{server_url}/cap.xml")
     if res_cap.status_code != 200:
         print(f"ERROR: cap.xml failed: {res_cap.status_code}")

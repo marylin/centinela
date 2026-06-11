@@ -3,7 +3,7 @@ mount would expose node_modules etc., risk wrong content types for the
 service worker on Windows hosts, and change error semantics)."""
 import re
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 
 router = APIRouter()
@@ -48,6 +48,24 @@ def read_css():
         with open("web/style.css", "r", encoding="utf-8") as f:
             return Response(content=f.read(), media_type="text/css",
                             headers={"Cache-Control": "no-cache"})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+PAGE_NAMES = {"about", "technology", "privacy", "terms", "glossary"}
+
+@router.get("/about", response_class=HTMLResponse)
+@router.get("/technology", response_class=HTMLResponse)
+@router.get("/privacy", response_class=HTMLResponse)
+@router.get("/terms", response_class=HTMLResponse)
+@router.get("/glossary", response_class=HTMLResponse)
+def read_page(request: Request):
+    """Plain-language site pages (about, technology, privacy, terms, glossary)."""
+    name = request.url.path.strip("/")
+    if name not in PAGE_NAMES:
+        raise HTTPException(status_code=404, detail="Unknown page")
+    try:
+        with open(f"web/pages/{name}.html", "r", encoding="utf-8") as f:
+            return f.read()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

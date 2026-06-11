@@ -41,10 +41,10 @@
         <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
       </div>
 
-      <h2 class="grid-section-title">Watchlist candidates <span class="badge scope-chip">NOT MONITORED &middot; ACTIVITY MODEL</span></h2>
-      <p class="watchlist-footnote">Activity model from the USGS FDSN catalog + GloFAS reanalysis
-        (Open-Meteo), seasonal window &plusmn;1 month. Candidates are NOT monitored places;
-        promotion into the registry is a manual configuration step.</p>
+      <h2 class="grid-section-title">Places we keep an eye on <span class="badge scope-chip">N.A.M.</span></h2>
+      <p class="watchlist-footnote">N.A.M. = Not Actively Monitored. We watch these places using
+        public records of earthquakes and river levels, but we do not measure their risk around
+        the clock yet.</p>
       <div id="tile-grid-candidates" class="tile-grid tile-grid-candidates">
         <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
         <div class="tile tile-skeleton"></div><div class="tile tile-skeleton"></div>
@@ -86,7 +86,7 @@
 
         <div class="detail-columns">
           <section id="public-alert-card" class="card" aria-labelledby="alert-title" hidden>
-            <div class="card-header"><h3 id="alert-title">Public alert</h3><button type="button" id="alert-listen-btn" class="btn btn-sm">Listen</button><button type="button" id="alert-listen-en-btn" class="btn btn-sm" hidden>Listen in English</button></div>
+            <div class="card-header"><h3 id="alert-title">Public alert</h3><button type="button" id="alert-listen-btn" class="btn btn-sm">Listen</button><button type="button" id="alert-listen-en-btn" class="btn btn-sm" hidden>Listen in English</button><button type="button" id="alert-lang-btn" class="btn btn-sm" hidden>English version</button></div>
             <div class="card-body">
               <div id="alert-status"></div>
               <dl id="alert-fields" class="alert-fields"></dl>
@@ -133,7 +133,14 @@
   </main>
 
   <footer class="app-footer">
-    <span>Centinela &middot; model hazard index &middot; data: GloFAS/ECMWF (Open-Meteo), Google Weather &amp; AQI, USGS</span>
+    <span>Centinela &middot; a hazard-monitoring demonstration &middot; always follow your local civil protection authority</span>
+    <nav class="footer-links" aria-label="Site pages">
+      <a href="/about">About</a>
+      <a href="/technology">Technology</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms of use</a>
+      <a href="/glossary">Glossary</a>
+    </nav>
   </footer>
 
   <!-- Diagnostics slideout -->

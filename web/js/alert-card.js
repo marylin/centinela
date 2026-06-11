@@ -9,12 +9,18 @@ import { getUiStrings } from "./api.js";
 import { getSeverityConfig } from "./severity.js";
 import { escapeHtml } from "./util.js";
 
-const ALERT_SOURCE = "Unidad Nacional para la Gestión del Riesgo de Desastres (UNGRD)";
-
 const BASIN_HISTORY = {
   rio_cauca: "The Río Cauca basin has a documented history of rainy-season flooding.",
   rio_magdalena: "The Río Magdalena basin experiences seasonal flooding during Colombia's rainy seasons.",
 };
+
+let englishOverride = false; // "English version" toggle, reset per selection
+
+export function resetAlertLanguage() { englishOverride = false; }
+
+export function toggleAlertEnglish() { englishOverride = !englishOverride; }
+
+export function isAlertEnglish() { return englishOverride; }
 
 const bundles = {};       // lang -> bundle (client cache)
 let bundleFetching = {};  // lang -> promise
@@ -47,7 +53,8 @@ export async function renderAlertCard(alertData) {
   if (!sel || sel.kind !== "place") { card.hidden = true; return; }
   card.hidden = false;
 
-  const lang = (alertData && alertData.lang) || "en";
+  const nativeLang = (alertData && alertData.lang) || "en";
+  const lang = englishOverride ? "en" : nativeLang;
   const b = await bundleFor(lang) || (await bundleFor("en"));
   if (!b || !state.selection || state.selection.name !== sel.name) return;
 
@@ -76,7 +83,7 @@ export async function renderAlertCard(alertData) {
       <div class="alert-field"><dt>${escapeHtml(b.ui.where)}</dt><dd>${escapeHtml(sel.name)}</dd></div>
       <div class="alert-field alert-field-wide"><dt>${escapeHtml(b.ui.action)}</dt><dd>${escapeHtml(b.hazard_actions[dominant] || b.hazard_actions.FLOOD)}</dd></div>
       <div class="alert-field"><dt>${escapeHtml(b.ui.when)}</dt><dd>${escapeHtml(b.ui.as_of)} ${asOf}</dd></div>
-      <div class="alert-field alert-field-wide"><dt>${escapeHtml(b.ui.source)}</dt><dd>${ALERT_SOURCE}</dd></div>`;
+      <div class="alert-field alert-field-wide"><dt>${escapeHtml(b.ui.source)}</dt><dd>${escapeHtml(b.ui.source_value)}</dd></div>`;
   }
 
   // Listen buttons: the local one is labeled in the resident language and
@@ -91,7 +98,12 @@ export async function renderAlertCard(alertData) {
     listenBtn.dataset.stopLabel = b.ui.stop;
     listenBtn.dataset.loadingLabel = b.ui.loading_audio;
   }
-  if (listenEnBtn) listenEnBtn.hidden = lang === "en";
+  if (listenEnBtn) listenEnBtn.hidden = nativeLang === "en";
+  const langBtn = document.getElementById("alert-lang-btn");
+  if (langBtn) {
+    langBtn.hidden = nativeLang === "en";
+    langBtn.textContent = englishOverride ? b.ui.show_in_local : b.ui.show_in_english;
+  }
 
   const ctx = document.getElementById("alert-context");
   if (ctx) ctx.textContent = BASIN_HISTORY[sel.groupId] || "";
@@ -124,7 +136,9 @@ export async function renderAlertCard(alertData) {
       : `<div class="empty-alerts">${escapeHtml(b.ui.no_warnings)}</div>`;
 
     // Live narration broadcast in the resident's language, original on demand.
-    const broadcast = alertData && alertData.broadcast_translated;
+    const broadcast = englishOverride
+      ? (alertData && alertData.resident_broadcast)
+      : (alertData && alertData.broadcast_translated);
     if (broadcast && active.length) {
       const original = alertData.resident_broadcast || "";
       html += `<div class="broadcast-box">

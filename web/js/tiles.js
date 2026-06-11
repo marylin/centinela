@@ -28,7 +28,7 @@ function candidateTileHtml(name) {
     <button type="button" class="tile tile-candidate" data-candidate="${escapeHtml(name)}">
       <div class="tile-head">
         <span class="tile-name"></span>
-        <span class="badge tile-badge">NOT MONITORED</span>
+        <span class="badge tile-badge" title="Not Actively Monitored">N.A.M.</span>
       </div>
       <div class="tile-severity"></div>
       <div class="tile-bar"><i></i></div>
@@ -118,7 +118,7 @@ export function renderTiles() {
       `${r.country || ""} · seis ${(Number(r.seismic_score) || 0).toFixed(2)} · flood ${(Number(r.flood_score) || 0).toFixed(2)}${badges.length ? " · " + badges.join(" · ") : ""}`;
     el.style.order = String(1000 - Math.round(act * 1000));
     el.setAttribute("aria-label",
-      `${r.name}, ${r.country || ""} — watchlist candidate, not monitored, activity ${act.toFixed(2)}`);
+      `${r.name}, ${r.country || ""} — watched from public records, not actively monitored, activity ${act.toFixed(2)}`);
   });
 
   // Filter + live region count.

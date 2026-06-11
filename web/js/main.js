@@ -9,7 +9,7 @@ import { refreshRegistry, refreshIndexData, refreshWatchlist, startPolling } fro
 import { setupNotifications } from "./notify.js";
 import { setupDiagnostics } from "./diagnostics.js";
 import { setupRail } from "./rail.js";
-import { setupDetail, setupSubscribeButton, setupListenButton } from "./detail.js";
+import { setupDetail, setupSubscribeButton, setupListenButton, setupAlertLanguageToggle } from "./detail.js";
 import { renderMap } from "./map.js";
 import { setupSeismicPanel, setupWorldwideEvents, renderWorldwideEvents, clearSeismicFocus } from "./seismic.js";
 import { onDetailShown } from "./map.js";
@@ -43,7 +43,8 @@ function applyView() {
     document.title = `Centinela · ${state.selection.name}`;
     const kindEl = document.getElementById("detail-kind");
     if (kindEl) kindEl.textContent = state.selection.kind === "candidate"
-      ? "Watchlist candidate · NOT MONITORED" : "Monitored place · MODEL INDEX";
+      ? "Watched from public records (N.A.M. = not actively monitored)"
+      : "We measure flood, rain, soil and earthquake signals here around the clock.";
     location.hash = state.selection.kind === "candidate"
       ? `#/candidate/${encodeURIComponent(state.selection.name)}`
       : `#/place/${encodeURIComponent(state.selection.id)}`;
@@ -108,6 +109,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupDetail();
   setupSubscribeButton();
   setupListenButton();
+  setupAlertLanguageToggle();
   setupSeismicPanel();
   setupWorldwideEvents();
   setupRouting();

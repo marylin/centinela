@@ -3180,3 +3180,25 @@ button.seismic-event-row:focus-visible {
   #side-rail.rail-open #rail-list { flex-direction: column; max-height: 45vh; overflow-y: auto; }
   .detail-columns { flex-direction: column; }
 }
+/* Plain-language + layout round */
+.plain-warning-card {
+  display: block; padding: 0.55rem 0.8rem; margin: 0 0 0.55rem;
+  border: 1px solid var(--border-color); border-radius: 6px;
+  background: rgba(255,255,255,0.02);
+}
+.plain-warning-card .plain-warning-title { display: block; font-weight: 600; margin-bottom: 2px; }
+.plain-warning-card .plain-warning-body { display: block; font-size: 0.85rem; }
+/* The map fills its row even when the alert card grows tall. */
+.detail-columns > .card[aria-label="Map"] { display: flex; flex-direction: column; }
+.detail-columns > .card[aria-label="Map"] .detail-map { flex: 1; min-height: 380px; height: auto; }
+.footer-links { display: flex; gap: 1rem; margin-top: 0.4rem; flex-wrap: wrap; }
+.footer-links a { color: var(--text-muted); text-decoration: none; font-size: 0.78rem; }
+.footer-links a:hover { color: inherit; text-decoration: underline; }
+.app-footer { display: flex; flex-direction: column; }
+/* Mobile: two tiles per row, tighter */
+@media (max-width: 760px) {
+  .tile { width: calc(50% - 0.45rem); padding: 0.55rem 0.6rem; }
+  .tile-name { font-size: 0.9rem; }
+  .tile-meta { font-size: 0.68rem; }
+  .tile-severity { font-size: 0.78rem; flex-wrap: wrap; }
+}

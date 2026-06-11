@@ -100,9 +100,19 @@ RESIDENT_COPY = {
             ],
         },
     },
+    "candidate_explain": (
+        "We keep an eye on this place using public records of earthquakes and "
+        "river levels. We do not measure its risk around the clock yet, so "
+        "there are no alerts, sound, or notifications here. If this place "
+        "joins the monitored list, all of that turns on."
+    ),
     "ui": {
         "hazard": "Hazard", "where": "Where", "action": "Action",
         "when": "When", "source": "Source", "as_of": "as of",
+        "source_value": "Centinela hazard model (a demonstration, not an official authority). Always follow your local civil protection authority.",
+        "show_in_english": "English version",
+        "show_in_local": "Local language",
+        "nam_legend": "N.A.M. = Not Actively Monitored. We watch these places using public records, but we do not measure their risk around the clock yet.",
         "no_warnings": "No active warnings for this area.",
         "risk_is_currently": "risk is currently",
         "original_english": "Show original (English)",
