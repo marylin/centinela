@@ -1,4 +1,15 @@
-# Centinela - Multi-Hazard Monitoring
+# Centinela
+
+> Multi-hazard monitoring that turns live, real measurements into one plain risk level per city, speaks the resident's language, and keeps its own data pipeline healthy without a human watching.
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Live demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://centinela-v1-765013283380.us-central1.run.app)
+[![PWA](https://img.shields.io/badge/PWA-installable-5a0fc8.svg)](https://centinela-v1-765013283380.us-central1.run.app)
+[![Alerts](https://img.shields.io/badge/alerts-CAP%20v1.2-orange.svg)](https://centinela-v1-765013283380.us-central1.run.app/cap.xml)
+
+**[Open the live app](https://centinela-v1-765013283380.us-central1.run.app)**  ·  **[API docs](https://centinela-v1-765013283380.us-central1.run.app/docs)**  ·  **[The story behind it](JOURNEY.md)**
+
+![Every monitored city with its live risk level, plus a worldwide seismic feed](assets/screenshots/all-places.png)
 
 Centinela watches natural hazards (floods, heavy rain, unstable ground, and earthquakes) in 29 cities around the world, plus 9 more it keeps an eye on, and turns real measurements into one plain risk level per place: Low, Warning, Danger, or Critical. Everything on the map comes from real data: a global river model, weather services, and the United States Geological Survey. When the risk for a city rises, residents who subscribed get a push notification, can read the advice in their own language, and can listen to it spoken aloud.
 
@@ -136,6 +147,8 @@ rapid-agent/
 - **Autonomous DataOps agent** (Google ADK on Gemini) watches the Fivetran connectors. If one goes stale (no successful sync in 5 minutes, or setup never completed), the agent uses the Fivetran MCP write tools to force a re-sync and raise the sync frequency, with bounded retries and a visible, auditable heal history. It never silences a degraded pipeline.
 - **Diagnostics slideout** in the UI shows connector freshness, autonomous heals, and incident history, plus demo controls to simulate an outage or inject a SIMULATED event.
 
+![A monitored city in detail: a translated public alert, the map, the hazard breakdown, and rain, river, and soil history](assets/screenshots/place-detail.png)
+
 ## Quick Start
 
 ```bash
@@ -181,6 +194,7 @@ See [QUICKGUIDE.md](QUICKGUIDE.md) for full setup, GCP configuration, deployment
 - [SCALING.md](SCALING.md) - Scaling strategy and cost drivers
 - [QUICKGUIDE.md](QUICKGUIDE.md) - Setup, deployment, and troubleshooting
 - [DEMO.md](DEMO.md) - Guided walkthrough of the live app for reviewers
+- [JOURNEY.md](JOURNEY.md) - The non-technical story: goals, blockers, and lessons
 - [GEMINI.md](GEMINI.md) - Project context (architecture, commands, structure)
 - [.env.example](.env.example) - Environment variable template
 
