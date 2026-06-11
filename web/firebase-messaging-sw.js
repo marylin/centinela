@@ -32,7 +32,7 @@ messaging.onBackgroundMessage((payload) => {
 // --- PWA app-shell caching -------------------------------------------------
 // Network-first so deploys stay fresh online, with a cached shell for offline.
 // One worker owns the whole scope, so push (above) and offline (below) coexist.
-const CACHE = "centinela-shell-v3";
+const CACHE = "centinela-shell-v4";
 const SHELL = [
   "/", "/style.css", "/manifest.json",
   "/assets/icons/icon-192.png", "/assets/icons/icon-512.png",
