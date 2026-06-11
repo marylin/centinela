@@ -14,8 +14,8 @@ import { escapeHtml } from "./util.js";
 function spark(points, color, w, h, opts = {}) {
   if (points.length < 2) return "";
   const pad = 6;
-  const padTop = opts.labels ? 13 : pad; // headroom for value labels
-  const padBot = opts.labels ? 13 : pad;
+  const padTop = opts.labels ? 10 : pad; // headroom for value labels
+  const padBot = opts.labels ? 10 : pad;
   const xs = points.map((p, i) => pad + (i / (points.length - 1)) * (w - pad * 2));
   const vals = points.map(p => p.v);
   const lo = opts.domain ? opts.domain[0] : Math.min(...vals);
@@ -60,11 +60,11 @@ function spark(points, color, w, h, opts = {}) {
     [...labelled].forEach(i => {
       const px = xs[i], py = y(points[i].v);
       const below = py < h / 2;                       // dot high up -> label under it
-      const ly = below ? py + 11 : py - 6;
+      const ly = below ? py + 8 : py - 4;
       const anchor = px < 24 ? "start" : px > w - 24 ? "end" : "middle";
       labels += `<text x="${px.toFixed(1)}" y="${ly.toFixed(1)}" fill="${color}"
-                   font-size="9" font-weight="700" text-anchor="${anchor}"
-                   paint-order="stroke" stroke="#0b0f17" stroke-width="2.4"
+                   font-size="6.5" font-weight="700" text-anchor="${anchor}"
+                   paint-order="stroke" stroke="#0b0f17" stroke-width="1.8"
                    stroke-linejoin="round">${escapeHtml(fmt(points[i].v))}</text>`;
     });
   }
