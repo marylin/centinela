@@ -167,7 +167,7 @@ Every monitored city with its live risk level, plus a worldwide seismic feed:
 </table>
 
 <p align="center">
-  <img src="assets/screenshots/feature-nam-detail.png" alt="A not-actively-monitored place with an activity score from public records" width="320">
+  <img src="assets/screenshots/feature-nam-card.png" alt="A not-actively-monitored place: activity score from public records" width="460">
 </p>
 
 A place we only keep an eye on (N.A.M.): an activity score from public earthquake and river records, labeled as history, with no alerts.
