@@ -13,12 +13,15 @@ import { escapeHtml } from "./util.js";
 // something; otherwise it auto-scales to the series for shape.
 function spark(points, color, w, h, opts = {}) {
   if (points.length < 2) return "";
-  const pad = 5;
+  const pad = 6;
+  const padTop = opts.labels ? 13 : pad; // headroom for value labels
+  const padBot = opts.labels ? 13 : pad;
   const xs = points.map((p, i) => pad + (i / (points.length - 1)) * (w - pad * 2));
-  const lo = opts.domain ? opts.domain[0] : Math.min(...points.map(p => p.v));
-  const hi = opts.domain ? opts.domain[1] : Math.max(...points.map(p => p.v));
+  const vals = points.map(p => p.v);
+  const lo = opts.domain ? opts.domain[0] : Math.min(...vals);
+  const hi = opts.domain ? opts.domain[1] : Math.max(...vals);
   const span = (hi - lo) || 1;
-  const y = v => (h - pad) - ((v - lo) / span) * (h - pad * 2);
+  const y = v => (h - padBot) - ((v - lo) / span) * (h - padTop - padBot);
   const pts = points.map((p, i) => `${xs[i].toFixed(1)},${y(p.v).toFixed(1)}`);
 
   let grid = "";
@@ -28,21 +31,44 @@ function spark(points, color, w, h, opts = {}) {
              stroke="#2a3242" stroke-width="1" stroke-dasharray="3 3"/>`).join("");
   }
 
-  const area = `<polygon points="${xs[0].toFixed(1)},${(h - pad).toFixed(1)} ${pts.join(" ")} ${xs[xs.length - 1].toFixed(1)},${(h - pad).toFixed(1)}"
+  const area = `<polygon points="${xs[0].toFixed(1)},${(h - padBot).toFixed(1)} ${pts.join(" ")} ${xs[xs.length - 1].toFixed(1)},${(h - padBot).toFixed(1)}"
                   fill="${color}" fill-opacity="0.12"/>`;
   const line = `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}"
                   stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
 
-  const everyN = Math.max(1, Math.ceil(points.length / 7));
+  // Mark min, max and latest (the points worth a number) plus a light sampling
+  // for shape. Only the marked-with-meaning points get a value label, so the
+  // chart stays legible instead of stamping a number on every tick.
+  const iMax = vals.indexOf(Math.max(...vals));
+  const iMin = vals.indexOf(Math.min(...vals));
+  const iLast = points.length - 1;
+  const labelled = new Set([iMax, iMin, iLast]);
+  const everyN = Math.max(1, Math.ceil(points.length / 6));
+  const dotted = new Set(labelled);
+  points.forEach((p, i) => { if (i % everyN === 0) dotted.add(i); });
+
   let dots = "";
-  points.forEach((p, i) => {
-    const last = i === points.length - 1;
-    if (i % everyN === 0 || last) {
-      dots += `<circle cx="${xs[i].toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${last ? 3.4 : 1.9}"
-                 fill="${last ? color : "#0f141f"}" stroke="${color}" stroke-width="1.3"/>`;
-    }
+  [...dotted].forEach(i => {
+    const last = i === iLast;
+    dots += `<circle cx="${xs[i].toFixed(1)}" cy="${y(points[i].v).toFixed(1)}" r="${last ? 3.4 : 2}"
+               fill="${last ? color : "#0f141f"}" stroke="${color}" stroke-width="1.3"/>`;
   });
-  return grid + area + line + dots;
+
+  let labels = "";
+  if (opts.labels) {
+    const fmt = opts.fmt || (v => String(v));
+    [...labelled].forEach(i => {
+      const px = xs[i], py = y(points[i].v);
+      const below = py < h / 2;                       // dot high up -> label under it
+      const ly = below ? py + 11 : py - 6;
+      const anchor = px < 24 ? "start" : px > w - 24 ? "end" : "middle";
+      labels += `<text x="${px.toFixed(1)}" y="${ly.toFixed(1)}" fill="${color}"
+                   font-size="9" font-weight="700" text-anchor="${anchor}"
+                   paint-order="stroke" stroke="#0b0f17" stroke-width="2.4"
+                   stroke-linejoin="round">${escapeHtml(fmt(points[i].v))}</text>`;
+    });
+  }
+  return grid + area + line + dots + labels;
 }
 
 // Wraps a sparkline SVG with subtle y-axis ticks (top/bottom) and x-axis
@@ -73,9 +99,10 @@ export async function renderRiskTimeline() {
     const sev = getSeverityConfig(latest);
     // Fixed 0..1 risk domain with gridlines at the band edges, so the latest
     // dot's height is meaningful rather than auto-scaled noise.
-    const svg = `<svg viewBox="0 0 320 64" class="history-svg" role="img"
+    const svg = `<svg viewBox="0 0 320 78" class="history-svg" role="img"
            aria-label="Risk index over the recorded window, latest ${(latest * 100).toFixed(0)} percent">
-        ${spark(points, sev.colorHex, 320, 64, { domain: [0, 1], gridlines: [0.25, 0.5, 0.75] })}
+        ${spark(points, sev.colorHex, 320, 78, { domain: [0, 1], gridlines: [0.25, 0.5, 0.75],
+          labels: true, fmt: v => `${(v * 100).toFixed(0)}%` })}
       </svg>`;
     el.innerHTML = `
       <div class="chart-axis-title">Risk index (%)</div>
@@ -112,8 +139,8 @@ export async function renderTrend() {
       const hi = Math.max(...vals), lo = Math.min(...vals);
       const latest = r.series[r.series.length - 1].v;
       const latestTxt = `${fmt(latest)} ${r.unit}`;
-      const svg = `<svg viewBox="0 0 320 38" class="history-svg" role="img"
-        aria-label="${escapeHtml(r.label)} in ${escapeHtml(r.yUnit)}, latest ${escapeHtml(latestTxt)}">${spark(r.series, r.color, 320, 38)}</svg>`;
+      const svg = `<svg viewBox="0 0 320 52" class="history-svg" role="img"
+        aria-label="${escapeHtml(r.label)} in ${escapeHtml(r.yUnit)}, latest ${escapeHtml(latestTxt)}">${spark(r.series, r.color, 320, 52, { labels: true, fmt })}</svg>`;
       return `<div class="trend-row">
         <div class="trend-head"><span class="trend-label">${r.label} <span class="trend-unit">(${r.yUnit})</span></span>
           <span class="trend-latest tabular-nums" style="color:${r.color}">${latestTxt}</span></div>

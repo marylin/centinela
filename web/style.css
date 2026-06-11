@@ -3280,13 +3280,19 @@ button.seismic-event-row:focus-visible {
 }
 #world-events-body .seismic-row { margin-bottom: 0; }
 
-/* Alert-card controls: two labeled rows (Read / Listen), each a segmented
-   local-vs-English pair, sitting below the title instead of crowding it. */
-.alert-controls { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.1rem 0 0.2rem; }
-.alert-control-row { display: flex; align-items: center; gap: 0.6rem; }
+/* Alert-card controls: a de-emphasized footer below the alert content, so the
+   warning text leads and the language/audio options sit quietly underneath.
+   Padded to align with the card body (they used to hug the left border). */
+.alert-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.015);
+}
+.alert-control-row { display: flex; align-items: center; gap: 0.55rem; }
 .alert-control-label {
-  color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase;
-  letter-spacing: 0.07em; min-width: 3rem;
+  color: var(--text-muted); font-size: 0.66rem; text-transform: uppercase;
+  letter-spacing: 0.07em; min-width: 2.6rem;
 }
 .seg-group { display: inline-flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
 .seg-group .seg-btn {

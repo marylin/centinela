@@ -87,7 +87,14 @@
         <div class="detail-columns">
           <section id="public-alert-card" class="card" aria-labelledby="alert-title" hidden>
             <div class="card-header"><h3 id="alert-title">Public alert</h3></div>
-            <div class="alert-controls">
+            <div class="card-body">
+              <div id="alert-status"></div>
+              <dl id="alert-fields" class="alert-fields"></dl>
+              <p id="alert-context" class="alert-context"></p>
+              <div id="alert-guidance"></div>
+              <div id="alert-advisories"></div>
+            </div>
+            <div class="alert-controls" aria-label="Language and audio options">
               <div class="alert-control-row" id="alert-read-row" hidden>
                 <span class="alert-control-label">Read</span>
                 <div class="seg-group" role="group" aria-label="Reading language">
@@ -102,13 +109,6 @@
                   <button type="button" id="alert-listen-en-btn" class="btn btn-sm seg-btn" hidden>English</button>
                 </div>
               </div>
-            </div>
-            <div class="card-body">
-              <div id="alert-status"></div>
-              <dl id="alert-fields" class="alert-fields"></dl>
-              <p id="alert-context" class="alert-context"></p>
-              <div id="alert-guidance"></div>
-              <div id="alert-advisories"></div>
             </div>
           </section>
           <section class="card" aria-label="Map">
