@@ -6,8 +6,11 @@
 [![Live demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://centinela-v1-765013283380.us-central1.run.app)
 [![PWA](https://img.shields.io/badge/PWA-installable-5a0fc8.svg)](https://centinela-v1-765013283380.us-central1.run.app)
 [![Alerts](https://img.shields.io/badge/alerts-CAP%20v1.2-orange.svg)](https://centinela-v1-765013283380.us-central1.run.app/cap.xml)
+[![Devpost](https://img.shields.io/badge/Devpost-entry-003E54.svg)](https://devpost.com/software/centinela-nivb7o)
 
-**[Open the live app](https://centinela-v1-765013283380.us-central1.run.app)**  ·  **[API docs](https://centinela-v1-765013283380.us-central1.run.app/docs)**  ·  **[The story behind it](JOURNEY.md)**
+**[Watch the demo](https://youtu.be/dYvGX69SiUY)**  ·  **[Open the live app](https://centinela-v1-765013283380.us-central1.run.app)**  ·  **[Devpost](https://devpost.com/software/centinela-nivb7o)**  ·  **[API docs](https://centinela-v1-765013283380.us-central1.run.app/docs)**  ·  **[The story behind it](JOURNEY.md)**
+
+[![Watch the Centinela demo on YouTube](https://img.youtube.com/vi/dYvGX69SiUY/maxresdefault.jpg)](https://youtu.be/dYvGX69SiUY)
 
 ![Every monitored city with its live risk level, plus a worldwide seismic feed](assets/screenshots/all-places.png)
 
@@ -180,11 +183,12 @@ See [QUICKGUIDE.md](QUICKGUIDE.md) for full setup, GCP configuration, deployment
 
 ## Live Demo
 
+- **Demo video:** https://youtu.be/dYvGX69SiUY
+- **Devpost entry:** https://devpost.com/software/centinela-nivb7o
 - **App (frontend + API):** https://centinela-v1-765013283380.us-central1.run.app
 - **API docs:** https://centinela-v1-765013283380.us-central1.run.app/docs
 - **CAP v1.2 feed:** https://centinela-v1-765013283380.us-central1.run.app/cap.xml
 - **Source repo:** https://github.com/marylin/centinela
-- **Demo video:** _TODO: link to be added_
 
 ## How It Works
 

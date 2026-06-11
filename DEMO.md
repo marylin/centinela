@@ -40,7 +40,8 @@ The signals under the map are real, and the app says so plainly: river, rain, so
 
 ## Links
 
+- Demo video: https://youtu.be/dYvGX69SiUY
+- Devpost entry: https://devpost.com/software/centinela-nivb7o
 - App and API: https://centinela-v1-765013283380.us-central1.run.app
 - API docs: https://centinela-v1-765013283380.us-central1.run.app/docs
 - CAP feed: https://centinela-v1-765013283380.us-central1.run.app/cap.xml
-- Demo video: _TODO: link to be added_
